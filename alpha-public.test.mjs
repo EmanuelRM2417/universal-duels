@@ -24,7 +24,7 @@ assert.match(worker,/PUBLIC_SPRITES/);
 assert.match(worker,/data\.type===\"order\"/);
 assert.doesNotMatch(worker,/editor-api\//);
 const html=fs.readFileSync(new URL('./public/index.html',import.meta.url),'utf8');
-assert.match(html,/Alpha 0\.1/);
+assert.match(html,/Alpha 0\.2/);
 assert.match(html,/Buscar personaje/);
 assert.match(html,/data-move/);
 assert.match(html,/Cambiar personaje/);
