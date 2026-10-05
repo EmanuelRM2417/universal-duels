@@ -6,7 +6,7 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "test": "node alpha-public.test.mjs && node alpha-content.test.mjs && node lab-ui-parity.test.mjs && node alpha02-doubles.test.mjs"
+    "test": "node alpha-public.test.mjs && node alpha-content.test.mjs && node lab-ui-parity.test.mjs && node alpha02-doubles.test.mjs && node patch-alpha02-regression.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
