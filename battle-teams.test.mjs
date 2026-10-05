@@ -3,7 +3,7 @@ import {simulate} from './battle-engine.js';
 const m=(id,power)=>({id,name:id,definition:{type:'fuego',category:'physical',power,accuracy:100,criticalChance:0,priority:0,rules:[]}});
 const e=(id,hp=60)=>({id,name:id,definition:{types:['fuego'],hp,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['m1','m2','m3'],uniqueMoveId:'m4',globalAbilityId:'g',uniqueAbilityId:'u'}});
 const catalog={entities:Object.fromEntries(['a','b','c','d'].map(id=>[id,e(id)])),moves:Object.fromEntries(['m1','m2','m3','m4'].map(id=>[id,m(id,id==='m4'?300:30)])),abilities:{g:{id:'g',definition:{rules:[]}},u:{id:'u',definition:{rules:[]}}},effects:{}};
-const opts={left:'a',right:'c',leftTeam:['a','b'],rightTeam:['c','d'],catalog,turns:8,leftOrders:[{move:'m4'},{switch:1}]};
+const opts={left:'a',right:'c',leftTeam:['a','b'],rightTeam:['c','d'],catalog,turns:8,leftOrders:[{move:'m4'},{switch:1}],randomSource:()=>0.2};
 const result=simulate(opts);
 assert.equal(result.leftTeam.length,2);
 assert.equal(result.rightTeam.length,2);

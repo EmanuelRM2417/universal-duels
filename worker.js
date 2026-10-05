@@ -619,6 +619,49 @@ if (
         });
       }
 
+      // Publicar manualmente un parche. Guardar borradores nunca modifica el juego público.
+      if ((url.pathname === "/editor-api/publish-alpha" || url.pathname === "/editor-api/publish-patch") && request.method === "POST") {
+        if (request.headers.get("Origin") !== url.origin) return privateJson({ error: "Origen no autorizado." }, 403);
+        if (!env.EDITOR_SPRITES) return privateJson({ error: "Almacenamiento R2 no conectado." }, 500);
+        try {
+          const catalog = {};
+          for (const category of CATALOG_CATEGORIES) {
+            const prefix = `catalog-v1:${category}:`;
+            const entries = []; let cursor;
+            do {
+              const page = await env.EDITOR_DRAFTS.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+              const values = await Promise.all(page.keys.map(key => env.EDITOR_DRAFTS.get(key.name, "json")));
+              entries.push(...values.filter(Boolean));
+              cursor = page.list_complete ? undefined : page.cursor;
+            } while (cursor);
+            catalog[category] = Object.fromEntries(entries.map(entry => [entry.id, entry]));
+          }
+          if (!Object.keys(catalog.entities || {}).length) return privateJson({ error: "No hay personajes guardados para publicar." }, 400);
+          if (!Object.keys(catalog.moves || {}).length) return privateJson({ error: "No hay movimientos guardados para publicar." }, 400);
+          const chartDraft = await env.EDITOR_DRAFTS.get("type-chart-draft", "json");
+          const chart = chartDraft?.chart || chartDraft;
+          if (!chart || typeof chart !== "object") return privateJson({ error: "Guardá primero la tabla de tipos." }, 400);
+          const publishedAt = new Date().toISOString();
+          const revision = `patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+          const snapshot = { ok: true, version: "0.2.0-alpha", revision, publishedAt, types: TYPES, chart, catalog };
+          const spriteIds = [...new Set(Object.values(catalog.entities).map(e => e?.definition?.spriteId).filter(Boolean))];
+          for (const id of spriteIds) {
+            const source = await env.EDITOR_SPRITES.get(`drafts/${id}.png`);
+            if (!source) return privateJson({ error: `Falta el sprite ${id}. El parche no se publicó.` }, 400);
+            await env.EDITOR_SPRITES.put(`published/${revision}/sprites/${id}.png`, source.body, { httpMetadata: source.httpMetadata, customMetadata: source.customMetadata });
+          }
+          for (const id of TYPES) {
+            const source = await env.EDITOR_SPRITES.get(`type-icons/${id}.png`);
+            if (source) await env.EDITOR_SPRITES.put(`published/${revision}/type-icons/${id}.png`, source.body, { httpMetadata: source.httpMetadata, customMetadata: source.customMetadata });
+          }
+          await env.EDITOR_DRAFTS.put(`public-v1:snapshot:${revision}`, JSON.stringify(snapshot), { expirationTtl: 2592000 });
+          await env.EDITOR_DRAFTS.put("public-v1:current", JSON.stringify(snapshot));
+          return privateJson({ ok: true, message: "Parche cargado al público.", revision, publishedAt, entities: spriteIds.length });
+        } catch (error) {
+          return privateJson({ error: "No se pudo cargar el parche: " + String(error?.message || error) }, 500);
+        }
+      }
+
       return privateJson({
         error: "Ruta privada no encontrada."
       }, 404);

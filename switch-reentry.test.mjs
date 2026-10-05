@@ -23,7 +23,7 @@ assert.deepEqual(a.statSources,[],'las fuentes de niveles temporales se limpian 
 assert.equal(r.field,'arena','la habilidad de entrada puede volver a activar el campo tras expirar');
 assert.equal(r.fieldTurns,4,'el campo reactivado empieza en 5 y consume la ronda de reentrada');
 assert.equal(r.log.filter(x=>x.includes('Se activa field: Arena')).length,2,'la habilidad on_enter limitada se rearma por entrada');
-assert.equal(a.cooldowns.boost,0,'los cooldowns siguen contando mientras el personaje está en reserva');
+assert.equal(a.cooldowns.boost,2,'el cooldown queda congelado en reserva y solo baja al volver activo');
 
 // Si vuelve antes de que termine, no debe refrescar la duración del campo.
 const r2=simulate({left:'a',right:'c',leftTeam:['a','b'],rightTeam:['c'],catalog,turns:2,
@@ -32,4 +32,4 @@ assert.equal(r2.field,'arena');
 assert.equal(r2.fieldTurns,3,'reentrar mientras el mismo campo sigue activo no reinicia sus 5 rondas');
 assert.equal(r2.log.filter(x=>x.includes('Se activa field: Arena')).length,1,'no se reactiva el mismo campo mientras sigue activo');
 
-console.log('PASS: switch resets stages, re-arms on-enter abilities, preserves environment duration and reserve cooldown turns');
+console.log('PASS: switch resets stages, re-arms on-enter abilities, preserves environment duration and freezes reserve cooldowns');

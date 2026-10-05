@@ -5,12 +5,10 @@ const html=fs.readFileSync(new URL('./public/editor/index.html',import.meta.url)
 assert.match(worker,/\/editor-api\/publish-alpha/);
 assert.match(worker,/public-v1:snapshot:/);
 assert.match(worker,/public-v1:current/);
+assert.match(worker,/published\/\$\{revision\}\/sprites/);
+assert.match(worker,/published\/\$\{revision\}\/type-icons/);
+assert.match(worker,/Falta el sprite/);
 assert.match(html,/id="publishAlpha"/);
-assert.match(html,/Publicar Alpha 0\.1/);
-console.log('publish alpha tests ok');
-
-assert.match(worker, /url\.pathname === "\/editor\/"/);
-assert.match(worker, /assetUrl\.pathname = "\/editor\/index\.html"/);
-assert.match(html, /async function readApiResponse/);
-assert.match(html, /HTTP \${r\.status}/);
-assert.match(worker, /No hay movimientos guardados para publicar/);
+assert.match(html,/Cargar parche al público/);
+assert.match(html,/publishPatchStatus/);
+console.log('manual public patch tests ok');

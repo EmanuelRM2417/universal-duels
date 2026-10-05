@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {simulate} from './battle-engine.js';
+const mv=(id,{power=0,priority=0,cooldown=0,category='status'}={})=>({id,name:id,definition:{kind:'global',type:'fuego',category,power,accuracy:100,criticalChance:0,priority,cooldown,targeting:'single',rules:[]}});
+const ability=(id,kind='global')=>({id,name:id,definition:{kind,rules:[]}});
+const ent=id=>({id,name:id.toUpperCase(),definition:{types:['fuego'],hp:100,attack:200,defense:50,specialAttack:100,specialDefense:50,speed:100,moveIds:['cd','noop','kill'],uniqueMoveId:'unique',globalAbilityId:'g',uniqueAbilityId:'u'}});
+const catalog={entities:Object.fromEntries(['a','b','c','d'].map(id=>[id,ent(id)])),moves:{cd:mv('cd',{cooldown:3}),noop:mv('noop'),kill:mv('kill',{power:500,priority:5,category:'physical'}),unique:mv('unique')},abilities:{g:ability('g'),u:ability('u','unique')},effects:{},statuses:{},weathers:{},fields:{},scenarios:{}};
+let r=simulate({leftTeam:['a','b'],rightTeam:['c','d'],catalog,turns:3,leftOrders:[{move:'cd'},{switch:1},{move:'noop'}],rightOrders:[{move:'noop'},{move:'noop'},{move:'noop'}],randomSource:()=>.2});
+assert.equal(r.leftTeam[0].cooldowns.cd,3,'el cooldown de A queda congelado mientras está en reserva');
+r=simulate({leftTeam:['a','b'],rightTeam:['c','d'],catalog,turns:2,leftOrders:[{move:'cd'},{move:'noop'}],rightOrders:[{move:'noop'},{move:'kill'}],randomSource:()=>.2});
+assert.equal(r.leftTeam[0].hp,0,'A debe quedar KO');
+assert.equal(r.leftTeam[0].cooldowns.cd,3,'un KO no sigue reduciendo cooldown');
+const round2=r.log.indexOf('— Ronda 2 —');
+assert.ok(!r.log.slice(round2+1).some(x=>x.includes('@@L@@A tiene')&&x.includes('cooldown')),'no hay mensajes de cooldown de A después del KO');
+const html=fs.readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+for(const x of ["category!=='status'","for(const side of[enemy,own])","group-target","description=e?.description","Cargar parche al público"]) assert.ok(html.includes(x),x);
+console.log('patch alpha 0.2 editor/lab regression ok');
