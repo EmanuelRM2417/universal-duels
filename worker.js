@@ -150,6 +150,27 @@ export default {
         return privateJson({error:"Método no permitido."},405);
       }
 
+      // Recursos visuales privados de climas y escenarios. Se guardan separados del JSON del catálogo.
+      const environmentVisualMatch=url.pathname.match(/^\/editor-api\/environment-visuals\/(weathers|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+      if(environmentVisualMatch){
+        const category=environmentVisualMatch[1],id=environmentVisualMatch[2];
+        if(!env.EDITOR_SPRITES)return privateJson({error:"Almacenamiento R2 no conectado."},500);
+        const key=`environment/${category}/${id}.png`;
+        if(request.method==="GET"){
+          const obj=await env.EDITOR_SPRITES.get(key);if(!obj)return privateJson({error:"Recurso visual no encontrado."},404);
+          return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
+        }
+        if(request.method==="PUT"){
+          if(request.headers.get("Origin")!==url.origin)return privateJson({error:"Origen no autorizado."},403);
+          if(!(request.headers.get("Content-Type")||"").toLowerCase().startsWith("image/png"))return privateJson({error:"Solo PNG."},415);
+          const bytes=await request.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>4*1024*1024)return privateJson({error:"El PNG debe pesar entre 1 byte y 4 MB."},413);
+          const sig=new Uint8Array(bytes).slice(0,8);if(![137,80,78,71,13,10,26,10].every((x,i)=>sig[i]===x))return privateJson({error:"Firma PNG inválida."},415);
+          await env.EDITOR_SPRITES.put(key,bytes,{httpMetadata:{contentType:"image/png"}});
+          return privateJson({ok:true,category,id,message:"Recurso visual guardado."});
+        }
+        return privateJson({error:"Método no permitido."},405);
+      }
+
       // Subir imagen original de una entidad.
 if (
   url.pathname === "/editor-api/sprites" &&
@@ -653,6 +674,15 @@ if (
           for (const id of TYPES) {
             const source = await env.EDITOR_SPRITES.get(`type-icons/${id}.png`);
             if (source) await env.EDITOR_SPRITES.put(`published/${revision}/type-icons/${id}.png`, source.body, { httpMetadata: source.httpMetadata, customMetadata: source.customMetadata });
+          }
+          for (const category of ["weathers","scenarios"]) {
+            for (const entry of Object.values(catalog[category] || {})) {
+              const imageId=entry?.definition?.imageId;
+              if(!imageId)continue;
+              const source=await env.EDITOR_SPRITES.get(`environment/${category}/${imageId}.png`);
+              if(!source)return privateJson({error:`Falta el recurso visual ${category}/${imageId}. El parche no se publicó.`},400);
+              await env.EDITOR_SPRITES.put(`published/${revision}/environment/${category}/${imageId}.png`,source.body,{httpMetadata:source.httpMetadata,customMetadata:source.customMetadata});
+            }
           }
           await env.EDITOR_DRAFTS.put(`public-v1:snapshot:${revision}`, JSON.stringify(snapshot), { expirationTtl: 2592000 });
           await env.EDITOR_DRAFTS.put("public-v1:current", JSON.stringify(snapshot));

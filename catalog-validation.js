@@ -74,7 +74,7 @@ export function validateDefinition(category,d){
   if(!Array.isArray(d.moveIds)||d.moveIds.length!==3||new Set([...d.moveIds,d.uniqueMoveId]).size!==4||![...d.moveIds,d.uniqueMoveId,d.globalAbilityId,d.uniqueAbilityId].every(slug))fail('Entidad: tres ataques globales, uno exclusivo y dos habilidades con IDs válidos.');
   if(d.spriteId&&!slug(d.spriteId))fail('Entidad: sprite ID inválido.');
  }
- if(category==='statuses'){if(!Number.isInteger(d.duration))fail('Estado: duración entera obligatoria.');const f=d.typeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||f.types.some(t=>!TYPES.includes(t)))fail('Estado: filtro de tipos inválido.');if(f.mode!=='all'&&!f.types.length)fail('Estado: seleccioná al menos un tipo para incluir/excluir.');if(f.mode==='all'&&f.types.length)fail('Estado: Todos no lleva tipos seleccionados.');}
+ if(category==='statuses'){if(!Number.isInteger(d.duration))fail('Estado: duración entera obligatoria.');const f=d.typeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||f.types.some(t=>!TYPES.includes(t)))fail('Estado: filtro de tipos inválido.');if(f.mode!=='all'&&!f.types.length)fail('Estado: seleccioná al menos un tipo para incluir/excluir.');if(f.mode==='all'&&f.types.length)fail('Estado: Todos no lleva tipos seleccionados.');if(d.visualColor!==undefined&&!/^#[0-9a-f]{6}$/i.test(d.visualColor))fail('Estado: color visual debe ser hexadecimal #RRGGBB.');if(d.visualOpacity!==undefined&&!within(d.visualOpacity,0,100))fail('Estado: opacidad visual debe estar entre 0 y 100 %.');}
  if(ENV_CATS.includes(category)){
   if(d.duration!==5)fail('Climas, campos y escenarios duran exactamente 5 rondas.');
   if(!Array.isArray(d.fieldEffects)||d.fieldEffects.length>100)fail('Efectos de entorno: se requiere una lista de hasta 100.');
@@ -99,6 +99,8 @@ export function validateDefinition(category,d){
    if(e.type==='cooldown_on_use'&&e.timing!=='continuous')fail(at+': el cooldown al usar movimientos actúa mientras el entorno esté activo.');
   }
  }
- if(category==='scenarios'&&d.imageId&&!slug(d.imageId))fail('Escenario: ID de imagen inválido.');
+ if(['weathers','scenarios'].includes(category)&&d.imageId&&!slug(d.imageId))fail('Entorno: ID de imagen inválido.');
+ if(category==='weathers'&&d.visualOpacity!==undefined&&!within(d.visualOpacity,0,100))fail('Clima: opacidad visual debe estar entre 0 y 100 %.');
+ if(category==='fields'&&d.visualColor!==undefined&&!/^#[0-9a-f]{6}$/i.test(d.visualColor))fail('Campo: color visual debe ser hexadecimal #RRGGBB.');
  validateRules(d,category);
 }
