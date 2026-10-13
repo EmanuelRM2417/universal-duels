@@ -1,8 +1,8 @@
 // Validación de configuración, no balance automático. No muta el contenido.
-export const EVENTS = ['on_enter','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status'];
+export const EVENTS = ['on_enter','on_death','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status'];
 export const CONDITIONS = ['always','hp_below','hp_above','weather_is','field_is','has_status','has_type','was_hit_by_type','stat_below','in_doubles'];
 export const TARGETS = ['self','target','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','immunity','damage_multiplier','switch_character'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','immunity','damage_multiplier','switch_character'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
@@ -44,8 +44,8 @@ export function validateRules(definition,category){
   if(!Number.isInteger(r.duration)||r.duration<0||r.duration>9999) fail(at+': duración entera obligatoria de 0 a 9999.');
   if(!Number.isInteger(r.limit)||r.limit<0||r.limit>9999) fail(at+': límite entero obligatorio de 0 a 9999.');
   const a=r.action, v=a.value;
-  if(['damage','heal','heal_from_damage'].includes(a.type) && !(v!==''&&within(Number(v),0,100))) fail(at+': el porcentaje debe estar entre 0 y 100.');
-  if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el multiplicador de daño debe estar entre 0 y 500 %.');
+  if(['damage','heal','heal_from_damage','resurrect'].includes(a.type) && !(v!==''&&within(Number(v),0,100))) fail(at+': el porcentaje debe estar entre 0 y 100.');
+  if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
   if(a.type==='switch_character' && !['manual','random'].includes(a.switchMode)) fail(at+': Cambio de personaje requiere modo manual o aleatorio.');
   if(a.type==='stat_change' && (!STATS.includes(a.stat)||!(v!==''&&Number.isInteger(Number(v))&&Number(v)>=-10&&Number(v)<=10))) fail(at+': elegí estadística y cambio entero entre −10 y +10 niveles.');
   if(['apply_status','apply_effect','remove_effect','set_weather','set_field','set_scenario'].includes(a.type)&&!slug(v)) fail(at+': la acción necesita un ID válido.');
@@ -67,6 +67,17 @@ export function validateDefinition(category,d){
   if(!within(d.power,0,500)||!within(d.accuracy,0,100)||!within(d.criticalChance,0,50)||!Number.isInteger(d.priority)||d.priority< -5||d.priority>5||!Number.isInteger(d.cooldown??0)||(d.cooldown??0)<0||(d.cooldown??0)>50) fail('Ataque: potencia 0–500, precisión 0–100, crítico 0–50, prioridad −5 a +5 y cooldown 0–50.');
  }
  if(category==='abilities'&&!['global','unique'].includes(d.kind)) fail('Habilidad: elegí global o exclusiva.');
+ if(category==='moves'&&d.multihit){const x=d.multihit;
+  if(!Number.isInteger(x.min)||!Number.isInteger(x.max)||x.min<1||x.max<x.min||x.max>20||!['each','chain'].includes(x.effects||'each'))fail('Multigolpe: mínimo, máximo o efectos inválidos.');
+ }
+ if(category==='abilities'&&d.survive){const x=d.survive;
+   if(!within(Number(x.chance??100),0,100)||!Number.isInteger(Number(x.limit??0))||Number(x.limit??0)<0||!within(Number(x.hpPercent??1),0,100)||!within(Number(x.priority??0),-5,5))fail('Sobrevivir: probabilidad, usos, PS y prioridad inválidos.');
+   if(x.fixedHp!==undefined&&(!Number.isInteger(Number(x.fixedHp))||Number(x.fixedHp)<1||Number(x.fixedHp)>500))fail('Sobrevivir: PS fijos inválidos.');
+   if(x.sources!==undefined&&(!Array.isArray(x.sources)||x.sources.some(v=>!['move','effect','environment'].includes(v))))fail('Sobrevivir: fuente de daño inválida.');
+ }
+ if(category==='abilities'&&d.consecutiveAttack){const x=d.consecutiveAttack;
+   if(!within(Number(x.damagePerStack??10),0,1000)||!Number.isInteger(Number(x.speedStages??1))||Number(x.speedStages??1)<0||Number(x.speedStages??1)>10)fail('Carga: incremento de daño o Velocidad inválidos.');
+ }
  if(['entities','moves','abilities'].includes(category) && (d.tags!==undefined && (!Array.isArray(d.tags)||d.tags.some(x=>typeof x!=='string'||!x.trim()||x.length>40)))) fail('Etiquetas: usá una lista de textos de hasta 40 caracteres.');
  if(category==='entities'){
   if(!Array.isArray(d.types)||d.types.length<1||d.types.length>3||new Set(d.types).size!==d.types.length||d.types.some(t=>!TYPES.includes(t)))fail('Entidad: elegí 1–3 tipos distintos.');

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const e=(id)=>({id,name:id,definition:{types:['fuego'],hp:500,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['m','n','o'],uniqueMoveId:'p',globalAbilityId:id==='rhino'?'charge':'blank',uniqueAbilityId:'blank'}});
+const m=(id,power=20,multihit)=>({id,name:id,definition:{type:'fuego',category:'physical',power,accuracy:100,criticalChance:0,priority:0,rules:[],...(multihit?{multihit}:{})}});
+const catalog={entities:{rhino:e('rhino'),target:e('target')},moves:{m:m('m',20,{min:3,max:3}),n:m('n'),o:m('o'),p:m('p')},abilities:{charge:{id:'charge',definition:{consecutiveAttack:{speedStages:1,damagePerStack:10},rules:[]}},blank:{id:'blank',definition:{rules:[]}}},effects:{}};
+const base={catalog,left:'rhino',right:'target',turns:3,leftOrders:[{move:'m'},{move:'m'},{move:'m'}],rightOrders:[{move:'n'},{move:'n'},{move:'n'}],randomSource:()=>0.7};
+const r=simulate(base);
+assert.equal(r.left.consecutiveCounters.attack,3);
+assert.equal(r.left.stages.speed,3);
+assert.equal(r.log.filter(x=>x.includes('Golpe ')).length,9);
+assert.deepEqual(simulate({...base,randomTape:r.randomTape}),r);
+const miss=simulate({...base,turns:2,leftOrders:[{move:'m'},{move:'m'}],randomSource:()=>0.7,catalog:{...catalog,moves:{...catalog.moves,m:{...catalog.moves.m,definition:{...catalog.moves.m.definition,accuracy:1}}}}});
+assert.equal(miss.left.consecutiveCounters.attack,0);
+const idle=simulate({...base,turns:2,leftOrders:[{move:'m'},{switch:1}],leftTeam:['rhino','target'],rightTeam:['target','rhino']});
+assert.equal(idle.leftTeam[0].consecutiveCounters.attack??0,0);
+console.log('alpha 0.4: multihit, charge, RNG replay, miss and switching OK');

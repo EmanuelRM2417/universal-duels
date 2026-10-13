@@ -5,9 +5,10 @@ const html=fs.readFileSync(new URL('./public/editor/index.html',import.meta.url)
 assert.match(worker,/\/editor-api\/publish-alpha/);
 assert.match(worker,/public-v1:snapshot:/);
 assert.match(worker,/public-v1:current/);
-assert.match(worker,/published\/\$\{revision\}\/sprites/);
-assert.match(worker,/published\/\$\{revision\}\/type-icons/);
-assert.match(worker,/Falta el sprite/);
+const assets=fs.readFileSync(new URL('./release-assets.js',import.meta.url),'utf8');
+assert.match(assets,/published\/\$\{revision\}\/sprites/);
+assert.match(assets,/published\/\$\{revision\}\/type-icons/);
+assert.match(assets,/Falta el sprite/);
 assert.match(html,/id="publishAlpha"/);
 assert.match(html,/Cargar parche al público/);
 assert.match(html,/publishPatchStatus/);

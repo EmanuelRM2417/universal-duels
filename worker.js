@@ -1,7 +1,11 @@
 import { validateDefinition } from "./catalog-validation.js";
 import { simulate } from "./battle-engine.js";
+import {validateRelease,publicationDiff,nextHistory,selectRelease} from "./release-control.js";
+import {normalizeRegressionCase,runRegressionCase} from "./regression-suite.js";
+import {releaseResources} from "./release-assets.js";
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
+const accessKeySets=new Map(); // Reuse fetched Access JWKS inside a warm Worker isolate.
 
 // Respuestas JSON.
 const cors = {
@@ -39,9 +43,8 @@ async function verifyEditorAccess(request, env) {
 
     const issuer = `https://${teamDomain}`;
 
-    const keys = createRemoteJWKSet(
-      new URL(`${issuer}/cdn-cgi/access/certs`)
-    );
+    let keys=accessKeySets.get(issuer);
+    if(!keys){keys=createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));accessKeySets.set(issuer,keys);}
 
     const { payload } = await jwtVerify(token, keys, {
       issuer,
@@ -75,6 +78,32 @@ const privateJson = (data, status = 200) =>
       "Cache-Control": "no-store"
     }
   });
+
+const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses'];
+async function candidateFromDrafts(env){
+  const catalog={};
+  for(const category of RELEASE_CATEGORIES){
+    const prefix=`catalog-v1:${category}:`;const entries=[];let cursor, pages=0;
+    do {
+      if(++pages>100)throw Error('Hay demasiadas páginas de catálogo para preparar el parche.');
+      const page=await env.EDITOR_DRAFTS.list({prefix,limit:1000,...(cursor?{cursor}:{})});
+      const values=await Promise.all(page.keys.map(k=>env.EDITOR_DRAFTS.get(k.name,'json')));
+      entries.push(...values.filter(Boolean));cursor=page.list_complete?undefined:page.cursor;
+    }while(cursor);
+    catalog[category]=Object.fromEntries(entries.map(e=>[e.id,e]));
+  }
+  const chartDraft=await env.EDITOR_DRAFTS.get('type-chart-draft','json');
+  return {catalog,chart:chartDraft?.chart||chartDraft};
+}
+async function releaseRegression(env,catalog,chart){
+  const tests=(await env.EDITOR_DRAFTS.get('alpha04:regression-tests:v1','json'))||[];
+  const results=[];
+  for(const test of tests.slice(0,10)){
+    try{results.push(runRegressionCase(test,catalog,chart));}
+    catch(e){results.push({name:test.name,passed:false,error:String(e.message||e)});}
+  }
+  return {passed:results.every(t=>t.passed)&&tests.length<=10,count:results.length,remaining:Math.max(0,tests.length-10),results};
+}
 
 export default {
   async fetch(request, env) {
@@ -640,56 +669,110 @@ if (
         });
       }
 
-      // Publicar manualmente un parche. Guardar borradores nunca modifica el juego público.
-      if ((url.pathname === "/editor-api/publish-alpha" || url.pathname === "/editor-api/publish-patch") && request.method === "POST") {
-        if (request.headers.get("Origin") !== url.origin) return privateJson({ error: "Origen no autorizado." }, 403);
-        if (!env.EDITOR_SPRITES) return privateJson({ error: "Almacenamiento R2 no conectado." }, 500);
-        try {
-          const catalog = {};
-          for (const category of CATALOG_CATEGORIES) {
-            const prefix = `catalog-v1:${category}:`;
-            const entries = []; let cursor;
-            do {
-              const page = await env.EDITOR_DRAFTS.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
-              const values = await Promise.all(page.keys.map(key => env.EDITOR_DRAFTS.get(key.name, "json")));
-              entries.push(...values.filter(Boolean));
-              cursor = page.list_complete ? undefined : page.cursor;
-            } while (cursor);
-            catalog[category] = Object.fromEntries(entries.map(entry => [entry.id, entry]));
+      // Regression suite lives in one private KV value; no list() per test.
+      if(url.pathname==='/editor-api/regression'){
+        if(!['GET','POST'].includes(request.method))return privateJson({error:'Método no permitido.'},405);
+        if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        try{
+          const key='alpha04:regression-tests:v1',tests=await env.EDITOR_DRAFTS.get(key,'json')||[];
+          if(request.method==='GET')return privateJson({ok:true,tests});
+          const raw=await request.text();if(raw.length>25000)return privateJson({error:'Solicitud demasiado grande.'},413);
+          const body=JSON.parse(raw);
+          if(body.action==='save'){
+            const test=normalizeRegressionCase(body.test),index=tests.findIndex(t=>t.name===test.name);
+            if(index<0&&tests.length>=30)return privateJson({error:'Máximo de 30 pruebas guardadas.'},400);
+            if(index>=0)tests[index]=test;else tests.push(test);
+            await env.EDITOR_DRAFTS.put(key,JSON.stringify(tests));return privateJson({ok:true,count:tests.length});
           }
-          if (!Object.keys(catalog.entities || {}).length) return privateJson({ error: "No hay personajes guardados para publicar." }, 400);
-          if (!Object.keys(catalog.moves || {}).length) return privateJson({ error: "No hay movimientos guardados para publicar." }, 400);
-          const chartDraft = await env.EDITOR_DRAFTS.get("type-chart-draft", "json");
-          const chart = chartDraft?.chart || chartDraft;
-          if (!chart || typeof chart !== "object") return privateJson({ error: "Guardá primero la tabla de tipos." }, 400);
-          const publishedAt = new Date().toISOString();
-          const revision = `patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
-          const snapshot = { ok: true, version: "0.2.0-alpha", revision, publishedAt, types: TYPES, chart, catalog };
-          const spriteIds = [...new Set(Object.values(catalog.entities).map(e => e?.definition?.spriteId).filter(Boolean))];
-          for (const id of spriteIds) {
-            const source = await env.EDITOR_SPRITES.get(`drafts/${id}.png`);
-            if (!source) return privateJson({ error: `Falta el sprite ${id}. El parche no se publicó.` }, 400);
-            await env.EDITOR_SPRITES.put(`published/${revision}/sprites/${id}.png`, source.body, { httpMetadata: source.httpMetadata, customMetadata: source.customMetadata });
+          if(body.action==='delete'){
+            if(typeof body.name!=='string')return privateJson({error:'Nombre inválido.'},400);
+            const remaining=tests.filter(t=>t.name!==body.name);
+            await env.EDITOR_DRAFTS.put(key,JSON.stringify(remaining));return privateJson({ok:true,count:remaining.length});
           }
-          for (const id of TYPES) {
-            const source = await env.EDITOR_SPRITES.get(`type-icons/${id}.png`);
-            if (source) await env.EDITOR_SPRITES.put(`published/${revision}/type-icons/${id}.png`, source.body, { httpMetadata: source.httpMetadata, customMetadata: source.customMetadata });
+          if(body.action==='run'){
+            const selected=body.name?tests.filter(t=>t.name===body.name):tests.slice(0,10);
+            if(!selected.length)return privateJson({error:'No se encontraron pruebas guardadas.'},404);
+            const {catalog,chart}=await candidateFromDrafts(env),results=[];
+            for(const test of selected){try{results.push(runRegressionCase(test,catalog,chart));}
+              catch(e){results.push({name:test.name,passed:false,error:String(e.message||e)});}}
+            return privateJson({ok:true,passed:results.every(r=>r.passed),results});
           }
-          for (const category of ["weathers","scenarios"]) {
-            for (const entry of Object.values(catalog[category] || {})) {
-              const imageId=entry?.definition?.imageId;
-              if(!imageId)continue;
-              const source=await env.EDITOR_SPRITES.get(`environment/${category}/${imageId}.png`);
-              if(!source)return privateJson({error:`Falta el recurso visual ${category}/${imageId}. El parche no se publicó.`},400);
-              await env.EDITOR_SPRITES.put(`published/${revision}/environment/${category}/${imageId}.png`,source.body,{httpMetadata:source.httpMetadata,customMetadata:source.customMetadata});
+          if(body.action==='compare'){
+            if(!env.PUBLIC_CONTENT)return privateJson({error:'PUBLIC_CONTENT no está conectado.'},503);
+            const latest=await env.PUBLIC_CONTENT.get('public-v1:current','json');
+            const published=body.revision?await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${body.revision}`,'json'):latest;
+            if(!published?.catalog||!published?.chart)return privateJson({error:'La versión pública seleccionada no existe.'},404);
+            const {catalog,chart}=await candidateFromDrafts(env),results=[];
+            for(const test of tests.slice(0,10)){
+              try{
+                const draft=runRegressionCase(test,catalog,chart),baseline=runRegressionCase(test,published.catalog,published.chart);
+                results.push({name:test.name,draftPass:draft.passed,publishedPass:baseline.passed,equal:JSON.stringify(draft.actual)===JSON.stringify(baseline.actual),draft:draft.actual,published:baseline.actual});
+              }catch(e){results.push({name:test.name,equal:false,error:String(e.message||e)});}
             }
+            return privateJson({ok:true,revision:published.revision,total:tests.length,compared:results.length,results});
           }
-          await env.EDITOR_DRAFTS.put(`public-v1:snapshot:${revision}`, JSON.stringify(snapshot), { expirationTtl: 2592000 });
-          await env.EDITOR_DRAFTS.put("public-v1:current", JSON.stringify(snapshot));
-          return privateJson({ ok: true, message: "Parche cargado al público.", revision, publishedAt, entities: spriteIds.length });
-        } catch (error) {
-          return privateJson({ error: "No se pudo cargar el parche: " + String(error?.message || error) }, 500);
-        }
+          if(body.action==='capture'){
+            const test=normalizeRegressionCase(body.test),{catalog,chart}=await candidateFromDrafts(env);
+            return privateJson({ok:true,result:runRegressionCase(test,catalog,chart)});
+          }
+          return privateJson({error:'Acción desconocida.'},400);
+        }catch(e){return privateJson({error:String(e.message||e)},400);}
+      }
+      // Vista previa, historial y publicación: ninguna ruta de consulta publica contenido.
+      if(url.pathname==='/editor-api/release-preview'&&['GET','POST'].includes(request.method)){
+        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
+        try{
+          if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          const draft=await candidateFromDrafts(env),current=await env.PUBLIC_CONTENT.get('public-v1:current','json');
+          const selection=request.method==='POST'?(await request.json()).selection:undefined;
+          const chosen=selectRelease(current?.catalog,draft.catalog,selection),validation=validateRelease(chosen.catalog,draft.chart);
+          const regression=validation.ok?await releaseRegression(env,chosen.catalog,draft.chart):{passed:false,count:0,results:[]};
+          return privateJson({ok:true,validation,regression,diff:publicationDiff(current,{catalog:draft.catalog}),autoIncluded:chosen.autoIncluded,currentRevision:current?.revision||null});
+        }catch(e){return privateJson({error:String(e.message||e)},500);}
+      }
+      if(url.pathname==='/editor-api/release-history'&&request.method==='GET'){
+        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
+        const [current,history]=await Promise.all([env.PUBLIC_CONTENT.get('public-v1:current','json'),env.PUBLIC_CONTENT.get('public-v1:history','json')]);
+        return privateJson({ok:true,currentRevision:current?.revision||null,history:history||[]});
+      }
+      if(url.pathname==='/editor-api/release-rollback'&&request.method==='POST'){
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
+        try{const body=await request.json();
+          if(body.confirm!==true||typeof body.revision!=='string'||!/^patch-[a-z0-9-]{1,70}$/.test(body.revision))return privateJson({error:'Confirmación o revisión inválida.'},400);
+          const history=await env.PUBLIC_CONTENT.get('public-v1:history','json')||[];
+          if(!history.some(item=>item.revision===body.revision))return privateJson({error:'Versión no incluida en historial.'},404);
+          const restored=await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${body.revision}`,'json');
+          if(!restored)return privateJson({error:'Snapshot de esa versión no disponible; no se modificó el público.'},409);
+          // Solo el puntero mutable cambia. Los combates en curso conservan su revisión.
+          await env.PUBLIC_CONTENT.put('public-v1:current',JSON.stringify(restored));
+          return privateJson({ok:true,revision:restored.revision,message:'Reversión manual aplicada.'});
+        }catch(e){return privateJson({error:String(e.message||e)},500);}
+      }
+      if((url.pathname==='/editor-api/publish-alpha'||url.pathname==='/editor-api/publish-patch')&&request.method==='POST'){
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        if(!env.PUBLIC_CONTENT||!env.EDITOR_SPRITES)return privateJson({error:'Falta conectar PUBLIC_CONTENT o EDITOR_SPRITES.'},503);
+        try{
+          const body=await request.json().catch(()=>({}));
+          if(body.confirm!==true)return privateJson({error:'Se requiere confirmación manual explícita.'},400);
+          const draft=await candidateFromDrafts(env);
+          const current=await env.PUBLIC_CONTENT.get('public-v1:current','json');
+          const chosen=selectRelease(current?.catalog,draft.catalog,body.selection),catalog=chosen.catalog,chart=draft.chart,validation=validateRelease(catalog,chart);
+          if(!validation.ok)return privateJson({error:'Parche con errores técnicos; no publicado.',validation},422);
+          const regression=await releaseRegression(env,catalog,chart);
+          if((!regression.passed||validation.warnings.length)&&body.confirmWarnings!==true)return privateJson({error:'Revisá las advertencias y pruebas fallidas antes de autorizar la publicación.',validation,regression},409);
+          if(body.expectedRevision!==(current?.revision||null))return privateJson({error:'El contenido publicado cambió; revisá otra vez la vista previa.'},409);
+          const publishedAt=new Date().toISOString(),revision=`patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0,8)}`;
+          const resources=await releaseResources(env,catalog,revision,current||{},TYPES);
+          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,assets:resources.assets};
+          // Recursos preparados antes del cambio del puntero público.
+          await env.PUBLIC_CONTENT.put(`public-v1:snapshot:${revision}`,JSON.stringify(candidate));
+          const history=await env.PUBLIC_CONTENT.get('public-v1:history','json');
+          const previousEntry=current?.revision?{revision:current.revision,publishedAt:current.publishedAt||'versión anterior',counts:{}}:null;
+          await env.PUBLIC_CONTENT.put('public-v1:history',JSON.stringify(nextHistory(previousEntry?nextHistory(history,previousEntry):history,{revision,publishedAt,counts:validation.counts})));
+          await env.PUBLIC_CONTENT.put('public-v1:current',JSON.stringify(candidate));
+          return privateJson({ok:true,revision,publishedAt,resources:{copied:resources.copied,reused:resources.reused},validation,regression,message:'Parche publicado manualmente.'});
+        }catch(e){return privateJson({error:'Parche no publicado: '+String(e.message||e)},500);}
       }
 
       return privateJson({

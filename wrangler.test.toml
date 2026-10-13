@@ -1,4 +1,6 @@
-name = "universal-duels-test"
+# NO desplegar sin configurar DOS KV aislados (borradores y contenido público) y R2 aislado.
+# PUBLIC_CONTENT de pruebas DEBE coincidir con el PUBLIC_CONTENT de wrangler.test.toml del juego.
+name = "universal-duels-alpha04-editor-test"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
@@ -12,11 +14,15 @@ new_sqlite_classes = ["Room"]
 
 [[kv_namespaces]]
 binding = "EDITOR_DRAFTS"
-id = "453d2d63210e42149663b5771e76a803"
+id = "CONFIGURE_ISOLATED_TEST_KV_NAMESPACE_FIRST"
+
+[[kv_namespaces]]
+binding = "PUBLIC_CONTENT"
+id = "CONFIGURE_ISOLATED_TEST_PUBLIC_CONTENT_KV"
 
 [[r2_buckets]]
 binding = "EDITOR_SPRITES"
-bucket_name = "universal-duels-sprites-test"
+bucket_name = "CONFIGURE_ISOLATED_TEST_SPRITES_BUCKET"
 
 [assets]
 directory = "./public"
