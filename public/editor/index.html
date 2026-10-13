@@ -285,6 +285,13 @@
   <main class="studio-main"><div class="view-heading"><span id="viewEyebrow">ESTUDIO / INICIO</span><h1 id="viewTitle">Tu espacio de creación</h1><p id="viewDescription">Organizá tus recursos y mecánicas desde un solo lugar.</p></div>
 
   <div class="panel" data-studio-view="home">
+    <section class="detail-section" aria-label="Publicación y versiones">
+      <h3>Publicación manual y control de versiones</h3>
+      <p>Revisá los cambios y errores técnicos antes de publicar. Nada se publica automáticamente.</p>
+      <button type="button" id="releasePreview">Revisar parche</button>
+      <button type="button" id="releaseHistory">Historial y reversión</button>
+      <div id="releaseChoices" style="text-align:left;display:grid;gap:6px;margin-top:8px"></div><pre id="releaseDetails" style="white-space:pre-wrap;overflow-wrap:anywhere;text-align:left" aria-live="polite">Sin revisar.</pre>
+    </section>
     <h2>Sprites de entidades y notas</h2>
 
     <p>Bienvenido al editor de Universal Duels.</p>
@@ -473,10 +480,18 @@
         <label>Control J1 <select id="simModeLeft"><option value="manual">Manual</option><option value="auto">RNG</option></select><small>Manual: vos decidís. RNG: el motor elige.</small></label><label>Control J2 <select id="simModeRight"><option value="auto">RNG</option><option value="manual">Manual</option></select><small>Podés jugar contra RNG o controlar ambos lados.</small></label>
         <label>Clima inicial <select id="simWeather"><option value="">Ninguno</option></select></label><label>Campo inicial <select id="simField"><option value="">Ninguno</option></select></label><label>Escenario inicial <select id="simScenario"><option value="">Ninguno</option></select></label>
       </div>
-      <input id="simTurns" type="hidden" value="50"><input id="simLeftMove" type="hidden"><input id="simRightMove" type="hidden">
+      <input id="simTurns" type="hidden" value="50"><select id="simLeftMove" hidden></select><select id="simRightMove" hidden></select>
       <button type="button" id="simRun">Iniciar nueva batalla</button><button type="button" id="simNext" hidden>Resolver ronda</button>
     </details>
     <p id="simStatus" role="status">Elegí los combatientes para comenzar.</p>
+    <section class="detail-section" aria-label="Pruebas guardadas" style="text-align:left">
+      <h3>Regresión del motor · Alpha 0.4</h3>
+      <p>Guardá un caso con resultado esperado y repetilo con la misma aleatoriedad interna. No publica contenido.</p>
+      <button type="button" id="saveRegression">Guardar prueba del combate actual</button>
+      <button type="button" id="runRegression">Ejecutar pruebas guardadas</button>
+      <button type="button" id="compareRegression">Comparar con la versión pública</button>
+      <pre id="regressionStatus" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite">Sin pruebas ejecutadas.</pre>
+    </section>
     <div class="battle-shell" id="battleShell">
       <div class="battle-toolbar"><strong>Vista:</strong><select id="battlePerspective"><option value="left">Jugador 1</option><option value="right">Jugador 2</option></select><div class="battle-speed"><span>Velocidad:</span><button type="button" data-speed="normal" aria-pressed="true">Normal</button><button type="button" data-speed="fast" aria-pressed="false">Rápida</button><button type="button" data-speed="x2" aria-pressed="false">×2</button></div><span class="spacer"></span><button type="button" data-battle-modal="team">Info del equipo</button><button type="button" data-battle-modal="player">Efectos jugador</button><button type="button" data-battle-modal="enemy">Efectos rival</button><button type="button" data-battle-modal="environment">Detalles del entorno</button><button type="button" data-battle-modal="types">Tabla de tipos</button><button type="button" data-battle-modal="log">Battle log</button></div>
       <div class="battle-stage" id="battleStage"><div class="battle-empty">Iniciá una batalla para verla aquí.</div></div>
@@ -1061,23 +1076,23 @@ const response = await fetch(
     });
     const typeOptions = [["","Elegir tipo…"],...chartTypes.map(([id,label]) => [id,label])];
     const statOptions = [["attack","Ataque"],["defense","Defensa"],["specialAttack","Ataque especial"],["specialDefense","Defensa especial"],["speed","Velocidad"],["accuracy","Precisión"],["evasion","Evasión"],["criticalChance","Probabilidad de crítico"]];
-    const eventOptions = [["","Elegir evento…"],["on_enter","Al entrar al campo"],["turn_start","Inicio de turno"],["turn_end","Final de turno"],["round_end","Final de ronda"],["on_attack","Al atacar"],["on_hit","Al acertar"],["on_damage_taken","Al recibir daño"],["manual","Al usar"],["on_status","Mientras tenga el estado (automático)"]];
+    const eventOptions = [["","Elegir evento…"],["on_enter","Al entrar al campo"],["on_death","Al morir (KO confirmado)"],["turn_start","Inicio de turno"],["turn_end","Final de turno"],["round_end","Final de ronda"],["on_attack","Al atacar"],["on_hit","Al acertar"],["on_damage_taken","Al recibir daño"],["manual","Al usar"],["on_status","Mientras tenga el estado (automático)"]];
     const moveEventOptions = [["","Elegir evento…"],["manual","Al usar el movimiento"],["manual_doubles","Al usarlo en Doubles"],["on_attack","Al atacar"],["on_hit","Al acertar"]];
     const conditionOptions = [["","Elegir condición…"],["always","Siempre"],["hp_below","PS por debajo de (%)"],["hp_above","PS por encima de (%)"],["weather_is","Clima activo"],["field_is","Campo activo"],["has_status","Tiene alteración de estado"],["has_type","Tiene tipo"],["was_hit_by_type","Recibió tipo"],["stat_below","Velocidad actual por debajo de"],["in_doubles","La batalla es Doubles"]];
     const targetOptions = [["","Elegir objetivo…"],["self","Usuario"],["target","Objetivo del movimiento / contexto"],["ally","Compañero"],["ally_team","Equipo aliado activo"],["enemy_team","Equipo contrario activo"],["all","Todos menos el usuario"],["all_active","Todos los activos (compatibilidad)"]];
-    const actionOptions = [["","Elegir acción…"],["damage","Causar daño (% PS máximos)"],["heal","Recuperar PS (% PS máximos)"],["heal_from_damage","Recuperar PS según daño infligido (%)"],["stat_change","Modificar niveles de estadística"],["apply_status","Aplicar alteración de estado"],["remove_status","Eliminar estado"],["set_weather","Activar clima"],["set_field","Activar campo"],["set_scenario","Activar escenario"],["environment_immunity","Inmunidad a entorno (weathers / fields / scenarios / all)"],["prevent_environment","Impedir activar entorno (weathers / fields / scenarios / all)"],["suppress_abilities","Anular habilidades"],["restrict_moves","Restringir movimientos"],["modify_active_cooldowns","Modificar cooldowns activos del objetivo"],["cooldown_on_use","Modificar cooldown al usar movimientos"],["immunity","Inmunidad a daño"],["damage_multiplier","Ajustar daño infligido (%)"],["switch_character","Cambiar personaje"]];
+    const actionOptions = [["","Elegir acción…"],["damage","Causar daño (% PS máximos)"],["heal","Recuperar PS (% PS máximos)"],["resurrect","Resucitar personaje KO (% PS máximos)"],["heal_from_damage","Recuperar PS según daño infligido (%)"],["stat_change","Modificar niveles de estadística"],["apply_status","Aplicar alteración de estado"],["remove_status","Eliminar estado"],["set_weather","Activar clima"],["set_field","Activar campo"],["set_scenario","Activar escenario"],["environment_immunity","Inmunidad a entorno (weathers / fields / scenarios / all)"],["prevent_environment","Impedir activar entorno (weathers / fields / scenarios / all)"],["suppress_abilities","Anular habilidades"],["restrict_moves","Restringir movimientos"],["modify_active_cooldowns","Modificar cooldowns activos del objetivo"],["cooldown_on_use","Modificar cooldown al usar movimientos"],["immunity","Inmunidad a daño"],["damage_multiplier","Ajustar daño infligido (%) — bonos finales sumativos, 100 = neutro"],["switch_character","Cambiar personaje"]];
     const categoryBasics = {
       entities: [["tags","Etiquetas","tags"],["spriteId","Sprite","text"],["types","Tipos (1–3)","types"],["hp","PS base","number"],["attack","Ataque base","number"],["defense","Defensa base","number"],["specialAttack","Ataque especial base","number"],["specialDefense","Defensa especial base","number"],["speed","Velocidad base","number"],["globalAbilityId","Habilidad global","ref:abilities:global"],["uniqueAbilityId","Habilidad exclusiva","ref:abilities:unique"],["uniqueMoveId","Movimiento exclusivo","ref:moves:unique"],["move2Id","Movimiento 2","ref:moves:global"],["move3Id","Movimiento 3","ref:moves:global"],["move4Id","Movimiento 4","ref:moves:global"]],
       moves: [["tags","Etiquetas","tags"],["kind","Clase del movimiento","abilityKind"],["type","Tipo del movimiento","type"],["category","Categoría","category"],["targeting","Objetivo del movimiento","moveTarget"],["power","Potencia","number"],["accuracy","Precisión (%)","number"],["criticalChance","Probabilidad crítico (%)","number"],["priority","Prioridad","number"],["cooldown","Cooldown base (turnos)","number"]],
-      abilities: [["tags","Etiquetas","tags"],["kind","Clase de habilidad","abilityKind"]],
+      abilities: [["tags","Etiquetas","tags"],["kind","Clase de habilidad","abilityKind"],["chargeDamage","Carga: bono de daño por ataque (%)","number"],["chargeSpeed","Carga: niveles de Velocidad por ataque","number"],["surviveChance","Sobrevivir: probabilidad (%)","number"],["surviveHp","Sobrevivir: PS restantes (%)","number"],["surviveLimit","Sobrevivir: máximo de usos (vacío = ilimitado)","number"],["survivePriority","Sobrevivir: prioridad","number"]],
       weathers: [["imageId","Sprite / imagen del clima","text"],["visualOpacity","Opacidad visual del clima (%)","number"]], fields: [["visualColor","Color hexadecimal del suelo","colorHex"]], scenarios: [["imageId","Imagen de fondo del escenario","text"]],
       statuses: [["duration","Duración predeterminada (rondas)","number"],["visualColor","Color hexadecimal del estado","colorHex"],["visualOpacity","Opacidad visual del estado (%)","number"],["statusFilterMode","Filtro por tipo","statusFilterMode"],["statusFilterTypes","Tipos del filtro","typeMulti"]]
     };
     const fieldExplanations = {
-      spriteId:'Identificador de un PNG previamente subido. El catálogo no verifica todavía que exista en R2.', types:'Elegí entre uno y tres tipos distintos; los espacios vacíos no añaden tipo.', hp:'PS máximos base enteros entre 0 y 500. No cuentan dentro del total de stats base.', attack:'Ataque físico base entero entre 0 y 200.', defense:'Defensa física base entera entre 0 y 200.', specialAttack:'Ataque especial base entero entre 0 y 200.', specialDefense:'Defensa especial base entera entre 0 y 200.', speed:'Velocidad base entera entre 0 y 200. Ataque + Defensa + Ataque especial + Defensa especial + Velocidad no pueden superar 1000.', globalAbilityId:'Buscá por nombre una habilidad global ya guardada.', uniqueAbilityId:'Buscá por nombre una habilidad exclusiva ya guardada.', moveIds:'Los tres movimientos globales se eligen por separado y por nombre.', uniqueMoveId:'Movimiento exclusivo buscado por nombre.', type:'Tipo único de este ataque.', kind:'Clase del ataque: global se puede reutilizar; exclusivo pertenece a una sola entidad.', category:'Físico usa Ataque/Defensa; Especial usa estadísticas especiales; Estado no causa daño base.', targeting:'Define quién puede recibir el movimiento. Físico/Especial: Un objetivo, Equipo contrario o Todos. Estado admite además Sí mismo, Aliado y Equipo aliado.', power:'Potencia base entre 0 y 500. El valor 0 no causa daño base.', accuracy:'Probabilidad de acierto entre 1 y 100 %. El valor 0 significa que el movimiento nunca falla e ignora Precisión y Evasión.', criticalChance:'Probabilidad de crítico entre 0 y 50 %. El crítico añade 50 % al daño final.', priority:'Entero entre −5 y +5; desempata la Velocidad.', cooldown:'Turnos que deben pasar antes de volver a usar este movimiento. 0 significa sin cooldown.', kind:'Global se puede reutilizar; exclusiva se reserva a una entidad. Elegí una clase antes de guardar.', duration:'Rondas de vigencia. En el laboratorio 0 en clima/campo equivale a permanecer durante la prueba.', imageId:'Identificador del PNG visual. En climas se dibuja como una capa transparente repetida; en escenarios cubre el fondo.', visualOpacity:'Porcentaje de visibilidad del efecto. Recomendado: clima 8–25 %, estado 6–18 %.', visualColor:'Código hexadecimal #RRGGBB. En campos colorea únicamente el suelo; en estados tiñe levemente solo al personaje afectado.'
+      spriteId:'Identificador de un PNG previamente subido. El catálogo no verifica todavía que exista en R2.', types:'Elegí entre uno y tres tipos distintos; los espacios vacíos no añaden tipo.', hp:'PS máximos base enteros entre 0 y 500. No cuentan dentro del total de stats base.', attack:'Ataque físico base entero entre 0 y 200.', defense:'Defensa física base entera entre 0 y 200.', specialAttack:'Ataque especial base entero entre 0 y 200.', specialDefense:'Defensa especial base entera entre 0 y 200.', speed:'Velocidad base entera entre 0 y 200. Ataque + Defensa + Ataque especial + Defensa especial + Velocidad no pueden superar 1000.', globalAbilityId:'Buscá por nombre una habilidad global ya guardada.', uniqueAbilityId:'Buscá por nombre una habilidad exclusiva ya guardada.', moveIds:'Los tres movimientos globales se eligen por separado y por nombre.', uniqueMoveId:'Movimiento exclusivo buscado por nombre.', type:'Tipo único de este ataque.', kind:'Clase del ataque: global se puede reutilizar; exclusivo pertenece a una sola entidad.', category:'Físico usa Ataque/Defensa; Especial usa estadísticas especiales; Estado no causa daño base.', targeting:'Define quién puede recibir el movimiento. Físico/Especial: Un objetivo, Equipo contrario o Todos. Estado admite además Sí mismo, Aliado y Equipo aliado.', power:'Potencia base entre 0 y 500. El valor 0 no causa daño base.', accuracy:'Probabilidad base de acierto entre 1 y 100 %. Un 0 significa que nunca falla, incluso con modificadores de Precisión y Evasión. Cada nivel cambia un 5 % relativo de la probabilidad; 80 % de precisión implica 20 % de evasión base.', criticalChance:'Probabilidad de crítico base entre 0 y 50 %. Cada nivel positivo/negativo modifica 5 % de esa probabilidad de forma relativa (10 % +4 = 12 %). Si es 0 %, el primer +1 genera 6 %. El crítico añade 50 % al daño final.', priority:'Entero entre −5 y +5; desempata la Velocidad.', cooldown:'Turnos que deben pasar antes de volver a usar este movimiento. 0 significa sin cooldown.', kind:'Global se puede reutilizar; exclusiva se reserva a una entidad. Elegí una clase antes de guardar.', duration:'Rondas de vigencia. En el laboratorio 0 en clima/campo equivale a permanecer durante la prueba.', imageId:'Identificador del PNG visual. En climas se dibuja como una capa transparente repetida; en escenarios cubre el fondo.', visualOpacity:'Porcentaje de visibilidad del efecto. Recomendado: clima 8–25 %, estado 6–18 %.', visualColor:'Código hexadecimal #RRGGBB. En campos colorea únicamente el suelo; en estados tiñe levemente solo al personaje afectado.'
     };
     const ruleExplanations = {
-      event:'Momento en que el motor evalúa la regla. «Al usar» se evalúa al ejecutar un ataque o un efecto manual; los demás eventos se evalúan para habilidades.', conditionType:'Primera condición. «Siempre» no necesita valor. Los porcentajes de PS se comparan de forma estricta (menor/mayor, no igual).', conditionValue:'Solo aparece cuando la condición necesita un número. Cuando la condición referencia contenido, se muestra un buscador por nombre; para tipos se muestran los símbolos.', target:'Entidad que recibe la acción. En Singles «ambas entidades» afecta a los dos participantes. Clima y campo se aplican globalmente, independientemente del objetivo.', actionType:'Operación concreta. Solo se muestran acciones que el motor actual reconoce; no implica que el sistema competitivo esté terminado.', actionValue:'Solo aparece cuando la acción necesita una cantidad. Las referencias a contenido se eligen aparte mediante búsqueda por nombre.', operator:'Combina la condición principal con las adicionales en orden de arriba abajo. Y requiere ambas; O requiere una. No hay paréntesis anidados.', negate:'Invierte el resultado de todas las condiciones de esta regla.', stat:'Estadística modificada si elegiste «modificar niveles». Los PS no admiten niveles.', chance:'Probabilidad independiente de activación de esta regla, entre 0 y 100. Es obligatoria: elegí 0 si nunca debe activarse.', duration:'Duración en rondas de la acción, entre 0 y 9999. Para estados y efectos temporales 0 no significa indefinido; revisá la guía de limitaciones.', limit:'Máximo de activaciones por habilidad durante la prueba. 0 significa sin límite; no se reinicia al cambiar de ronda.'
+      event:'Momento en que el motor evalúa la regla. «Al usar» se evalúa al ejecutar un ataque o un efecto manual; los demás eventos se evalúan para habilidades.', conditionType:'Primera condición. «Siempre» no necesita valor. Los porcentajes de PS se comparan de forma estricta (menor/mayor, no igual).', conditionValue:'Solo aparece cuando la condición necesita un número. Cuando la condición referencia contenido, se muestra un buscador por nombre; para tipos se muestran los símbolos.', target:'Entidad que recibe la acción. En Singles «ambas entidades» afecta a los dos participantes. Clima y campo se aplican globalmente, independientemente del objetivo.', actionType:'Operación concreta. Solo se muestran acciones que el motor actual reconoce; no implica que el sistema competitivo esté terminado.', actionValue:'Solo aparece cuando la acción necesita una cantidad. Las referencias a contenido se eligen aparte mediante búsqueda por nombre.', operator:'Combina la condición principal con las adicionales en orden de arriba abajo. Y requiere ambas; O requiere una. No hay paréntesis anidados.', negate:'Invierte el resultado de todas las condiciones de esta regla.', stat:'Estadística modificada por niveles de −10 a +10. Ataque, Defensa y Velocidad: +10 % por nivel positivo y −5 % por nivel negativo (sumativo). Precisión, Evasión y Crítico: ±5 % relativo por nivel; la probabilidad base 0 % activada por +1 queda en 6 %.', chance:'Probabilidad independiente de activación de esta regla, entre 0 y 100. Es obligatoria: elegí 0 si nunca debe activarse.', duration:'Duración en rondas de la acción, entre 0 y 9999. Para estados y efectos temporales 0 no significa indefinido; revisá la guía de limitaciones.', limit:'Máximo de activaciones por habilidad durante la prueba. 0 significa sin límite; no se reinicia al cambiar de ronda.'
     };
     function optionSelect(options, value) {
       const select = document.createElement("select");
@@ -1097,7 +1112,7 @@ const response = await fetch(
       for (const [id,cat] of [['simLeft','entities'],['simRight','entities'],['simWeather','weathers'],['simField','fields'],['simScenario','scenarios']]) {
         const control=document.getElementById(id);if(!control)continue;fillReference(control,cat,control.value,['weathers','fields','scenarios'].includes(cat));
       }
-      refreshSimMoves();renderSimTeamPicker('Left');renderSimTeamPicker('Right');refreshTemplateTools(); if(catalogEntries.length)filterCatalog();
+      refreshSimMoves();renderSimTeamPicker('Left');renderSimTeamPicker('Right'); if(catalogEntries.length)filterCatalog();
     }
     function fillReference(select,category,value,allowEmpty=false,kind='') {
       let entries=(cachedCatalog[category]||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,'es'));
@@ -1129,6 +1144,7 @@ const response = await fetch(
       if (kind === 'category') return optionSelect([['','Elegir categoría…'],['physical','Físico'],['special','Especial'],['status','Estado']],value);
       if (kind === 'moveTarget') return optionSelect([['single','Un objetivo'],['enemy_team','Equipo contrario'],['all','Todos (menos el usuario)'],['self','Sí mismo'],['ally','Aliado'],['ally_team','Equipo aliado']],value||'single');
       if (kind === 'statusFilterMode') return optionSelect([['all','Todos los tipos'],['include','Solo incluir tipos seleccionados'],['exclude','Excluir tipos seleccionados']],value||'all');
+      if (kind === 'multihitEffects') return optionSelect([['each','Cada impacto'],['chain','Una vez después del último']],value||'each');
       if (kind === 'abilityKind') return optionSelect([['','Elegir clase…'],['global','Global'],['unique','Exclusiva']],value);
       if (kind === 'types') return typePicker((value||[]).map(x=>x==='espiritu'?'valor':x),3);
       if (kind === 'typeMulti') return typePicker((value||[]).map(x=>x==='espiritu'?'valor':x),20);
@@ -1181,7 +1197,7 @@ const response = await fetch(
       const wrappers={event:event.closest('label'),conditionType:conditionType.closest('label'),conditionValue:conditionValue.closest('label'),target:target.closest('label'),actionValue:actionValue.closest('label'),switchMode:switchMode.closest('label'),stat:stat.closest('label'),damageClass:damageClass.closest('label'),immFilter:immFilter.closest('label'),operator:operator.closest('label'),negate:negate.closest('label'),chance:chance.closest('label'),duration:duration.closest('label'),limit:limit.closest('label')};
       function setConditionReference(){conditionRefHolder.replaceChildren();const cat={weather_is:'weathers',field_is:'fields',has_status:'statuses'}[conditionType.value];const typeCond=['has_type','was_hit_by_type'].includes(conditionType.value);conditionRefWrap.hidden=!cat&&!typeCond;if(typeCond){const pick=typeSinglePicker(conditionValue.value);const hidden=document.createElement('input');hidden.type='hidden';hidden.dataset.conditionRef='';hidden.value=pick.value;pick.addEventListener('change',()=>{hidden.value=pick.value;conditionValue.value=pick.value;});conditionRefHolder.append(pick,hidden);conditionValue.value=hidden.value;}else if(cat){const ref=referenceSearch(cat,conditionValue.value);const hidden=ref.querySelector('[data-reference-value]');hidden.dataset.conditionRef='';hidden.addEventListener('change',()=>conditionValue.value=hidden.value);conditionRefHolder.append(ref);conditionValue.value=hidden.value;}}
       function setReference(){actionRefHolder.replaceChildren();const cat=ruleReferenceCategory(actionType.value);actionRefWrap.hidden=!cat;if(cat){const ref=referenceSearch(cat,actionValue.value);const hidden=ref.querySelector('[data-reference-value]');hidden.dataset.ruleRef='';hidden.addEventListener('change',()=>actionValue.value=hidden.value);actionRefHolder.append(ref);actionValue.value=hidden.value;}}
-      function adapt(){const a=actionType.value,c=conditionType.value;const valueActions=['damage','heal','heal_from_damage','stat_change','environment_immunity','prevent_environment','modify_active_cooldowns','cooldown_on_use','damage_multiplier'];const ref=!!ruleReferenceCategory(a);wrappers.actionValue.hidden=!valueActions.includes(a)||ref;wrappers.switchMode.hidden=a!=='switch_character';setConditionReference();wrappers.stat.hidden=a!=='stat_change';wrappers.damageClass.hidden=a!=='immunity';wrappers.immFilter.hidden=a!=='immunity';immTypesWrap.hidden=a!=='immunity'||immFilter.value==='all';conditionValue.closest('label').hidden=['','always','in_doubles'].includes(c);setReference();
+      function adapt(){const a=actionType.value,c=conditionType.value;const valueActions=['damage','heal','resurrect','heal_from_damage','stat_change','environment_immunity','prevent_environment','modify_active_cooldowns','cooldown_on_use','damage_multiplier'];const ref=!!ruleReferenceCategory(a);wrappers.actionValue.hidden=!valueActions.includes(a)||ref;wrappers.switchMode.hidden=a!=='switch_character';setConditionReference();wrappers.stat.hidden=a!=='stat_change';wrappers.damageClass.hidden=a!=='immunity';wrappers.immFilter.hidden=a!=='immunity';immTypesWrap.hidden=a!=='immunity'||immFilter.value==='all';conditionValue.closest('label').hidden=['','always','in_doubles'].includes(c);setReference();
         const durationRelevant=['apply_status','suppress_abilities','restrict_moves','environment_immunity','prevent_environment','cooldown_on_use','immunity'].includes(a);wrappers.duration.hidden=!durationRelevant;wrappers.limit.hidden=catalogCategory.value!=='abilities';
         if(isStatus){for(const k of ['event','conditionType','conditionValue','target','operator','negate','limit','duration'])wrappers[k].hidden=true;conditionRefWrap.hidden=true;extra.hidden=true;addCondition.hidden=true;}
         if(isMove){wrappers.limit.hidden=true;}
@@ -1212,7 +1228,7 @@ const response = await fetch(
       const timing=optionSelect([['','Elegir momento…'],['continuous','Continuo mientras el entorno esté activo'],['turn_start','Inicio de turno'],['turn_end','Final de turno'],['round_end','Final de ronda']],effect.timing||'');const timingWrap=field('Momento de activación',timing,'timing','Continuo mantiene el efecto mientras exista el clima/campo/escenario. Los otros momentos se evalúan una vez cuando ocurre ese evento.');
       function adapt(){const t=type.value;typesWrap.hidden=filter.value==='all';valueWrap.hidden=!['damage_percent','heal_percent','stat_change','critical_change','cooldown_change','cooldown_on_use'].includes(t);statWrap.hidden=t!=='stat_change';damageClassWrap.hidden=t!=='immunity';immunityModeWrap.hidden=t!=='immunity';immunityTypesWrap.hidden=t!=='immunity'||immunityMode.value==='all';
         timingWrap.hidden=!t;for(const opt of timing.options){if(!opt.value){opt.disabled=false;continue;}const periodic=['damage_percent','heal_percent','cooldown_change'].includes(t),persistentOnly=['cooldown_on_use','immunity'].includes(t);opt.disabled=periodic?opt.value==='continuous':persistentOnly?opt.value!=='continuous':false;}if(timing.selectedOptions[0]?.disabled)timing.value='';
-        if(t==='critical_change')valueWrap.querySelector('small').textContent='Crítico: −10 a +10 niveles; cada nivel equivale a 5 puntos porcentuales.';
+        if(t==='critical_change')valueWrap.querySelector('small').textContent='Crítico: −10 a +10 niveles; cada nivel equivale al 5 % relativo de la probabilidad base. Por ejemplo 10 % +4 = 12 %, y 0 % +1 = 6 %.';
         else valueWrap.querySelector('small').textContent='Daño y curación: 0–100 % de PS máximos. Estadísticas: −10 a +10 niveles.';
       }
       type.addEventListener('change',adapt);filter.addEventListener('change',adapt);immunityMode.addEventListener('change',adapt);adapt();
@@ -1230,6 +1246,10 @@ const response = await fetch(
     function renderBuilder(definition) {
       loadedDefinition = structuredClone(definition);
       let visualDefinition = definition;
+      if(catalogCategory.value==='moves')visualDefinition={...definition,multihitMin:definition.multihit?.min??'',multihitMax:definition.multihit?.max??'',multihitEffects:definition.multihit?.effects||'each'};
+      if(catalogCategory.value==='abilities')visualDefinition={...definition,
+        chargeDamage:definition.consecutiveAttack?.damagePerStack??'',chargeSpeed:definition.consecutiveAttack?.speedStages??'',
+        surviveChance:definition.survive?.chance??'',surviveHp:definition.survive?.hpPercent??'',surviveLimit:definition.survive?.limit??'',survivePriority:definition.survive?.priority??''};
       if(catalogCategory.value==='entities'){
         const moveIds=Array.isArray(definition.moveIds)?definition.moveIds:[];
         visualDefinition={...definition,move2Id:moveIds[0]||'',move3Id:moveIds[1]||'',move4Id:moveIds[2]||''};
@@ -1251,6 +1271,18 @@ const response = await fetch(
         if (kind === 'types' || kind === 'typeMulti') { result[key]=[...control.querySelectorAll('[data-type-choice]:checked')].map(x=>x.value); } else if(kind==='tags'){result[key]=control.value.split(',').map(x=>x.trim()).filter(Boolean);} else if(kind.startsWith('ref:')){result[key]=control.querySelector('[data-reference-value]').value;} else if(kind==='number') result[key]=control.value===''?null:Number(control.value); else result[key]=(control.value??'').trim();
       }
       if(catalogCategory.value==='entities'){result.moveIds=[result.move2Id,result.move3Id,result.move4Id].filter(Boolean);delete result.move2Id;delete result.move3Id;delete result.move4Id;}
+      if(catalogCategory.value==='moves'){
+        if(result.multihitMin!==null){result.multihit={min:result.multihitMin,max:result.multihitMax??result.multihitMin,effects:result.multihitEffects||'each'};}
+        else delete result.multihit;
+        delete result.multihitMin;delete result.multihitMax;delete result.multihitEffects;
+      }
+      if(catalogCategory.value==='abilities'){
+        if(result.chargeDamage!==null||result.chargeSpeed!==null)result.consecutiveAttack={damagePerStack:result.chargeDamage??10,speedStages:result.chargeSpeed??1};else delete result.consecutiveAttack;
+        if(result.surviveChance!==null||result.surviveHp!==null||result.surviveLimit!==null||result.survivePriority!==null)
+          result.survive={chance:result.surviveChance??100,hpPercent:result.surviveHp??1,priority:result.survivePriority??0,...(result.surviveLimit!==null?{limit:result.surviveLimit}:{})};
+        else delete result.survive;
+        for(const k of ['chargeDamage','chargeSpeed','surviveChance','surviveHp','surviveLimit','survivePriority'])delete result[k];
+      }
       if(catalogCategory.value==='statuses'){result.typeFilter={mode:result.statusFilterMode||'all',types:result.statusFilterTypes||[]};delete result.statusFilterMode;delete result.statusFilterTypes;}
       if(environmentCategories.includes(catalogCategory.value)){result.duration=5;result.rules=[];result.fieldEffects=readEnvironmentEffects();return result;}
       result.rules = [...builderRules.children].map(row => {
@@ -1416,7 +1448,7 @@ const response = await fetch(
     const DETAIL_CATEGORY_NAMES={abilities:'Habilidad',moves:'Movimiento',effects:'Efecto',statuses:'Estado alterado',weathers:'Clima',fields:'Campo',scenarios:'Escenario'};
     function detailEntry(category,id){return(cachedCatalog[category]||[]).find(x=>x.id===id)||null;}
     function detailRef(category,id,label=''){const e=detailEntry(category,id);return e?`<button type="button" class="detail-ref" data-detail-category="${escapeHtml(category)}" data-detail-id="${escapeHtml(id)}">${escapeHtml(label||e.name)}</button>`:`<span>${escapeHtml(label||id||'—')}</span>`;}
-    function actionText(rule){const a=rule?.action||{},v=a.value,n=Number(v),ref={apply_status:'statuses',apply_effect:'effects',remove_effect:'effects',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[a.type];if(ref)return`${{apply_status:'Aplica estado',apply_effect:'Aplica efecto',remove_effect:'Elimina efecto',set_weather:'Activa clima',set_field:'Activa campo',set_scenario:'Activa escenario'}[a.type]}: ${detailRef(ref,v)}`;if(a.type==='damage')return`Causa ${escapeHtml(v)}% de PS máximos como daño`;if(a.type==='heal')return`Recupera ${escapeHtml(v)}% de PS máximos`;if(a.type==='heal_from_damage')return`Recupera ${escapeHtml(v)}% del daño infligido`;if(a.type==='stat_change')return`${n>=0?'Sube':'Baja'} ${escapeHtml(a.stat||'estadística')} ${Math.abs(n)} nivel(es)`;if(a.type==='damage_multiplier')return`Ajusta el daño en ${escapeHtml(v)}%`;if(a.type==='switch_character')return`Cambia personaje (${a.switchMode==='random'?'aleatorio':'manual'})`;if(a.type==='modify_active_cooldowns'||a.type==='cooldown_on_use')return`Modifica cooldowns en ${n>0?'+':''}${escapeHtml(v)} turno(s)`;return escapeHtml(a.type||'Sin acción');}
+    function actionText(rule){const a=rule?.action||{},v=a.value,n=Number(v),ref={apply_status:'statuses',apply_effect:'effects',remove_effect:'effects',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[a.type];if(ref)return`${{apply_status:'Aplica estado',apply_effect:'Aplica efecto',remove_effect:'Elimina efecto',set_weather:'Activa clima',set_field:'Activa campo',set_scenario:'Activa escenario'}[a.type]}: ${detailRef(ref,v)}`;if(a.type==='damage')return`Causa ${escapeHtml(v)}% de PS máximos como daño`;if(a.type==='heal')return`Recupera ${escapeHtml(v)}% de PS máximos`;if(a.type==='heal_from_damage')return`Recupera ${escapeHtml(v)}% del daño infligido`;if(a.type==='stat_change')return`${n>=0?'Sube':'Baja'} ${escapeHtml(a.stat||'estadística')} ${Math.abs(n)} nivel(es)`;if(a.type==='damage_multiplier')return`Modificador de daño final ${n>=100?'+':''}${escapeHtml(n-100)} puntos porcentuales (sumativo)`;if(a.type==='switch_character')return`Cambia personaje (${a.switchMode==='random'?'aleatorio':'manual'})`;if(a.type==='modify_active_cooldowns'||a.type==='cooldown_on_use')return`Modifica cooldowns en ${n>0?'+':''}${escapeHtml(v)} turno(s)`;return escapeHtml(a.type||'Sin acción');}
     function rulesHTML(entry){const rules=entry?.definition?.rules||[];return rules.length?rules.map((r,i)=>`<div class="detail-rule"><strong>Regla ${i+1}</strong><br>${actionText(r)}${r.chance!==undefined?` · ${escapeHtml(r.chance)}%` :''}${r.duration?` · ${escapeHtml(r.duration)} ronda(s)`:''}</div>`).join(''):'<p>Sin reglas configuradas.</p>';}
     function environmentRulesHTML(entry){const rows=entry?.definition?.fieldEffects||[];return rows.length?rows.map((e,i)=>`<div class="detail-rule"><strong>Efecto ${i+1}</strong><br>${escapeHtml(environmentEffectText(e))}</div>`).join(''):'<p>Sin efectos configurados.</p>';}
     function detailBody(category,id){const e=detailEntry(category,id);if(!e)return'<p>No se encontró este elemento.</p>';const d=e.definition||{};let tech='';if(category==='moves')tech=`<p>${escapeHtml(TYPE_NAMES[d.type]||d.type||'—')} · ${escapeHtml(({physical:'Físico',special:'Especial',status:'Estado'})[d.category]||d.category||'—')} · Pot. ${escapeHtml(d.power??'—')} · Prec. ${Number(d.accuracy)===0?'Nunca falla':escapeHtml(d.accuracy??'—')+'%'} · Prio. ${escapeHtml(d.priority??0)} · CD ${escapeHtml(d.cooldown??0)}</p>`;if(['weathers','fields','scenarios'].includes(category))tech=environmentRulesHTML(e);else if(['abilities','moves','effects','statuses'].includes(category))tech=rulesHTML(e);return`<div class="detail-section"><h4>${escapeHtml(e.name)}</h4><p>${escapeHtml(e.description||'Sin descripción.')}</p>${tech}</div>`;}
@@ -1440,11 +1472,89 @@ const response = await fetch(
     async function simPreview(){const data=await callSim(0);simSession.randomTape=data.randomTape||[];battleLastLogLength=data.log.length;battleDisplayData=cloneBattle(data);battleLastData=battleDisplayData;displayedBattleLog=data.log.slice();renderBattle(data,'');}
     document.getElementById('simRun').addEventListener('click',async()=>{const chosenLeft=simTeam('simLeftTeam'),chosenRight=simTeam('simRightTeam'),mode=document.getElementById('simBattleMode').value;if(!chosenLeft.length||!chosenRight.length){document.getElementById('simStatus').textContent='Seleccioná personajes para ambos equipos.';return;}if(mode==='doubles'&&(chosenLeft.length<2||chosenRight.length<2)){document.getElementById('simStatus').textContent='Doubles requiere al menos 2 personajes por equipo.';return;}simSession={left:chosenLeft[0],right:chosenRight[0],leftTeam:chosenLeft,rightTeam:chosenRight,weather:document.getElementById('simWeather').value,field:document.getElementById('simField').value,scenario:document.getElementById('simScenario').value,maxRounds:50,mode,modeLeft:simMode('Left'),modeRight:simMode('Right'),leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:0};battleLastLogLength=0;battleLastData=battleDisplayData=null;displayedBattleLog=[];battleActionDraft.Left=[];battleActionDraft.Right=[];await simPreview();document.getElementById('simStatus').textContent=`${mode==='doubles'?'Doubles':'Singles'} preparado.`;if(simMode('Left')==='auto'&&simMode('Right')==='auto')setTimeout(()=>simAdvance(),300);});
     simNext.addEventListener('click',()=>simAdvance());
+    const regressionStatus=document.getElementById('regressionStatus');
+    const regressionRequest=async(body)=>{const response=await fetch('/editor-api/regression',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Error de pruebas.');return data;};
+    document.getElementById('saveRegression').onclick=async()=>{
+      if(!simSession){regressionStatus.textContent='Primero iniciá una batalla.';return;}
+      const name=prompt('Nombre de la prueba (máximo 64 caracteres):');if(!name)return;
+      const s=simSession,config={mode:s.mode,leftTeam:s.leftTeam,rightTeam:s.rightTeam,turns:s.round,
+        leftOrders:s.leftOrders,rightOrders:s.rightOrders,leftReplacements:s.leftReplacements,rightReplacements:s.rightReplacements,
+        weather:s.weather,field:s.field,scenario:s.scenario,seed:1};
+      try{const captured=await regressionRequest({action:'capture',test:{name,config}});
+        const saved=await regressionRequest({action:'save',test:{name,config,expected:captured.result.actual}});
+        regressionStatus.textContent=`Prueba «${name}» guardada. Total: ${saved.count}.`;
+      }catch(e){regressionStatus.textContent='Error: '+e.message;}
+    };
+    document.getElementById('runRegression').onclick=async()=>{try{
+      const data=await regressionRequest({action:'run'});
+      regressionStatus.textContent=data.results.map(t=>`${t.passed?'✓':'✗'} ${t.name}${t.error?': '+t.error:''}`).join('\n')+
+        `\nResultado: ${data.passed?'todas pasan':'hay pruebas fallidas'}`;
+    }catch(e){regressionStatus.textContent='Error: '+e.message;}};
+
+    document.getElementById('compareRegression').onclick=async()=>{try{
+      const data=await regressionRequest({action:'compare'});
+      regressionStatus.textContent=`Versión publicada ${data.revision} · ${data.compared} de ${data.total} pruebas comparadas\n`+
+        data.results.map(t=>`${t.equal?'=':'≠'} ${t.name}${t.error?': '+t.error:''}`).join('\n')+
+        '\nUna diferencia puede ser intencional si cambiaste el contenido; revisala antes de publicar.';
+    }catch(e){regressionStatus.textContent='Error: '+e.message;}};
+    const releaseDetails=document.getElementById('releaseDetails');
+    let releasePreview=null;
+    const releaseFetch=async(url,opts)=>{const r=await fetch(url,opts),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||`HTTP ${r.status}`);return d;};
+    const summarizeChanges=diff=>Object.entries(diff||{}).filter(([k,v])=>v.added.length||v.changed.length||v.deleted.length)
+      .map(([category,v])=>`${category}: +${v.added.join(', ')||'—'} | ~${v.changed.join(', ')||'—'} | -${v.deleted.join(', ')||'—'}`).join('\n')||'Sin cambios de contenido.';
+    const releaseChoices=document.getElementById('releaseChoices');
+    function selectedRelease(){
+      const selected={};for(const checkbox of releaseChoices.querySelectorAll('input[data-release-id]:checked')){
+        (selected[checkbox.dataset.releaseCategory]??=[]).push(checkbox.dataset.releaseId);
+      }return selected;
+    }
+    async function reviewRelease(keepSelection=false){
+      const opts=keepSelection&&releaseChoices.querySelector('input')
+        ?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selection:selectedRelease()})}:undefined;
+      const d=await releaseFetch('/editor-api/release-preview',opts);releasePreview=d;
+      if(!keepSelection){
+        releaseChoices.replaceChildren();
+        for(const [cat,changes] of Object.entries(d.diff))for(const [kind,label] of [['added','Añadir'],['changed','Actualizar'],['deleted','Eliminar']])for(const id of changes[kind]){
+          const wrapper=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=true;
+          checkbox.dataset.releaseCategory=cat;checkbox.dataset.releaseId=id;
+          wrapper.appendChild(checkbox);wrapper.appendChild(document.createTextNode(` ${label}: ${cat}/${id}`));
+          releaseChoices.appendChild(wrapper);
+        }
+      }
+      releaseDetails.textContent=`Revisión actual: ${d.currentRevision||'ninguna'}\n${summarizeChanges(d.diff)}\n`+
+        `Errores: ${d.validation.errors.length}\n${d.validation.errors.join('\n')||'Ninguno'}\n`+
+        `Advertencias: ${d.validation.warnings.length}\n${d.validation.warnings.join('\n')||'Ninguna'}\n`+
+        `Dependencias añadidas automáticamente: ${(d.autoIncluded||[]).join(', ')||'ninguna'}\n`+
+        `Pruebas automáticas verificadas: ${d.regression?.count||0}; pendientes de lote adicional: ${d.regression?.remaining||0}; fallidas: ${d.regression?.results?.filter(t=>!t.passed).length||0}\n`+
+        (d.regression?.results||[]).map(t=>`${t.passed?'✓':'✗'} ${t.name}${t.error?': '+t.error:''}`).join('\n');
+      return d;
+    }
+    document.getElementById('releasePreview').onclick=async()=>{try{await reviewRelease();}catch(e){releaseDetails.textContent='Error: '+e.message;}};
+    document.getElementById('releaseHistory').onclick=async()=>{try{
+      const d=await releaseFetch('/editor-api/release-history');
+      releaseDetails.replaceChildren(document.createTextNode('Actual: '+(d.currentRevision||'ninguna')+'\n'));
+      for(const v of d.history){const row=document.createElement('div');row.style.margin='7px 0';
+        row.appendChild(document.createTextNode(`${v.revision} — ${v.publishedAt} `));
+        if(v.revision!==d.currentRevision){const button=document.createElement('button');button.textContent='Revertir a esta';
+          button.onclick=async()=>{if(!confirm('¿Volver manualmente a '+v.revision+'? Las nuevas partidas usarán esa versión.'))return;
+            try{await releaseFetch('/editor-api/release-rollback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:v.revision,confirm:true})});releasePreview=null;releaseDetails.textContent='Reversión aplicada: '+v.revision;}
+            catch(e){releaseDetails.textContent='No se revirtió: '+e.message;}};
+          row.appendChild(button);}releaseDetails.appendChild(row);
+      }
+    }catch(e){releaseDetails.textContent='Error: '+e.message;}};
     document.getElementById('publishAlpha').addEventListener('click',async()=>{
       const button=document.getElementById('publishAlpha'),status=document.getElementById('publishPatchStatus');
-      button.disabled=true;status.textContent='Cargando parche…';
-      try{const r=await fetch('/editor-api/publish-alpha',{method:'POST'}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||`HTTP ${r.status}`);status.textContent=`Publicado ${d.revision} ✓`;button.textContent='Cargar parche al público';}
-      catch(e){status.textContent='Error: '+e.message;}finally{button.disabled=false;}
+      button.disabled=true;status.textContent='Validando parche…';
+      try{
+        const d=await reviewRelease(true);
+        if(!d.validation.ok)throw Error('Hay errores técnicos. Revisá los detalles; no se publicó nada.');
+        const hasWarnings=d.validation.warnings.length||!d.regression?.passed;
+        if(hasWarnings&&!confirm('Se detectaron advertencias o pruebas de regresión fallidas.\n'+d.validation.warnings.join('; ')+'\n¿Las revisaste y querés publicar de todas formas?')){status.textContent='Publicación cancelada.';return;}
+        if(!confirm('¿PUBLICAR ahora este parche? Esta acción cambiará la versión pública para partidas nuevas.')){status.textContent='Publicación cancelada.';return;}
+        const result=await releaseFetch('/editor-api/publish-alpha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true,confirmWarnings:!!hasWarnings,expectedRevision:d.currentRevision,selection:releaseChoices.querySelector("input")?selectedRelease():undefined})});
+        status.textContent=`Publicado ${result.revision} ✓`;releasePreview=null;
+      }catch(e){status.textContent='Error: '+e.message;}finally{button.disabled=false;}
     });
     loadCatalog();
     refreshReferences();
