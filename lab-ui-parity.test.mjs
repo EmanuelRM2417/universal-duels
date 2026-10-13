@@ -20,5 +20,5 @@ assert.match(worker,/selection:\{host:null,guest:null\}/);
 assert.match(html,/type:'select_order'/);
 assert.match(html,/type:'cancel_selection'/);
 assert.match(html,/m\.type==='battle_selection'/);
-assert.ok(fs.existsSync(new URL('./.github/workflows/deploy-test.yml',import.meta.url)),'main debe conservar Deploy Universal Duels Test visible en Actions');
+assert.ok(fs.existsSync(new URL('./.github/workflows/deploy.yml',import.meta.url)),'main debe tener su workflow unico y manual');
 console.log('lab UI parity tests ok');
