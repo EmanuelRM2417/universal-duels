@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const entity=(id,ability='blank',speed=100)=>({id,name:id,definition:{types:['fuego'],hp:60,attack:100,defense:100,specialAttack:100,specialDefense:100,speed,moveIds:['strike','wait','wait'],uniqueMoveId:'wait',globalAbilityId:ability,uniqueAbilityId:'blank'}});
+const move=(id,power)=>({id,name:id,definition:{type:'fuego',category:'physical',power,accuracy:100,criticalChance:0,priority:0,rules:[]}});
+const catalog={entities:{attacker:entity('attacker','blank',120),phoenix:entity('phoenix','rebirth',80),reserve:entity('reserve')},moves:{strike:move('strike',250),wait:move('wait',0)},abilities:{blank:{id:'blank',definition:{rules:[]}},rebirth:{id:'rebirth',definition:{rules:[{event:'on_death',target:'self',action:{type:'resurrect',fixedHp:17},limit:1}]}}},effects:{}};
+const options={catalog,left:'attacker',right:'phoenix',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>0.8};
+const revived=simulate(options);
+assert.equal(revived.right.hp,17,'Al morir resurrects its owner before replacement');
+assert.deepEqual(revived.needsReplacement.right,[]);
+assert.equal(revived.deathEvents.length,1);
+assert.equal(revived.log.filter(x=>x.includes('resucita')).length,1);
+assert.deepEqual(simulate({...options,randomTape:revived.randomTape}),revived,'death replay must be deterministic');
+const knockedOut=simulate({...options,catalog:{...catalog,entities:{...catalog.entities,phoenix:entity('phoenix')}}});
+assert.equal(knockedOut.right.hp,0);
+assert.deepEqual(knockedOut.needsReplacement.right,[],'no replacement is necessary when no living reserve exists');
+console.log('alpha 0.4: death trigger, self-resurrection, deterministic replay OK');

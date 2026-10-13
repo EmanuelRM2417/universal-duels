@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const entity=id=>({id,name:id,definition:{types:['fuego'],hp:500,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['wait','wait2','wait3'],uniqueMoveId:'wait4',globalAbilityId:'blank',uniqueAbilityId:'blank'}});
+const catalog={entities:{a:entity('a'),b:entity('b')},moves:Object.fromEntries(['wait','wait2','wait3','wait4'].map(id=>[id,{id,name:'Esperar',definition:{type:'fuego',category:'status',power:0,accuracy:100,criticalChance:0,priority:0,rules:[]}}])),abilities:{blank:{id:'blank',definition:{rules:[]}}},effects:{}};
+const orders=Array.from({length:55},()=>({move:'wait'}));
+const result=simulate({left:'a',right:'b',catalog,turns:55,leftOrders:orders,rightOrders:orders,randomSource:()=>0.3});
+assert.equal(result.rounds,55,'long games must not stop after round 50');
+assert.equal(result.winner,null);
+assert.throws(()=>simulate({left:'a',right:'b',catalog,turns:301}),/Rondas entre 0 y 300/);
+console.log('alpha 0.4 long match: 55 rounds allowed; hard safety cap preserved');

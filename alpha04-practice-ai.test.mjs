@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {choosePracticeActions} from './practice-ai.js';
+const entity=id=>({id,definition:{moveIds:['weak','strong','heal'],uniqueMoveId:'unique'}});
+const move=(id,power,targeting='single')=>({id,definition:{power,type:'fuego',category:'physical',accuracy:100,targeting}});
+const catalog={entities:{a:entity('a'),b:entity('b'),c:entity('c'),d:entity('d')},moves:{weak:move('weak',10),strong:move('strong',80),heal:move('heal',0,'self'),unique:move('unique',30)}};
+const actor=(id,slot,hp=100)=>({id,activeSlot:slot,teamIndex:slot,types:['fuego'],hp,maxHp:100,currentStats:{attack:100,defense:100}});
+const singles={mode:'singles',leftActive:[actor('a',0)],rightActive:[actor('b',0)]};
+const call=(battle,difficulty='advanced',extra={})=>choosePracticeActions({battle,catalog,side:'right',difficulty,random:()=>0,...extra});
+assert.deepEqual(call(singles),{move:'strong'});
+assert.deepEqual(call(singles),call(singles));
+assert.equal(call(singles,'easy').move,'strong'); // easy can still choose strongest
+const doubles={mode:'doubles',leftActive:[actor('a',0),actor('c',1)],rightActive:[actor('b',0),actor('d',1)]};
+const choice=call(doubles);
+assert.equal(choice.actions.length,2);
+assert.equal(choice.actions[0].move,'strong');
+assert.equal(choice.actions[0].target.side,'left');
+assert.equal(choice.actions[1].target.side,'left');
+for(const a of choice.actions)assert.ok([0,1].includes(a.target.slot));
+const disabled=structuredClone(singles);disabled.rightActive[0].cooldowns={strong:2};
+assert.notEqual(call(disabled).move,'strong');
+const dead=structuredClone(doubles);dead.rightActive[1].hp=0;
+assert.equal(call(dead).actions.length,1);
+assert.throws(()=>call({...singles,rightActive:[]}),/no hay personajes activos/);
+console.log('alpha 0.4 practice AI: singles, doubles, cooldowns, KO and deterministic choices OK');
+// Integration: chosen actions are accepted and executed by the real combat engine.
+const {simulate}=await import('./battle-engine.js');
+const fullEntity=id=>({id,name:id,definition:{types:['fuego'],hp:160,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['weak','strong','heal'],uniqueMoveId:'unique',globalAbilityId:'blank',uniqueAbilityId:'blank'}});
+const combatCatalog={...catalog,entities:Object.fromEntries(['a','b','c','d'].map(id=>[id,fullEntity(id)])),abilities:{blank:{id:'blank',definition:{rules:[]}}}};
+const opening=simulate({catalog:combatCatalog,leftTeam:['a','c'],rightTeam:['b','d'],mode:'doubles',turns:0,randomSource:()=>0.25});
+const order=choosePracticeActions({battle:opening,catalog:combatCatalog,side:'right',difficulty:'advanced',random:()=>0.25});
+const replay=simulate({catalog:combatCatalog,leftTeam:['a','c'],rightTeam:['b','d'],mode:'doubles',turns:1,leftOrders:[{actions:[{slot:0,move:'weak',target:{side:'right',slot:0}},{slot:1,move:'weak',target:{side:'right',slot:1}}]}],rightOrders:[order],randomSource:()=>0.25});
+assert.equal(replay.rounds,1);
+assert.ok(replay.log.some(line=>line.includes('usó')));
+console.log('alpha 0.4 practice AI: integrated actions executed by the combat engine OK');
+// A low-HP Advanced AI may switch to a healthy reserve; Easy never uses this heuristic.
+const endangered=structuredClone(singles);
+endangered.rightActive[0].hp=10;
+endangered.rightTeam=[{...actor('b',0,10),teamIndex:0},{...actor('d',0,100),teamIndex:1}];
+endangered.rightActiveIndexes=[0];
+assert.deepEqual(call(endangered),{switch:1});
+assert.notEqual(call(endangered,'easy').switch,1);
+const endangeredDoubles=structuredClone(doubles);
+endangeredDoubles.rightActive.forEach(a=>a.hp=10);
+endangeredDoubles.rightTeam=[...endangeredDoubles.rightActive,{...actor('c',0),teamIndex:2},{...actor('a',0),teamIndex:3}];
+endangeredDoubles.rightActiveIndexes=[0,1];
+const swaps=call(endangeredDoubles).actions;
+assert.equal(swaps.length,2);
+assert.deepEqual(new Set(swaps.map(a=>a.switch)),new Set([2,3]));
+console.log('alpha 0.4 practice AI: reserve switching and no duplicate switches OK');
+

@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {choosePracticeActions,twoTurnValue} from './practice-ai.js';
+const move=(id,type,power,accuracy=100)=>({id,name:id,definition:{type,category:'physical',power,accuracy,priority:0,rules:[]}});
+const catalog={entities:{hero:{id:'hero',definition:{moveIds:['fire','water','weak'],uniqueMoveId:'wait'}},enemy:{id:'enemy',definition:{moveIds:['fire','water','weak'],uniqueMoveId:'wait'}}},moves:{fire:move('fire','fuego',200),water:move('water','agua',90),weak:move('weak','agua',5),wait:move('wait','agua',0)},abilities:{}};
+const actor=(id,types,side)=>({id,teamIndex:0,activeSlot:0,types,hp:300,maxHp:300,currentStats:{attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100},cooldowns:{}});
+const ally=actor('hero',['fuego'],'right');const enemy=actor('enemy',['roca','planta'],'left');
+const chart={fuego:{roca:'inmune',planta:'eficaz'},agua:{roca:'eficaz',planta:'ineficaz'}};
+const selected=choosePracticeActions({battle:{mode:'singles',leftActive:[enemy],rightActive:[ally]},catalog,chart,side:'right',difficulty:'advanced',random:()=>0});
+assert.equal(selected.move,'water','una inmunidad prevalece aunque el mismo objetivo tenga tipos vulnerables');
+const value=twoTurnValue(ally,catalog.moves.fire,enemy,Object.values(catalog.moves),chart,[enemy]);
+const water=twoTurnValue(ally,catalog.moves.water,enemy,Object.values(catalog.moves),chart,[enemy]);
+assert.ok(water>value,'la evaluación a dos turnos descarta ataques inmunes');
+console.log('Alpha 0.4: IA Avanzada considera inmunidades completas y fórmula real de daño por movimiento');

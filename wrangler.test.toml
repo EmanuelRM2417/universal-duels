@@ -1,0 +1,26 @@
+# SOLO PARA PRUEBAS. Completar bindings con recursos aislados antes de usar.
+# No utiliza el Worker público ni su namespace KV de producción.
+name = "universal-duels-alpha04-main-test"
+main = "worker.js"
+compatibility_date = "2026-09-29"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[kv_namespaces]]
+binding = "PUBLIC_CONTENT"
+id = "CONFIGURE_ISOLATED_TEST_PUBLIC_CONTENT_KV"
+
+[[r2_buckets]]
+binding = "PUBLIC_SPRITES"
+bucket_name = "CONFIGURE_ISOLATED_TEST_SPRITES_BUCKET"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/health"]

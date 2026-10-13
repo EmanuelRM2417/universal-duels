@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const entity=(id,ability='blank')=>({id,name:id,definition:{types:['fuego'],hp:60,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['strike','wait','wait'],uniqueMoveId:'wait',globalAbilityId:ability,uniqueAbilityId:'blank'}});
+const move=(id,power,multihit)=>({id,name:id,definition:{type:'fuego',category:'physical',power,accuracy:100,criticalChance:0,priority:0,rules:[],...(multihit?{multihit}:{})}});
+const catalog={entities:{guard:entity('guard','survivor'),enemy:entity('enemy')},moves:{strike:move('strike',250,{min:3,max:3}),wait:move('wait',0)},abilities:{survivor:{id:'survivor',definition:{survive:{chance:100,fixedHp:1,limit:1},rules:[]}},blank:{id:'blank',definition:{rules:[]}}},effects:{}};
+const options={catalog,left:'enemy',right:'guard',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>0.8};
+const result=simulate(options);
+assert.equal(result.right.hp,0,'a second hit may knock out after the one-use survival');
+assert.equal(result.right.consecutiveCounters.attack||0,0);
+assert.equal(result.log.filter(x=>x.includes('activa Sobrevivir')).length,1);
+const single=simulate({...options,catalog:{...catalog,moves:{...catalog.moves,strike:move('strike',250)}}});
+assert.equal(single.right.hp,1,'survive must preserve one HP for a single lethal hit');
+assert.equal(single.right.used,undefined,'private ability usage is not exposed in summary');
+assert.deepEqual(simulate({...options,randomTape:result.randomTape}),result,'replay must remain deterministic');
+console.log('alpha 0.4: lethal survival, one-use multihit, deterministic replay OK');

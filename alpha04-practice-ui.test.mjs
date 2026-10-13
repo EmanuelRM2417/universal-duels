@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const html=readFileSync(new URL('./public/practice.html',import.meta.url),'utf8');
+assert.match(html,/function availableSwitches\(d\)/);
+assert.match(html,/!d\.leftActiveIndexes\.includes\(index\)/);
+assert.match(html,/value=\\?"switch:/);
+assert.match(html,/result\.switch=Number\(x\.value\.slice\(7\)\)/);
+assert.match(html,/new Set\(changes\)\.size!==changes\.length/);
+assert.match(html,/session\?\.status==='playing'/);
+assert.match(html,/localStorage\.removeItem\(KEY\)/);
+console.log('Práctica UI: sustituciones voluntarias, reservas válidas, bloqueo duplicados y partida única OK');
