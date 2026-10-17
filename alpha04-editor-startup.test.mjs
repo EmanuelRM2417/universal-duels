@@ -7,3 +7,9 @@ assert.doesNotMatch(html,/refreshTemplateTools\(\)/,'La función eliminada imped
 assert.match(html,/id="releasePreview"/);
 assert.match(html,/id="compareRegression"/);
 console.log('Alpha 0.4: inicio del editor, controles select del simulador y herramientas de publicación OK');
+
+const lab=readFileSync(new URL('./public/index.html',import.meta.url),'utf8');
+assert.match(lab,/Abrir editor actualizado/);
+assert.match(lab,/location\.href='\/editor\/'/);
+assert.match(html,/ESTUDIO PRIVADO · BORRADORES · ALPHA 0\.4/);
+console.log('Enlace al editor actualizado y versión visible OK');
