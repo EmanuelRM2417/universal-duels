@@ -53,6 +53,12 @@ function validateOrders(session,order,catalog){
       if(!target||target.hp<=0||(side==='left'&&slot===u.activeSlot))throw Error('Objetivo inválido.');
       a.target={side,slot};
     }
+    if(raw.switchChoice){
+      const choice=raw.switchChoice,index=Number(choice.teamIndex),available=aliveReserves(state,'left');
+      const manual=(move.definition?.rules||[]).some(rule=>rule.action?.type==='switch_character'&&rule.action?.switchMode==='manual'&&rule.target==='self');
+      if(!manual||choice.side!=='left'||Number(choice.slot)!==u.activeSlot||!Number.isInteger(index)||!available.includes(index))throw Error('Relevo del efecto inválido.');
+      a.switchChoice={side:'left',slot:u.activeSlot,teamIndex:index};
+    }
     actions.push(a);
   }
   return session.mode==='singles'?actions[0]:{actions};
