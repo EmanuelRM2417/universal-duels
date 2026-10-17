@@ -8,21 +8,37 @@
 <p id="notice" class="muted" role="status">Cargando catálogo…</p></div>
 <script type="module">
 const $=id=>document.getElementById(id);let data,history=[];
-const text=(tag,value,className)=>{const e=document.createElement(tag);e.textContent=String(value??'');if(className)e.className=className;return e;};
+// Some catalog descriptions were saved as formatted HTML by older editor versions.
+// Extract readable text without ever injecting them as HTML. Preserve paragraph breaks.
+function plain(value){
+  const raw=String(value??'');
+  if(!/<\/?[a-z][^>]*>|&(?:[a-z]+|#\d+|#x[0-9a-f]+);/i.test(raw))return raw;
+  const template=document.createElement('template');
+  template.innerHTML=raw.replace(/<br\s*\/?\s*>/gi,'\n').replace(/<\/(?:p|div|li|h[1-6]|tr)>/gi,'\n');
+  template.content.querySelectorAll('script,style,iframe,svg,object,template,noscript').forEach(e=>e.remove());
+  return (template.content.textContent||'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+const humanAction=a=>{
+  const label={apply_effect:'Aplica efecto',apply_status:'Aplica estado',set_weather:'Cambia clima',set_field:'Cambia campo',set_scenario:'Cambia escenario',stat_change:'Modifica estadística',damage:'Inflige daño',heal:'Recupera PS',switch_character:'Cambia personaje',cooldown_change:'Modifica cooldown',critical_change:'Modifica crítico',damage_percent:'Modifica daño'};
+  return [label[a?.type]||plain(a?.type||'Efecto'),a?.value===undefined?'':plain(a.value),a?.stat?plain(a.stat):''].filter(Boolean).join(' · ');
+};
+function humanCondition(c){if(!c)return 'Sin condición adicional';if(typeof c!=='object')return plain(c);const op=c.operator||c.op||c.type||'';const terms=c.conditions||c.children||c.items;if(Array.isArray(terms))return terms.map(humanCondition).join(/or/i.test(op)?' O ':' Y ');return Object.entries(c).map(([k,v])=>`${plain(k)}: ${typeof v==='object'?humanCondition(v):plain(v)}`).join(' · ');}
+
+const text=(tag,value,className)=>{const e=document.createElement(tag);e.textContent=plain(value);if(className)e.className=className;return e;};
 const append=(to,...items)=>items.forEach(item=>to.appendChild(item));
 const name=(cat,id)=>data?.catalog?.[cat]?.[id]?.name||id;
 function link(cat,id){const button=text('button',name(cat,id),'ref');button.addEventListener('click',()=>open(cat,id));return button;}
 function showList(){if(history.length)history.pop();$('browse').hidden=false;$('details').hidden=true;$('search').focus({preventScroll:true});}
-function field(to,label,value){const row=text('p',`${label}: ${value??'—'}`);to.appendChild(row);}
+function field(to,label,value){const row=text('p',`${label}: ${plain(value??'—')}`);row.style.whiteSpace='pre-line';to.appendChild(row);}
 function refs(to,cat,label,ids){const section=document.createElement('div');append(section,text('h3',label));
   for(const id of ids.filter(Boolean))append(section,link(cat,id));if(!ids.filter(Boolean).length)append(section,text('p','Ninguno','muted'));to.appendChild(section);}
 function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice').textContent='Referencia no encontrada: '+cat+'/'+id;return;}
   history.push([cat,id]);$('browse').hidden=true;$('details').hidden=false;$('revision').textContent=data.revision;
-  const panel=$('detail');panel.replaceChildren(text('h2',item.name),text('p',item.description||item.definition?.description||'Sin descripción registrada.','muted'));
+  const panel=$('detail');panel.style.whiteSpace='pre-line';panel.replaceChildren(text('h2',item.name),text('p',item.description||item.definition?.description||'Sin descripción registrada.','muted'));
   const d=item.definition||{};
   if(cat==='entities'){
     if(d.spriteId){const img=document.createElement('img');img.alt='Sprite de '+item.name;img.width=140;img.height=140;img.style.cssText='object-fit:contain;image-rendering:pixelated';img.src='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);panel.appendChild(img);}
-    field(panel,'Tipos',(d.types||[]).join(' · '));
+    field(panel,'Tipos',(d.types||[]).map(plain).join(' · '));
     const stats=document.createElement('div');stats.className='stats';for(const [label,key] of [['PS','hp'],['Ataque','attack'],['Defensa','defense'],['At. especial','specialAttack'],['Def. especial','specialDefense'],['Velocidad','speed']]){
       const tile=document.createElement('div');tile.className='stat';append(tile,text('strong',label),text('span',d[key]));stats.appendChild(tile);
     }panel.appendChild(stats);
@@ -30,12 +46,12 @@ function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice'
     refs(panel,'abilities','Habilidad global',[d.globalAbilityId]);refs(panel,'abilities','Habilidad exclusiva',[d.uniqueAbilityId]);
   }else{
     if(cat==='moves'){field(panel,'Tipo',d.type);field(panel,'Clase',d.category);field(panel,'Potencia',d.power);field(panel,'Precisión',d.accuracy);field(panel,'Crítico',d.criticalChance);field(panel,'Prioridad',d.priority);field(panel,'Cooldown',d.cooldown);}
-    if(['weathers','fields','scenarios'].includes(cat)){field(panel,'Duración',d.duration+' rondas');for(const e of d.fieldEffects||[])panel.appendChild(text('div',JSON.stringify(e,null,2),'rule'));}
+    if(['weathers','fields','scenarios'].includes(cat)){field(panel,'Duración',d.duration+' rondas');for(const e of d.fieldEffects||[])panel.appendChild(text('div',humanCondition(e),'rule'));}
     for(const rule of d.rules||[]){const r=document.createElement('div');r.className='rule';
-      append(r,text('strong','Evento: '+(rule.event||'manual')),text('p','Probabilidad: '+(rule.chance??100)+' % · Objetivo: '+(rule.target||'target')),text('p','Acción: '+(rule.action?.type||'')+' '+(rule.action?.value??'')));
+      append(r,text('strong','Evento: '+(rule.event||'manual')),text('p','Probabilidad: '+(rule.chance??100)+' % · Objetivo: '+(rule.target||'target')),text('p','Acción: '+humanAction(rule.action)));
       const linked={apply_effect:'effects',apply_status:'statuses',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[rule.action?.type];
       if(linked&&rule.action.value)r.appendChild(link(linked,rule.action.value));
-      if(rule.condition)r.appendChild(text('p','Condición: '+JSON.stringify(rule.condition)));
+      if(rule.condition)r.appendChild(text('p','Condición: '+humanCondition(rule.condition)));
       panel.appendChild(r);
     }
   }
@@ -43,11 +59,11 @@ function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice'
 }
 $('back').onclick=()=>{history.pop();if(history.length){const [cat,id]=history.pop();open(cat,id);}else showList();};
 function render(){const q=$('search').value.trim().toLocaleLowerCase('es'),entries=Object.values(data.catalog.entities||{}).filter(e=>{
-  const d=e.definition||{};return [e.name,...(d.types||[]),...(d.tags||[])].join(' ').toLocaleLowerCase('es').includes(q);
-}).sort((a,b)=>a.name.localeCompare(b.name,'es'));$('cards').replaceChildren();$('count').textContent=entries.length+' personajes';
+  const d=e.definition||{};return [plain(e.name),...(d.types||[]).map(plain),...(d.tags||[]).map(plain)].join(' ').toLocaleLowerCase('es').includes(q);
+}).sort((a,b)=>plain(a.name).localeCompare(plain(b.name),'es'));$('cards').replaceChildren();$('count').textContent=entries.length+' personajes';
 for(const e of entries){const card=document.createElement('button');card.className='card';
   const d=e.definition||{};if(d.spriteId){const img=document.createElement('img');img.alt='';img.loading='lazy';img.src='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.appendChild(img);}
-  append(card,text('strong',e.name),text('p',(d.types||[]).join(' · '),'types'));card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
+  append(card,text('strong',e.name),text('p',(d.types||[]).map(plain).join(' · '),'types'));card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
 }
 $('search').oninput=render;
 (async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo cargar el catálogo.');data=d;render();$('notice').textContent='Catálogo actualizado a '+d.revision;
