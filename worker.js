@@ -145,7 +145,8 @@ export default {
           ok: true,
           editor: "Universal Duels",
           draftsConnected: true,
-          publicationMode: "manual"
+          publicationMode: "manual",
+          editorBuild: "UD-EDITOR-ALPHA04-ETIQUETAS-20261017"
         });
       }
 
