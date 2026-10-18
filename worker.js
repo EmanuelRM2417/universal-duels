@@ -79,7 +79,7 @@ const privateJson = (data, status = 200) =>
     }
   });
 
-const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags'];
+const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial'];
 async function candidateFromDrafts(env){
   const catalog={};
   for(const category of RELEASE_CATEGORIES){
@@ -422,7 +422,7 @@ if (
       }
 
       // Catálogo privado de contenido. No ejecuta mecánicas en combate.
-      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags"];
+      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags", "tutorial"];
       const catalogMatch = url.pathname.match(/^\/editor-api\/catalog\/([a-z]+)(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?$/);
       if (catalogMatch) {
         const category = catalogMatch[1];
