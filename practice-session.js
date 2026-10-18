@@ -27,6 +27,7 @@ const run=(session,catalog,chart,turns)=>{
 const updateState=(session,result)=>{
   session.randomTape=[];
   session.engineCheckpoint=result.checkpoint;
+  session.lastTurnLogs=result.log||[];session.lastTurnVisualEvents=result.visualEvents||[];
   const previous=Array.isArray(session.lastState?.log)?session.lastState.log:[];
   // Incremental result.log is a delta. Keep a small recent window for the UI.
   session.lastState=compactState({...result,log:[...previous,...result.log].slice(-80)});
@@ -39,7 +40,7 @@ export function createPractice({catalog,chart={},revision,mode='singles',difficu
   const s={revision,mode,difficulty,leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
   const r=run(s,catalog,chart,0);updateState(s,r);return s;
 }
-export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState};}
+export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState,lastTurnLogs:session.lastTurnLogs||[],visualEvents:session.lastTurnVisualEvents||[]};}
 function validateOrders(session,order,catalog){
   const state=session.lastState,active=state.leftActive.filter(x=>x.hp>0),selected=Array.isArray(order?.actions)?order.actions:[order];
   const actions=[];

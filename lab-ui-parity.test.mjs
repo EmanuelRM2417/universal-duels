@@ -7,8 +7,8 @@ assert.match(html,/Efectos jugador/);assert.match(html,/Efectos rival/);assert.m
 assert.match(html,/>Normal<\/button>/);assert.match(html,/>Rápida<\/button>/);assert.match(html,/>×2<\/button>/);
 assert.match(html,/battleCancelMove/);assert.match(html,/>Cancelar<\/button>/);assert.match(html,/battleMoveInfo/);assert.match(html,/>Info<\/button>/);
 assert.match(html,/setTimeout\(\(\)=>\{[\s\S]*?\},900\)/);
-for(const ms of [650,250,800,350,1350,1650,900])assert.match(html,new RegExp(`wait\\(${ms}\\)`));
-assert.match(html,/wait\(cat==='status'\?1300:1150\)/);
+assert.match(html,/await sleep\(1500\)/);assert.match(html,/await sleep\(2000\)/);
+assert.match(html,/await sleep\(2000\)/);
 assert.match(html,/statusEffectText/);assert.match(html,/statBreakdown/);assert.match(html,/environmentEffectText/);assert.match(html,/logBody/);
 assert.match(html,/battle-hp-fill/);assert.match(html,/transition:width 1\.15s linear/);
 assert.match(html,/refreshOpenEffectsModal/);assert.match(html,/applyVisualEvent/);
