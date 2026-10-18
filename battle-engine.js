@@ -67,11 +67,11 @@ function battleLogName(a){return (a?._mirror?(a?.side==='left'?'@@L@@':a?.side==
 
 function effective(a,stat){ensureActorRuntime(a);return Math.max(1,Math.round((a.stats[stat]??100)*basicStageFactor(a.stages[stat],a.environmentStages[stat],a.statusStages?.[stat],a.passiveStages?.[stat])));}
 function meets(cond,user,target,state){
-  if(!cond||cond.type==='always')return true;const v=cond.value;
+  if(!cond||cond.type==='always')return true;const v=cond.value;const checked=cond.subject==='target'?target:user;if(!checked&&['hp_below','hp_above','hp_full','has_status','has_type','was_hit_by_type','stat_below'].includes(cond.type))return false;
   switch(cond.type){
-    case'hp_below':return user.hp/user.maxHp*100<Number(v);case'hp_above':return user.hp/user.maxHp*100>Number(v);
-    case'weather_is':return state.weather===v;case'field_is':return state.field===v;case'has_status':return user.status?.id===v;
-    case'has_type':return user.types.includes(v);case'was_hit_by_type':return user.lastHitType===v;case'stat_below':return effective(user,'speed')<Number(v);
+    case'hp_below':return checked.hp/checked.maxHp*100<Number(v);case'hp_above':return checked.hp/checked.maxHp*100>Number(v);
+    case'hp_full':return checked.hp===checked.maxHp;case'weather_is':return state.weather===v;case'field_is':return state.field===v;case'has_status':return checked.status?.id===v;
+    case'has_type':return checked.types.includes(v);case'was_hit_by_type':return checked.lastHitType===v;case'stat_below':return effective(checked,'speed')<Number(v);
     case'in_doubles':return state.mode==='doubles';default:return false;
   }
 }
@@ -333,10 +333,22 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
         const before=a.passiveStages||{},previousBlocked=!!a.passiveStatusBlocked;
         const stages={},immunities=[];let block=false;
         for(const owner of state.allActive()){
-          if(owner.effects.some(e=>e.id==='suppressed'))continue;
-          for(const ability of owner.abilities||[])for(const rule of ability?.definition?.rules||[]){
-            if(rule.event!=='on_condition'||!conditionsPass(rule,owner,firstOpponent(state,owner),state))continue;
+          for(const ability of owner.abilities||[])for(const [ruleIndex,rule] of (ability?.definition?.rules||[]).entries()){
+            if(rule.event!=='on_condition')continue;
+            const key=`passive:${ability.id}:${ruleIndex}`;
+            const active=!owner.effects.some(e=>e.id==='suppressed')&&conditionsPass(rule,owner,firstOpponent(state,owner),state);
+            const wasActive=!!owner.used[key];
+            owner.used[key]=active?1:0;
+            if(!active)continue;
             const act=rule.action||{};
+            if(!['stat_change','block_status','immunity'].includes(act.type)){
+              if(!wasActive&&a===owner){
+                state.currentSourceName=ability.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=owner.name;
+                action(rule,owner,firstOpponent(state,owner),state,0);
+                state.currentSourceName='';state.currentSourceKind='';state.currentSourceId='';state.currentSourceActor='';
+              }
+              continue;
+            }
             const targets=targetSet(rule.target||'self',owner,firstOpponent(state,owner),state);
             if(!targets.includes(a))continue;
             if(act.type==='stat_change'&&STAT_NAMES[act.stat])stages[act.stat]=(stages[act.stat]||0)+integer(act.value);
