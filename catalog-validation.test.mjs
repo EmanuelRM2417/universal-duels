@@ -6,6 +6,10 @@ assert.throws(()=>validateDefinition('moves',{...move,kind:''}),/clase/);
 assert.throws(()=>validateDefinition('moves',{...move,accuracy:null}),/precisión/);
 const rule={event:'manual',condition:{type:'always',value:''},conditions:[],target:'target',action:{type:'damage',value:'10'},chance:100,duration:0,limit:0};
 assert.doesNotThrow(()=>validateDefinition('moves',{...move,rules:[rule]}));
+// PS máximos existe en el selector y el motor; la validación debe admitirlo sin valor.
+assert.doesNotThrow(()=>validateDefinition('moves',{...move,rules:[{...rule,condition:{type:'hp_full',value:'',subject:'target'}}]}));
+assert.doesNotThrow(()=>validateDefinition('moves',{...move,rules:[{...rule,conditions:[{type:'hp_full',value:'',subject:'self',operator:'AND',negate:false}]}]}));
+assert.doesNotThrow(()=>validateDefinition('abilities',{kind:'unique',rules:[{...rule,event:'on_enter',condition:{type:'hp_full',value:'',subject:'self'},target:'self'}]}));
 assert.throws(()=>validateDefinition('moves',{...move,rules:[{...rule,action:{type:'custom',value:'hack'}}]}),/no implementada/);
 assert.throws(()=>validateDefinition('moves',{...move,rules:[{...rule,chance:null}]}),/probabilidad/);
 assert.throws(()=>validateDefinition('moves',{...move,rules:[{...rule,event:'on_exit'}]}),/evento/);
