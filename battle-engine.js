@@ -181,15 +181,15 @@ function rulesFor(entry,event,user,contextTarget,state){
   if(event==='on_status'&&user.status){const statusId=user.status.id,st=state.catalog.statuses?.[statusId];for(const rule of st?.definition?.rules||[]){if(!user.status||user.status.id!==statusId)break;if(rule.event==='on_status'&&rule.action?.type!=='stat_change'&&conditionsPass(rule,user,contextTarget,state)&&chance(rule,state)){state.currentSourceName=st.name;state.currentSourceKind='estado';state.currentSourceId=st.id||statusId;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}}}
   for(const ability of user.abilities||[]){
     if(user.effects.some(e=>e.id==='suppressed'))break;
-    for(const[idx,rule]of(ability?.definition?.rules||[]).entries()){
+    for(const[idx,rule]of(ability?.definition?.rules||[]).map((rule,idx)=>({idx,rule})).sort((a,b)=>event==='on_death'?Number(b.rule.action?.type==='resurrect')-Number(a.rule.action?.type==='resurrect'):0).map(({idx,rule})=>[idx,rule])){
       const key=ability.id+':'+idx;if(rule.event!==event||(rule.limit>0&&(user.used[key]||0)>=rule.limit))continue;
-      if(!conditionsPass(rule,user,contextTarget,state)||!chance(rule,state))continue;user.used[key]=(user.used[key]||0)+1;
+      if(!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;user.used[key]=(user.used[key]||0)+1;
       state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';
     }
   }
 }
 function runMoveRules(move,event,user,contextTarget,state){
-  for(const rule of move?.definition?.rules||[]){if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||!chance(rule,state))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
+  for(const rule of move?.definition?.rules||[]){if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
 }
 function applyMoveCooldown(attacker,move,state){const d=move.definition;let cd=Math.max(0,integer(d.cooldown||0));for(const e of attacker.effects.filter(e=>e.id==='cooldown_on_use'))cd=Math.max(0,cd+integer(e.value));for(const e of attacker.environmentCooldownOnUse||[])if(chance(e,state))cd=Math.max(0,cd+integer(e.value));if(cd>0){attacker.cooldowns[move.id]=cd;attacker.cooldownSetRound[move.id]=state.round;state.log.push(`${battleLogName(attacker)} tiene ${cd} ${cd===1?'turno restante':'turnos restantes'} para poder volver a usar ${move.name}.`);}}
 function relationBonus(moveType,defender,state){let bonus=0,immune=false;for(const t of defender.types){const rel=state.chart?.[moveType]?.[t]||'neutral';if(rel==='inmune')immune=true;else if(rel==='eficaz')bonus+=.2;else if(rel==='ineficaz')bonus-=.2;}return{bonus,immune};}
@@ -292,10 +292,10 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
         const queue=newly.map(a=>({a,priority:Math.max(0,...(a.abilities||[]).flatMap(ab=>(ab.definition?.rules||[]).filter(r=>r.event==='on_death').map(r=>Number(r.priority)||0))),speed:effective(a,'speed'),tie:random()}));
         queue.sort((x,y)=>y.priority-x.priority||y.speed-x.speed||x.tie-y.tie);
         for(const {a} of queue){
-          state.deathEvents.push({side:a.side,teamIndex:a.teamIndex,round:state.round});
           state.log.push(`${battleLogName(a)} queda fuera de combate.`);
           rulesFor(null,'on_death',a,firstOpponent(state,a),state);
-          if(a.hp>0)koSeen.delete(a);
+          if(a.hp>0){koSeen.delete(a);state.pushVisualUnit?.(a,'unit_state');}
+          else state.deathEvents.push({side:a.side,teamIndex:a.teamIndex,round:state.round});
         }
         if(iteration===63)state.log.push('Protección contra bucles: se detuvo una cadena excesiva de eventos Al morir.');
       }
