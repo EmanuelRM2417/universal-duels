@@ -1092,7 +1092,7 @@ const response = await fetch(
     });
     const typeOptions = [["","Elegir tipo…"],...chartTypes.map(([id,label]) => [id,label])];
     const statOptions = [["attack","Ataque"],["defense","Defensa"],["specialAttack","Ataque especial"],["specialDefense","Defensa especial"],["speed","Velocidad"],["accuracy","Precisión"],["evasion","Evasión"],["criticalChance","Probabilidad de crítico"]];
-    const eventOptions = [["","Elegir evento…"],["on_condition","Mientras se cumpla la condición (pasiva)"],["on_enter","Al entrar al campo"],["on_death","Al morir (KO confirmado)"],["on_survive","Al sobrevivir (Sobrevivir activado)"],["turn_start","Inicio de turno"],["turn_end","Final de turno"],["round_end","Final de ronda"],["on_attack","Al atacar"],["on_hit","Al acertar"],["on_damage_taken","Al recibir daño"],["manual","Al usar"],["on_status","Mientras tenga el estado (automático)"]];
+    const eventOptions = [["","Elegir evento…"],["on_condition","Mientras se cumpla la condición (pasiva)"],["on_enter","Al entrar al campo"],["on_death","Al morir (KO confirmado)"],["on_survive","Al sobrevivir (Sobrevivir activado)"],["turn_start","Inicio de turno"],["turn_end","Final de turno"],["round_end","Final de ronda"],["on_attack","Al atacar"],["on_hit","Al acertar"],["on_damage_taken","Al recibir daño"],["manual","Al usar"],["on_status","Mientras tenga el estado (por ronda)"],["on_status_applied","Al adquirir el estado"]];
     const moveEventOptions = [["","Elegir evento…"],["manual","Al usar el movimiento"],["manual_doubles","Al usarlo en Doubles"],["on_attack","Al atacar"],["on_hit","Al acertar"],["on_survive","Al sobrevivir"]];
     const conditionOptions = [["","Elegir condición…"],["always","Siempre"],["hp_below","PS por debajo de (%)"],["hp_above","PS por encima de (%)"],["hp_full","PS máximos (100%)"],["weather_is","Clima activo"],["field_is","Campo activo"],["has_status","Tiene alteración de estado"],["has_type","Tiene tipo"],["was_hit_by_type","Recibió tipo"],["stat_below","Velocidad actual por debajo de"],["in_doubles","La batalla es Doubles"]];
     const targetOptions = [["","Elegir objetivo…"],["self","Usuario"],["target","Objetivo del movimiento / contexto"],["ally","Compañero"],["ally_team","Equipo aliado activo"],["enemy_team","Equipo contrario activo"],["all","Todos menos el usuario"],["all_active","Todos los activos (compatibilidad)"]];
@@ -1196,12 +1196,13 @@ const response = await fetch(
     function addRule(rule = {}) {
       const row=document.createElement('div');row.className='builder-row';const grid=document.createElement('div');grid.className='builder-grid';
       const isStatus=catalogCategory.value==='statuses',isMove=catalogCategory.value==='moves';
-      const event=labeledControl(grid,'Evento',optionSelect(isMove?moveEventOptions:eventOptions,isStatus?'on_status':(rule.event||'on_enter')),'event');
+      const statusEventOptions=eventOptions.filter(([id])=>!['manual','on_survive'].includes(id));
+      const event=labeledControl(grid,'Evento',optionSelect(isMove?moveEventOptions:isStatus?statusEventOptions:eventOptions,rule.event||(isStatus?'on_status':'on_enter')),'event');
       const conditionType=labeledControl(grid,'Condición',optionSelect(conditionOptions,rule.condition?.type||'always'),'conditionType');
       const conditionSubject=labeledControl(grid,'Evaluar condición sobre',optionSelect([['self','Usuario'],['target','Objetivo']],rule.condition?.subject||'self'),'conditionSubject');
       const conditionValue=labeledControl(grid,'Valor de condición',fieldControl('text',rule.condition?.value),'conditionValue');
       const conditionRefWrap=document.createElement('label');conditionRefWrap.textContent='Contenido de la condición';const conditionRefHolder=document.createElement('div');conditionRefWrap.append(conditionRefHolder);grid.append(conditionRefWrap);
-      const target=labeledControl(grid,'Objetivo',optionSelect(targetOptions,isStatus?'self':(rule.target||'self')),'target');
+      const target=labeledControl(grid,'Objetivo',optionSelect(targetOptions,rule.target||'self'),'target');
       const actionType=labeledControl(grid,'Acción',optionSelect(catalogCategory.value==='moves'?actionOptions:actionOptions.filter(([id])=>!['modify_move_power','modify_move_accuracy','modify_move_critical'].includes(id)),rule.action?.type??''),'actionType');
       const actionValue=labeledControl(grid,'Valor',fieldControl('text',rule.action?.value),'actionValue');
       const amountMode=labeledControl(grid,'Unidad del modificador',optionSelect([['fixed','Cantidad fija'],['percent','Porcentaje']],rule.action?.mode||'percent'),'modifierMode');
@@ -1213,7 +1214,7 @@ const response = await fetch(
       const damageClass=labeledControl(grid,'Clase de daño',optionSelect([['all','Todos'],['physical','Físico'],['special','Especial']],rule.action?.damageClass||'all'),'damageClass');
       const immFilter=labeledControl(grid,'Filtro de tipos',optionSelect([['all','Todos'],['include','Incluir tipos'],['exclude','Excluir tipos']],rule.action?.typeFilter?.mode||'all'),'immunityFilter');
       const immTypesWrap=document.createElement('label');immTypesWrap.textContent='Tipos de la inmunidad';const immTypes=typePicker(rule.action?.typeFilter?.types||[],20);immTypes.dataset.ruleKey='immunityTypes';immTypesWrap.append(immTypes);grid.append(immTypesWrap);
-      const operator=labeledControl(grid,'Operador del grupo',optionSelect([['AND','Y'],['OR','O']],rule.operator||'AND'),'operator');
+      const operator=labeledControl(grid,'Operador del grupo (informativo; usá Y/O en cada condición adicional)',optionSelect([['AND','Y'],['OR','O']],rule.operator||'AND'),'operator');
       const negate=labeledControl(grid,'Negar condición',optionSelect([['false','No'],['true','Sí']],String(rule.negate||false)),'negate');
       const chance=labeledControl(grid,'Probabilidad (%)',fieldControl('number',rule.chance??''),'chance');
       const duration=labeledControl(grid,'Duración (rondas)',fieldControl('number',rule.duration??''),'duration');
@@ -1232,12 +1233,12 @@ const response = await fetch(
         wrappers.duration.hidden=false; // Una duración puede configurarse en cualquier efecto.
         wrappers.limit.hidden=passive||catalogCategory.value!=='abilities'||!a;
         wrappers.chance.hidden=passive||a==='survive';
-        wrappers.conditionSubject.hidden=['','always','in_doubles','weather_is','field_is'].includes(c);
-        if(isStatus){wrappers.limit.hidden=true;}
+        wrappers.operator.hidden=true;wrappers.conditionSubject.hidden=['','always','in_doubles','weather_is','field_is'].includes(c);
+        if(isStatus){wrappers.limit.hidden=false;}
         if(a==='survive'){wrappers.chance.hidden=true;chance.value='100';}if(isMove){wrappers.limit.hidden=true;}if(!event.value&&!isStatus){wrappers.chance.hidden=true;}
       }
       amountMode.addEventListener('change',adapt);actionType.addEventListener('change',adapt);conditionType.addEventListener('change',adapt);event.addEventListener('change',adapt);immFilter.addEventListener('change',adapt);adapt();
-      const remove=document.createElement('button');remove.type='button';remove.textContent='Quitar regla';remove.onclick=()=>row.remove();row.append(grid,extra,addCondition,remove);builderRules.append(row);
+      const duplicate=document.createElement('button');duplicate.type='button';duplicate.textContent='Duplicar efecto';duplicate.addEventListener('click',()=>{const copy=structuredClone(readRuleRow(row));addRule(copy);const added=builderRules.lastElementChild;row.after(added);setCatalogDirty(true);});const remove=document.createElement('button');remove.type='button';remove.textContent='Quitar regla';remove.onclick=()=>{row.remove();setCatalogDirty(true);};row.append(grid,extra,addCondition,duplicate,remove);builderRules.append(row);
     }
     const environmentCategories=['weathers','fields','scenarios'];
     const environmentEffects=document.getElementById('environmentEffects');
@@ -1270,18 +1271,19 @@ const response = await fetch(
         else valueWrap.querySelector('small').textContent='Daño y curación: 0–100 % de PS máximos. Estadísticas: −10 a +10 niveles.';
       }
       mode.addEventListener('change',adapt);type.addEventListener('change',adapt);filter.addEventListener('change',adapt);immunityMode.addEventListener('change',adapt);adapt();
-      const remove=document.createElement('button');remove.type='button';remove.textContent='Quitar este efecto';remove.addEventListener('click',()=>row.remove());
-      row.append(grid,remove);environmentEffects.append(row);
+      const duplicate=document.createElement('button');duplicate.type='button';duplicate.textContent='Duplicar efecto';duplicate.addEventListener('click',()=>{const copy=structuredClone(readEnvironmentEffectRow(row));environmentRow(copy);row.after(environmentEffects.lastElementChild);setCatalogDirty(true);});const remove=document.createElement('button');remove.type='button';remove.textContent='Quitar este efecto';remove.addEventListener('click',()=>{row.remove();setCatalogDirty(true);});
+      row.append(grid,duplicate,remove);environmentEffects.append(row);
     }
     environmentAdd.addEventListener('click',()=>environmentRow());
-    function readEnvironmentEffects(){return [...environmentEffects.children].map(row=>{
+    function readEnvironmentEffectRow(row){
       const val=key=>row.querySelector(`[data-env-key="${key}"]`).value;
       const type=val('type'),result={type,chance:val('chance')===''?null:Number(val('chance')),filter:val('filter'),types:val('filter')==='all'?[]:[...row.querySelectorAll('[data-env-type]:checked')].map(x=>x.value),timing:val('timing')};
       if(['damage_percent','heal_percent','stat_change','critical_change','cooldown_change','cooldown_on_use','final_damage'].includes(type))result.value=val('value')===''?null:Number(val('value'));
       if(type==='final_damage'){result.mode=val('mode');result.stacking=val('stacking');if(val('cap')!=='')result.cap=Number(val('cap'));result.attackTypes=[...row.querySelectorAll('[data-env-attack-types] [data-type-choice]:checked')].map(x=>x.value);}
       if(type==='stat_change')result.stat=val('stat');if(type==='immunity'){result.damageClass=val('damageClass');result.immunityTypeFilter={mode:val('immunityMode'),types:val('immunityMode')==='all'?[]:[...row.querySelectorAll('[data-env-immunity-types] [data-type-choice]:checked')].map(x=>x.value)};}
       return result;
-    });}
+    }
+    function readEnvironmentEffects(){return [...environmentEffects.children].map(readEnvironmentEffectRow);}
     // La racha pertenece a los efectos del movimiento y no a la configuración básica.
     const streakEffectEditor=document.getElementById('streakEffectEditor');
     function renderStreakEffect(streak){
@@ -1327,6 +1329,16 @@ const response = await fetch(
       for (const rule of Array.isArray(definition.rules) ? definition.rules : []) addRule(rule);
       catalogDefinition.value = JSON.stringify(definition,null,2);
     }
+    function readRuleRow(row) {
+
+        const val = key => row.querySelector(`[data-rule-key="${key}"]`).value;
+        return {
+          event:val("event"), condition:{type:val('conditionType'),subject:row.querySelector('[data-rule-key="conditionSubject"]')?.closest('label')?.hidden?'self':val('conditionSubject'),value:row.querySelector('[data-rule-key="conditionValue"]')?.closest('label')?.hidden&&!row.querySelector('[data-condition-ref]')?.value?'':(row.querySelector('[data-condition-ref]')?.value||val('conditionValue'))},
+          conditions:[...row.querySelectorAll('[data-extra-conditions] > .builder-row')].filter(item=>item.querySelector('[data-condition-part="type"]').value).map(item=>({subject:item.querySelector('[data-condition-part="subject"]').value,operator:item.querySelector('[data-condition-part="operator"]').value,type:item.querySelector('[data-condition-part="type"]').value,value:item.querySelector('[data-condition-part="value"]').hidden?'':item.querySelector('[data-condition-part="value"]').value,negate:item.querySelector('[data-condition-part="negate"]').checked})),
+          target:val('target'), action:(()=>{const a={type:val('actionType')};for(const [key,formKey] of [['value','actionValue'],['stat','stat'],['switchMode','switchMode'],['mode','modifierMode'],['stacking','modifierStacking'],['cap','modifierCap']]){const input=row.querySelector(`[data-rule-key="${formKey}"]`);if(input&&!input.closest('label')?.hidden&&input.value!=='')a[key]=key==='cap'?Number(input.value):input.value;}const ref=row.querySelector('[data-rule-ref]');if(ref)a.value=ref.value;if(a.type==='immunity'){a.damageClass=val('damageClass');a.typeFilter={mode:val('immunityFilter'),types:[...row.querySelectorAll('[data-rule-key="immunityTypes"] [data-type-choice]:checked')].map(x=>x.value)};}return a;})(),
+          chance:val("event")==="on_condition"||val("actionType")==="survive"||row.querySelector('[data-rule-key="chance"]')?.closest("label")?.hidden?100:(val("chance")===""?100:Number(val("chance"))),duration:val("duration")===""?0:Number(val("duration")),limit:catalogCategory.value==='moves'||val('event')==='on_condition'?0:(val("limit")===""?0:Number(val("limit"))),operator:val("operator"),negate:val("negate")==="true"
+        };
+    }
     function readBuilder() {
       const result = structuredClone(loadedDefinition);
       for (const control of builderBasics.querySelectorAll("[data-basic-key]")) {
@@ -1342,15 +1354,7 @@ const response = await fetch(
       }
       if(catalogCategory.value==='statuses'){result.typeFilter={mode:result.statusFilterMode||'all',types:result.statusFilterTypes||[]};delete result.statusFilterMode;delete result.statusFilterTypes;}
       if(environmentCategories.includes(catalogCategory.value)){result.duration=5;result.rules=[];result.fieldEffects=readEnvironmentEffects();return result;}
-      result.rules = [...builderRules.children].map(row => {
-        const val = key => row.querySelector(`[data-rule-key="${key}"]`).value;
-        return {
-          event: catalogCategory.value==='statuses'?'on_status':val("event"), condition:{type:val('conditionType'),subject:row.querySelector('[data-rule-key="conditionSubject"]')?.closest('label')?.hidden?'self':val('conditionSubject'),value:row.querySelector('[data-rule-key="conditionValue"]')?.closest('label')?.hidden&&!row.querySelector('[data-condition-ref]')?.value?'':(row.querySelector('[data-condition-ref]')?.value||val('conditionValue'))},
-          conditions:[...row.querySelectorAll('[data-extra-conditions] > .builder-row')].filter(item=>item.querySelector('[data-condition-part="type"]').value).map(item=>({subject:item.querySelector('[data-condition-part="subject"]').value,operator:item.querySelector('[data-condition-part="operator"]').value,type:item.querySelector('[data-condition-part="type"]').value,value:item.querySelector('[data-condition-part="value"]').hidden?'':item.querySelector('[data-condition-part="value"]').value,negate:item.querySelector('[data-condition-part="negate"]').checked})),
-          target:catalogCategory.value==='statuses'?'self':val('target'), action:(()=>{const a={type:val('actionType')};for(const [key,formKey] of [['value','actionValue'],['stat','stat'],['switchMode','switchMode'],['mode','modifierMode'],['stacking','modifierStacking'],['cap','modifierCap']]){const input=row.querySelector(`[data-rule-key="${formKey}"]`);if(input&&!input.closest('label')?.hidden&&input.value!=='')a[key]=key==='cap'?Number(input.value):input.value;}const ref=row.querySelector('[data-rule-ref]');if(ref)a.value=ref.value;if(a.type==='immunity'){a.damageClass=val('damageClass');a.typeFilter={mode:val('immunityFilter'),types:[...row.querySelectorAll('[data-rule-key="immunityTypes"] [data-type-choice]:checked')].map(x=>x.value)};}return a;})(),
-          chance:val("event")==="on_condition"||val("actionType")==="survive"||row.querySelector('[data-rule-key="chance"]')?.closest("label")?.hidden?100:(val("chance")===""?100:Number(val("chance"))),duration:val("duration")===""?0:Number(val("duration")),limit:catalogCategory.value==='statuses'||catalogCategory.value==='moves'||val('event')==='on_condition'?0:(val("limit")===""?0:Number(val("limit"))),operator:catalogCategory.value==='statuses'?'AND':val("operator"),negate:catalogCategory.value==='statuses'?false:val("negate")==="true"
-        };
-      });
+      result.rules = [...builderRules.children].map(readRuleRow);
       return result;
     }
     function resetCatalogForm() {
