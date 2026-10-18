@@ -31,5 +31,5 @@ run_worker_first = ["/api/*", "/health", "/editor-api/*"]
 
 [vars]
 ACCESS_TEAM_DOMAIN = "nameless-water-b29a.cloudflareaccess.com"
-ACCESS_AUD = "c38edfabcf3221f1ad4fa4c1b9d69e99600c921b83e99fc197c083afd9fa205c"
+ACCESS_AUD = "ef23d100f1d3f9465b903ed0d941b899dd0656baed5009d0aa161e69ba1d4672"
 EDITOR_EMAIL = "2417erm@gmail.com"
