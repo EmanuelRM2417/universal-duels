@@ -79,7 +79,7 @@ const privateJson = (data, status = 200) =>
     }
   });
 
-const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses'];
+const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags'];
 async function candidateFromDrafts(env){
   const catalog={};
   for(const category of RELEASE_CATEGORIES){
@@ -421,7 +421,7 @@ if (
       }
 
       // Catálogo privado de contenido. No ejecuta mecánicas en combate.
-      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses"];
+      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags"];
       const catalogMatch = url.pathname.match(/^\/editor-api\/catalog\/([a-z]+)(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?$/);
       if (catalogMatch) {
         const category = catalogMatch[1];
@@ -456,7 +456,7 @@ if (
           }
           if (category === "entities") {
             if(!Array.isArray(d.types)||d.types.length<1||d.types.length>3||new Set(d.types).size!==d.types.length||d.types.some(t=>!allTypes.includes(t)))return privateJson({error:"Se requieren 1–3 tipos distintos y válidos."},400);
-            for(const stat of ["hp","attack","defense","specialAttack","specialDefense","speed"]){const max=stat==="hp"?500:200;if(!Number.isInteger(d[stat])||d[stat]<0||d[stat]>max)return privateJson({error:"Estadística inválida: "+stat+" (PS 0–500; demás 0–200)."},400);} if(["attack","defense","specialAttack","specialDefense","speed"].reduce((n,k)=>n+d[k],0)>1000)return privateJson({error:"Las cinco estadísticas base no pueden superar 1000 en total."},400);
+            for(const stat of ["hp","attack","defense","specialAttack","specialDefense","speed"]){const max=stat==="hp"?1000:200;if(!Number.isInteger(d[stat])||d[stat]<0||d[stat]>max)return privateJson({error:"Estadística inválida: "+stat+" (PS 0–1000; demás 0–200)."},400);} if(["attack","defense","specialAttack","specialDefense","speed"].reduce((n,k)=>n+d[k],0)>1000)return privateJson({error:"Las cinco estadísticas base no pueden superar 1000 en total."},400);
             if(!Array.isArray(d.moveIds)||d.moveIds.length!==3||new Set([...d.moveIds,d.uniqueMoveId]).size!==4)return privateJson({error:"Se requieren tres ataques globales y uno exclusivo, todos distintos."},400);
             for(const [kind,ids] of [["moves",[...d.moveIds,d.uniqueMoveId]],["abilities",[d.globalAbilityId,d.uniqueAbilityId]]])for(const ref of ids) {
               if(!slug.test(ref||""))return privateJson({error:"Referencia inválida: "+ref},400);

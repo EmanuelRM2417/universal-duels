@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validateDefinition} from './catalog-validation.js';
+import {publicationDiff,selectRelease} from './release-control.js';
+const e={types:['fuego'],hp:1000,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,moveIds:['a','b','c'],uniqueMoveId:'d',globalAbilityId:'e',uniqueAbilityId:'f',rules:[]};
+validateDefinition('entities',e);assert.throws(()=>validateDefinition('entities',{...e,hp:1001}),/estadística inválida/);
+validateDefinition('tags',{entityIds:['hela','thor']});assert.throws(()=>validateDefinition('tags',{entityIds:['hela','hela']}),/inválidos/);
+validateDefinition('abilities',{kind:'global',consecutiveAttack:{conditionMode:'use',damagePerStack:10,speedStages:1},rules:[]});
+assert.throws(()=>validateDefinition('abilities',{kind:'global',consecutiveAttack:{conditionMode:'unknown'},rules:[]}),/condición/);
+const old={entities:{},tags:{}},next={entities:{},tags:{dioses:{id:'dioses',name:'Dioses',definition:{entityIds:['hela']}}}};
+assert.deepEqual(publicationDiff({catalog:old},{catalog:next}).tags.added,['dioses']);
+assert.equal(selectRelease(old,next,{tags:['dioses']}).catalog.tags.dioses.name,'Dioses');
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+for(const token of ['data-view="labels"','Golpe único','Golpes en cadena','Acertar golpes consecutivamente','Usar ataques consecutivamente','tagMembers','tagSave','tagDelete','sleep(1500)','sleep(2000)'])assert.ok(html.includes(token),token);
+assert.ok(html.includes('animation:none'),'clima estático');
+console.log('Alpha 0.4: editor etiquetas publicables, tipos de cadena, condiciones, PS 1000 y timings OK');

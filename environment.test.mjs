@@ -9,7 +9,7 @@ const fx=(type,filter,types,value,extra={})=>({type,filter,types,value,chance:10
 const catalog={entities:{a:e('a','espectro'),b:e('b','agua')},moves:{a:m('a',[rule('set_scenario','inframundo')]),b:m('b'),c:m('c'),d:m('d')},abilities:{g:{definition:{rules:[]}},u:{definition:{rules:[]}}},effects:{},weathers:{},fields:{},scenarios:{inframundo:env('inframundo',[fx('damage_percent','exclude',['espectro','fuego'],5),fx('heal_percent','include',['espectro','fuego'],5)])}};
 validateDefinition('scenarios',catalog.scenarios.inframundo.definition);
 const result=simulate({left:'a',right:'b',catalog,turns:3,leftMove:'a',rightMove:'b'});
-assert.ok(result.log.some(x=>x.includes('Se activa scenario')),'escenario activado por movimiento');
+assert.ok(result.log.some(x=>x.includes('Ahora estamos en ')),'escenario activado por movimiento');
 assert.equal(result.right.hp,85,'5 % daño a agua durante tres rondas');
 assert.equal(result.left.hp,100,'espectro excluido del daño y curado hasta PS máximos');
 assert.equal(result.scenario,'inframundo');

@@ -59,6 +59,7 @@ export function validateRules(definition,category){
 }
 export function validateDefinition(category,d){
  if(!d || typeof d!=='object'||Array.isArray(d)) fail('Definición inválida.');
+ if(category==='tags'){if(!Array.isArray(d.entityIds)||d.entityIds.length>1000||new Set(d.entityIds).size!==d.entityIds.length||d.entityIds.some(id=>!slug(id)))fail('Etiquetas: personajes inválidos o repetidos.');return;}
  if(category==='moves'){
   if(!TYPES.includes(d.type)||!['physical','special','status'].includes(d.category)||!['global','unique'].includes(d.kind)) fail('Ataque: elegí clase, tipo y categoría.');
   const target=d.targeting||'single';
@@ -72,16 +73,17 @@ export function validateDefinition(category,d){
  }
  if(category==='abilities'&&d.survive){const x=d.survive;
    if(!within(Number(x.chance??100),0,100)||!Number.isInteger(Number(x.limit??0))||Number(x.limit??0)<0||!within(Number(x.hpPercent??1),0,100)||!within(Number(x.priority??0),-5,5))fail('Sobrevivir: probabilidad, usos, PS y prioridad inválidos.');
-   if(x.fixedHp!==undefined&&(!Number.isInteger(Number(x.fixedHp))||Number(x.fixedHp)<1||Number(x.fixedHp)>500))fail('Sobrevivir: PS fijos inválidos.');
+   if(x.fixedHp!==undefined&&(!Number.isInteger(Number(x.fixedHp))||Number(x.fixedHp)<1||Number(x.fixedHp)>1000))fail('Sobrevivir: PS fijos inválidos.');
    if(x.sources!==undefined&&(!Array.isArray(x.sources)||x.sources.some(v=>!['move','effect','environment'].includes(v))))fail('Sobrevivir: fuente de daño inválida.');
  }
  if(category==='abilities'&&d.consecutiveAttack){const x=d.consecutiveAttack;
+   if(x.conditionMode!==undefined&&!['hit','use'].includes(x.conditionMode))fail('Carga: la condición debe ser acertar o usar golpes consecutivamente.');
    if(!within(Number(x.damagePerStack??10),0,1000)||!Number.isInteger(Number(x.speedStages??1))||Number(x.speedStages??1)<0||Number(x.speedStages??1)>10)fail('Carga: incremento de daño o Velocidad inválidos.');
  }
  if(['entities','moves','abilities'].includes(category) && (d.tags!==undefined && (!Array.isArray(d.tags)||d.tags.some(x=>typeof x!=='string'||!x.trim()||x.length>40)))) fail('Etiquetas: usá una lista de textos de hasta 40 caracteres.');
  if(category==='entities'){
   if(!Array.isArray(d.types)||d.types.length<1||d.types.length>3||new Set(d.types).size!==d.types.length||d.types.some(t=>!TYPES.includes(t)))fail('Entidad: elegí 1–3 tipos distintos.');
-  for(const k of ['hp','attack','defense','specialAttack','specialDefense','speed']){const max=k==='hp'?500:200;if(!Number.isInteger(d[k])||d[k]<0||d[k]>max)fail('Entidad: estadística inválida '+k+'.');} if(['attack','defense','specialAttack','specialDefense','speed'].reduce((a,k)=>a+d[k],0)>1000)fail('Entidad: las cinco estadísticas base no pueden superar 1000 en total.');
+  for(const k of ['hp','attack','defense','specialAttack','specialDefense','speed']){const max=k==='hp'?1000:200;if(!Number.isInteger(d[k])||d[k]<0||d[k]>max)fail('Entidad: estadística inválida '+k+'.');} if(['attack','defense','specialAttack','specialDefense','speed'].reduce((a,k)=>a+d[k],0)>1000)fail('Entidad: las cinco estadísticas base no pueden superar 1000 en total.');
   if(!Array.isArray(d.moveIds)||d.moveIds.length!==3||new Set([...d.moveIds,d.uniqueMoveId]).size!==4||![...d.moveIds,d.uniqueMoveId,d.globalAbilityId,d.uniqueAbilityId].every(slug))fail('Entidad: tres ataques globales, uno exclusivo y dos habilidades con IDs válidos.');
   if(d.spriteId&&!slug(d.spriteId))fail('Entidad: sprite ID inválido.');
  }
