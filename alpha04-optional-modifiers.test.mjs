@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const entity=(id,ability='blank')=>({id,name:id,definition:{types:['fuego'],hp:500,attack:110,defense:110,specialAttack:110,specialDefense:110,speed:id==='attacker'?130:60,moveIds:['ray','wait','wait'],uniqueMoveId:'wait',globalAbilityId:ability,uniqueAbilityId:'blank'}});
+const move=(id,power,extras={})=>({id,name:id,definition:{type:'fuego',category:power?'physical':'status',power,accuracy:100,criticalChance:0,priority:0,rules:[],...extras}});
+const make=(ability, extras={})=>({entities:{attacker:entity('attacker',ability),defender:entity('defender')},moves:{ray:move('ray',80,extras),wait:move('wait',0)},abilities:{blank:{id:'blank',definition:{rules:[]}},attack:{id:'attack',definition:{rules:[{event:'on_attack',condition:{type:'always'},target:'self',action:{type:'final_damage',value:20,mode:'percent',stacking:'additive'},chance:100}]}},survive:{id:'survive',definition:{survive:{fixedHp:1,limit:1,chance:0,priority:-50},rules:[{event:'on_survive',condition:{type:'always'},target:'self',action:{type:'stat_change',stat:'defense',value:2},chance:100}]}}},weathers:{},fields:{},scenarios:{},statuses:{},...extras.catalog});
+const r=(catalog,turns=1,options={})=>simulate({catalog,left:'attacker',right:'defender',turns,leftOrders:Array.from({length:turns},()=>({move:'ray'})),rightOrders:Array.from({length:turns},()=>({move:'wait'})),randomSource:()=>0.9,...options});
+const normal=r(make('blank'));
+const powered=r(make('attack'));
+assert.ok(powered.right.hp<normal.right.hp,'final damage effect increases dealt damage');
+const streaked=r(make('blank',{streak:{enabled:true,conditionMode:'hit',minStreak:1,perStack:5,valueMode:'fixed',maxStacks:3,cap:10}}),4);
+assert.deepEqual(streaked.log.filter(x=>x.includes('potencia')),['ray: potencia 80+5.','ray: potencia 80+10.','ray: potencia 80+10.']);
+const multiplier=r(make('blank',{streak:{enabled:true,conditionMode:'use',minStreak:1,perStack:5,valueMode:'percent',stacking:'multiplicative',maxStacks:10,cap:25}}),3);
+assert.equal(multiplier.log.filter(x=>x.includes('potencia')).length,2);
+const one=make('blank');one.entities.attacker.definition.hp=60;one.entities.attacker.definition.moveIds=['wait','wait','wait'];one.entities.attacker.definition.uniqueMoveId='wait';one.entities.attacker.definition.globalAbilityId='survive';one.moves.ray=move('ray',1200);one.entities.defender.definition.moveIds=['ray','wait','wait'];const saved=simulate({catalog:one,left:'attacker',right:'defender',turns:1,leftMove:'wait',rightMove:'ray',randomSource:()=>0.9});
+assert.equal(saved.left.hp,1);assert.equal(saved.left.stages.defense,2);assert.ok(saved.log.some(x=>x.includes('Sobrevivir')));
+assert.deepEqual(simulate({catalog:one,left:'attacker',right:'defender',turns:1,leftMove:'wait',rightMove:'ray',randomTape:saved.randomTape}),saved);
+console.log('Regresión Alpha 0.4: rachas opcionales, modificador final, Sobrevivir garantizado y Al sobrevivir OK');
