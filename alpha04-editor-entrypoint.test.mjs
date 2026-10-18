@@ -15,7 +15,7 @@ assert.match(editor,/data-view="labels"/);
 assert.match(editor,/Golpes en cadena/);
 assert.match(lab,/Editor privado Alpha 0\.4/);
 assert.match(worker,/editorBuild: "UD-EDITOR-ALPHA04-ETIQUETAS-20261017"/);
-assert.match(wrangler,/name = "universal-duels-editor-privado"/);
+assert.match(wrangler,/name = "universal-duels-test"/);
 assert.match(workflow,/- run: npx wrangler deploy/);
 assert.equal(fs.readdirSync(path.join(root,'.github/workflows')).filter(x=>/\.ya?ml$/.test(x)).length,1);
 console.log('Editor actualizado en /editor/, raíz enlazada y laboratorio clásico preservado en /lab/ OK');

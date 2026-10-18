@@ -1,4 +1,4 @@
-name = "universal-duels-editor-privado"
+name = "universal-duels-test"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
