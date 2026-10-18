@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { simulate } from './battle-engine.js';
+const entity=(id,ability='empty')=>({id,name:id,definition:{types:['rayo'],hp:100,attack:80,defense:100,specialAttack:80,specialDefense:100,speed:100,moveIds:['mark','idle','idle'],uniqueMoveId:'idle',globalAbilityId:ability,uniqueAbilityId:'empty'}});
+const mark={id:'mark',name:'Mark',definition:{type:'rayo',category:'status',power:0,accuracy:100,criticalChance:0,priority:0,rules:[{event:'manual',condition:{type:'hp_full',subject:'target'},target:'self',action:{type:'stat_change',stat:'attack',value:2},chance:100,duration:0}]}};
+const catalog={entities:{a:entity('a'),b:entity('b')},moves:{mark,idle:{id:'idle',name:'Idle',definition:{type:'rayo',category:'status',power:0,accuracy:100,criticalChance:0,priority:0,rules:[]}}},abilities:{empty:{id:'empty',definition:{rules:[]}}},statuses:{}};
+const result=simulate({catalog,left:'a',right:'b',turns:1,leftMove:'mark',rightMove:'idle',randomSource:()=>.8});
+assert.equal(result.left.stages.attack,2,'condition evaluated on full-HP movement target');
+const passive={event:'on_condition',condition:{type:'hp_full',subject:'self'},target:'self',action:{type:'stat_change',stat:'speed',value:3},chance:100};
+catalog.abilities.guard={id:'guard',definition:{rules:[passive]}};
+catalog.entities.a=entity('a','guard');
+const r2=simulate({catalog,left:'a',right:'b',turns:1,leftMove:'idle',rightMove:'idle',randomSource:()=>.8});
+assert.equal(r2.left.currentStats.speed,130,'full HP passive stat bonus');
+console.log('condiciones hp_full y sujeto objetivo OK');
