@@ -27,7 +27,6 @@ const run=(session,catalog,chart,turns)=>{
 const updateState=(session,result)=>{
   session.randomTape=[];
   session.engineCheckpoint=result.checkpoint;
-  session.lastTurnLogs=result.log||[];session.lastTurnVisualEvents=result.visualEvents||[];
   const previous=Array.isArray(session.lastState?.log)?session.lastState.log:[];
   // Incremental result.log is a delta. Keep a small recent window for the UI.
   session.lastState=compactState({...result,log:[...previous,...result.log].slice(-80)});
@@ -40,7 +39,7 @@ export function createPractice({catalog,chart={},revision,mode='singles',difficu
   const s={revision,mode,difficulty,leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
   const r=run(s,catalog,chart,0);updateState(s,r);return s;
 }
-export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState,lastTurnLogs:session.lastTurnLogs||[],visualEvents:session.lastTurnVisualEvents||[]};}
+export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState};}
 function validateOrders(session,order,catalog){
   const state=session.lastState,active=state.leftActive.filter(x=>x.hp>0),selected=Array.isArray(order?.actions)?order.actions:[order];
   const actions=[];
@@ -53,12 +52,6 @@ function validateOrders(session,order,catalog){
       const t=raw.target,side=t?.side,slot=Number(t?.slot),target=(side==='left'?state.leftActive:side==='right'?state.rightActive:[]).find(x=>x.activeSlot===slot);
       if(!target||target.hp<=0||(side==='left'&&slot===u.activeSlot))throw Error('Objetivo inválido.');
       a.target={side,slot};
-    }
-    if(raw.switchChoice){
-      const choice=raw.switchChoice,index=Number(choice.teamIndex),available=aliveReserves(state,'left');
-      const manual=(move.definition?.rules||[]).some(rule=>rule.action?.type==='switch_character'&&rule.action?.switchMode==='manual'&&rule.target==='self');
-      if(!manual||choice.side!=='left'||Number(choice.slot)!==u.activeSlot||!Number.isInteger(index)||!available.includes(index))throw Error('Relevo del efecto inválido.');
-      a.switchChoice={side:'left',slot:u.activeSlot,teamIndex:index};
     }
     actions.push(a);
   }

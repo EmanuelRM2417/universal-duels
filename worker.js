@@ -22,7 +22,7 @@ export function completedOutcome(result){
   if(!rightAlive)return {finished:true,winner:'host',reason:'ko'};
   return {finished:false,winner:null,reason:null};
 }
-function publicCatalog(s){return{ok:true,version:s.version,revision:s.revision,publishedAt:s.publishedAt,types:s.types,chart:s.chart,catalog:s.catalog};}
+function publicCatalog(s){return{ok:true,version:s.version,revision:s.revision,publishedAt:s.publishedAt,types:s.types,chart:s.chart,catalog:s.catalog,uiLayout:s.uiLayout||{}};}
 function fixedCatalogResponse(s){const res=json(publicCatalog(s));res.headers.set('Cache-Control','public, max-age=31536000, immutable');return res;}
 // Stop reading oversized bodies before JSON parsing; Content-Length is optional
 // and may be absent or inaccurate for streamed requests.
@@ -62,21 +62,32 @@ async function allowCreation(request,env,kind){
 export default{async fetch(request,env){const url=new URL(request.url);if(request.method==="OPTIONS")return new Response(null,{headers:cors});if(url.pathname==="/health"){try{const s=await loadPublishedContent(env);return json({ok:true,service:"Universal Duels",version:"0.4.0-alpha",revision:s.revision,source:"manual-public-patch"});}catch(e){return json({ok:false,service:"Universal Duels",version:"0.4.0-alpha",error:e.message},503);}}
   if(url.pathname==="/api/catalog"&&request.method==="GET"){try{return json(publicCatalog(await snapshot(env)));}catch(e){return json({error:e.message},503);}}
   const catMatch=url.pathname.match(/^\/api\/catalog\/([a-z0-9-]{1,80})$/i);if(catMatch&&request.method==="GET"){try{return fixedCatalogResponse(await snapshot(env,catMatch[1]));}catch(e){return json({error:e.message},404);}}
-  const spriteMatch=url.pathname.match(/^\/api\/sprites\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);if(spriteMatch&&request.method==="GET"){if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),id=spriteMatch[1],published=Object.values(s.catalog?.entities||{}).some(e=>e?.definition?.spriteId===id);if(!published)return json({error:"Sprite no publicado."},404);const assetPath=s.assets?.sprites?.[id]||`published/${s.revision}/sprites/${id}.png`;const obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Sprite no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
-  // Serve only visuals referenced by the immutable published catalog and manifest.
-  const visualMatch=url.pathname.match(/^\/api\/environment-visuals\/(weathers|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
-  if(visualMatch&&request.method==="GET"){
-    if(!env.PUBLIC_SPRITES)return json({error:"Recursos visuales públicos no conectados."},503);
+  const environmentMatch=url.pathname.match(/^\/api\/environment-visuals\/(scenarios|weathers)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(environmentMatch&&request.method==='GET'){
+    if(!env.PUBLIC_SPRITES)return json({error:'R2 no conectado.'},503);
     try{
-      const category=visualMatch[1],id=visualMatch[2],revision=url.searchParams.get('revision')||'',s=await snapshot(env,revision||undefined);
-      const published=Object.values(s.catalog?.[category]||{}).some(e=>e?.definition?.imageId===id);
-      if(!published)return json({error:"Visual no publicado."},404);
-      const asset=s.assets?.environment?.[category+'/'+id]||`published/${s.revision}/environment/${category}/${id}.png`;
-      const obj=await env.PUBLIC_SPRITES.get(asset);
-      if(!obj)return json({error:"Visual no encontrado."},404);
-      return new Response(obj.body,{headers:{'Content-Type':'image/png','Cache-Control':revision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}});
+      const requestedRevision=url.searchParams.get('revision')||'',snap=await snapshot(env,requestedRevision||undefined);
+      const [,category,id]=environmentMatch;
+      if(!Object.values(snap.catalog?.[category]||{}).some(x=>x?.definition?.imageId===id))return json({error:'Recurso no publicado.'},404);
+      const key=`${category}/${id}`,path=snap.assets?.environment?.[key]||`published/${snap.revision}/environment/${key}.png`;
+      const obj=await env.PUBLIC_SPRITES.get(path);
+      return obj?new Response(obj.body,{headers:{'Content-Type':'image/png','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Recurso no encontrado.'},404);
     }catch(e){return json({error:String(e.message||e)},404);}
   }
+  const audioMatch=url.pathname.match(/^\/api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(audioMatch&&request.method==='GET'){
+    if(!env.PUBLIC_SPRITES)return json({error:'Audio público no conectado.'},503);
+    try{
+      const requestedRevision=url.searchParams.get('revision')||'',snap=await snapshot(env,requestedRevision||undefined);
+      const [,category,id]=audioMatch,key=category==='global'?id:`scenarios/${id}`;
+      if(category==='scenarios'&&!Object.values(snap.catalog?.scenarios||{}).some(x=>x?.definition?.soundId===id))return json({error:'Audio no publicado.'},404);
+      const assetPath=snap.assets?.audio?.[key];
+      if(!assetPath)return json({error:'Audio no configurado.'},404);
+      const obj=await env.PUBLIC_SPRITES.get(assetPath);
+      return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Audio no encontrado.'},404);
+    }catch(e){return json({error:String(e.message||e)},404);}
+  }
+  const spriteMatch=url.pathname.match(/^\/api\/sprites\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);if(spriteMatch&&request.method==="GET"){if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),id=spriteMatch[1],published=Object.values(s.catalog?.entities||{}).some(e=>e?.definition?.spriteId===id);if(!published)return json({error:"Sprite no publicado."},404);const assetPath=s.assets?.sprites?.[id]||`published/${s.revision}/sprites/${id}.png`;const obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Sprite no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
   const typeMatch=url.pathname.match(/^\/api\/type-icons\/([a-z]+)$/);if(typeMatch&&request.method==="GET"){if(!TYPES.has(typeMatch[1]))return json({error:"Tipo desconocido."},404);if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),assetPath=s.assets?.typeIcons?.[typeMatch[1]]||`published/${s.revision}/type-icons/${typeMatch[1]}.png`,obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Icono no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
   if(url.pathname==="/api/practice"&&request.method==="POST"){
     try{
@@ -241,9 +252,6 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     const room=await this.getRoom(),now=Date.now(),b=room.battle;
     if(b?.status==="playing"&&b.phase==="action"&&b.selectionDeadline){
       if(b.selectionDeadline<=now){
-        // A valid selected order is already a deliberate player decision.
-        // If its separate client confirmation is lost, do not declare a false double timeout.
-        for(const role of ["host","guest"])if(!b.pending?.[role]&&b.selection?.[role])b.pending[role]=b.selection[role];
         const missing=["host","guest"].filter(role=>!b.pending?.[role]);
         if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");}
         else if(missing.length===1)await this.finishOnTimeout(room,missing[0]);

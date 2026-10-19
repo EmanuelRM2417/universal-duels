@@ -7,7 +7,7 @@ const options={catalog,left:'attacker',right:'phoenix',turns:1,leftMove:'strike'
 const revived=simulate(options);
 assert.equal(revived.right.hp,17,'Al morir resurrects its owner before replacement');
 assert.deepEqual(revived.needsReplacement.right,[]);
-assert.equal(revived.deathEvents.length,0,'A resurrection is not a final KO event');
+assert.equal(revived.deathEvents.length,1);
 assert.equal(revived.log.filter(x=>x.includes('resucita')).length,1);
 assert.deepEqual(simulate({...options,randomTape:revived.randomTape}),revived,'death replay must be deterministic');
 const knockedOut=simulate({...options,catalog:{...catalog,entities:{...catalog.entities,phoenix:entity('phoenix')}}});

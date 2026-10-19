@@ -32,15 +32,3 @@ console.log('Práctica: creación, Singles, Doubles, IA, acciones inválidas, ex
  assert.ok(session.rightOrders[0]);
 }
 console.log('Práctica: ruta integrada de turnos de IA OK');
-// The shared room-style battle controls include optional movement-triggered
-// manual switches. Practice must validate and forward the chosen reserve.
-{
- const pivotCatalog=structuredClone(catalog);
- pivotCatalog.moves.pivot={id:'pivot',name:'Relevo',definition:{type:'fuego',category:'status',power:0,accuracy:0,targeting:'self',rules:[{event:'manual',target:'self',chance:100,action:{type:'switch_character',switchMode:'manual'}}]}};
- pivotCatalog.entities.a.definition.moveIds=['pivot','hit','wait'];
- const s=createPractice({catalog:pivotCatalog,revision:'manual-switch',mode:'singles',difficulty:'easy',leftTeam:['a','c'],rightTeam:['b'],now:100});
- assert.throws(()=>advancePractice(s,'turn',{order:{move:'pivot',switchChoice:{side:'right',slot:0,teamIndex:1}}},{catalog:pivotCatalog,now:200}),/Relevo del efecto inválido/);
- const result=advancePractice(s,'turn',{order:{move:'pivot',switchChoice:{side:'left',slot:0,teamIndex:1}}},{catalog:pivotCatalog,now:200,random:()=>0.5});
- assert.equal(result.state.leftActive[0].id,'c');
-}
-console.log('Práctica: selección manual de relevo por movimiento validada e integrada.');
