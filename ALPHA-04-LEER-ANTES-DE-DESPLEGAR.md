@@ -18,7 +18,7 @@
 - Errores de arranque del editor corregidos tras pruebas de Chromium aislado: selectores de movimientos y función obsoleta; Práctica superó recorrido visual simulado de principio a fin.
 - Catálogo navegable, campos de configuración de mecánicas Alpha 0.4 en el editor y comparación de regresiones con versión publicada.
 - Pruebas de API HTTP con almacenamiento simulado, seguridad de creación de salas, consumo de assets y regresiones de motor.
-- Un único workflow manual por repositorio valida con tests y `wrangler --dry-run`; solo despliega al elegir explícitamente Publicar y escribir `PUBLICAR_ALPHA04`. No hay despliegues automáticos.
+- GitHub Actions de despliegue cambiados a **manuales**. CI de validación en push/PR ejecuta tests y la compilación de Wrangler en modo `--dry-run`, sin desplegar.
 
 ## Comprobación local
 
@@ -36,7 +36,7 @@ npx wrangler deploy --dry-run --outdir ./dist-alpha04
 ## Precauciones de Cloudflare
 
 - **No ejecutar `wrangler deploy`, ni el workflow manual de despliegue, ahora.**
-- No es necesario configurar un `wrangler.test.toml` ni crear KV/R2 de prueba para la validación sin desplegar.
+- Los ficheros `wrangler.test.toml` tienen identificadores/buckets de ensayo a configurar deliberadamente; no deben apuntar a KV ni a R2 públicos.
 - Comprobar el nombre real de Worker/Access de editor-privado antes de cualquier despliegue. El nombre separado en esta candidata puede requerir enlazar el dominio y las políticas de Access adecuados, sin desproteger el editor.
 - Las ID de namespaces de producción del `wrangler.toml` se conservaron según los ZIP proporcionados; verificar manualmente que corresponden a los recursos correctos antes de desplegar.
 - Cloudflare KV es *eventualmente consistente*: mover el puntero al final minimiza cambios a medias, **pero no equivale a una transacción ACID**. Ejecutar prueba de publicación/rollback en un entorno aislado antes del uso público.

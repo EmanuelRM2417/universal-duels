@@ -79,7 +79,7 @@ const privateJson = (data, status = 200) =>
     }
   });
 
-const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial'];
+const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses'];
 async function candidateFromDrafts(env){
   const catalog={};
   for(const category of RELEASE_CATEGORIES){
@@ -145,8 +145,7 @@ export default {
           ok: true,
           editor: "Universal Duels",
           draftsConnected: true,
-          publicationMode: "manual",
-          editorBuild: "UD-EDITOR-ALPHA04-ETIQUETAS-20261017"
+          publicationMode: "manual"
         });
       }
 
@@ -178,6 +177,47 @@ export default {
           return privateJson({ok:true,type:id,message:"Sprite guardado."});
         }
         return privateJson({error:"Método no permitido."},405);
+      }
+
+      // Estudio de interfaz: borrador privado, textos y orden de paneles seguros.
+      if(url.pathname==='/editor-api/ui-layout'&&['GET','PUT'].includes(request.method)){
+        if(!env.EDITOR_DRAFTS)return privateJson({error:'KV privado no conectado.'},503);
+        if(request.method==='GET')return privateJson({ok:true,layout:await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||{}});
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        const raw=await request.text();if(raw.length>16000)return privateJson({error:'Configuración demasiado grande.'},413);
+        let data;try{data=JSON.parse(raw);}catch{return privateJson({error:'JSON inválido.'},400);}
+        const allowed=['brand','subtitle','createTitle','roomTitle','battleTitle','tutorialTitle','battleMoveLabel','battleSwitchLabel','battleInfoLabel','battleLogLabel','battlePlayerEffects','battleEnemyEffects','battleTypesLabel','battleSurrender','battleSpeedLabel','battleSpeedNormal','battleSpeedFast','battleSpeedDouble','battleMoveHint','battleWaiting','battleReplacement','battleFinished','battleMoveInfoLabel','battleSwitchActionLabel'];
+        if(!data||typeof data!=='object'||Array.isArray(data))return privateJson({error:'Configuración inválida.'},400);
+        const labels={};for(const key of allowed)if(data.labels?.[key]!==undefined){const v=data.labels[key];if(typeof v!=='string'||v.length>160||/[<>]/.test(v))return privateJson({error:'Texto inválido: '+key},400);labels[key]=v;}
+        const sections=['home','lobby','battleView'];let order=sections;
+        if(data.order!==undefined){if(!Array.isArray(data.order)||data.order.length!==3||new Set(data.order).size!==3||data.order.some(x=>!sections.includes(x)))return privateJson({error:'Orden inválido.'},400);order=data.order;}
+        const toolKeys=['player','enemy','environment','types','log'];let toolbar=toolKeys;if(data.toolbar!==undefined){if(!Array.isArray(data.toolbar)||data.toolbar.length!==toolKeys.length||new Set(data.toolbar).size!==toolKeys.length||data.toolbar.some(x=>!toolKeys.includes(x)))return privateJson({error:'Barra de combate inválida.'},400);toolbar=data.toolbar;}const opts=data.options||{};if(typeof opts!=='object'||Array.isArray(opts)||Object.keys(opts).some(x=>!['showMoveType','showMoveCategory','showMoveStab','showMoveAffinity'].includes(x))||Object.values(opts).some(x=>typeof x!=='boolean'))return privateJson({error:'Opciones de movimientos inválidas.'},400);const layout={labels,order,toolbar,options:opts};await env.EDITOR_DRAFTS.put('alpha04:ui-layout:v1',JSON.stringify(layout));
+        return privateJson({ok:true,layout,message:'Borrador guardado. Publicar con Cargar parche.'});
+      }
+
+      // Biblioteca privada de audio: MP3 con límite estricto y publicación manual.
+      const audioMatch=url.pathname.match(/^\/editor-api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+      if(audioMatch){
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 no conectado.'},503);
+        const [,category,id]=audioMatch;
+        const allowed=['lobby','battle','stat-up','stat-down','physical','special','status','portal-in','portal-out'];
+        if(category==='global'&&!allowed.includes(id))return privateJson({error:'Audio global desconocido.'},400);
+        const key=`audio/${category}/${id}.mp3`;
+        if(request.method==='GET'){
+          const obj=await env.EDITOR_SPRITES.get(key);
+          return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}}):privateJson({error:'Audio no encontrado.'},404);
+        }
+        if(request.method==='PUT'){
+          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('audio/mpeg'))return privateJson({error:'Solo MP3.'},415);
+          const data=await request.arrayBuffer();
+          if(!data.byteLength||data.byteLength>8*1024*1024)return privateJson({error:'Máximo 8 MB.'},413);
+          const b=new Uint8Array(data),mp3=(b[0]===73&&b[1]===68&&b[2]===51)||(b[0]===255&&(b[1]&224)===224);
+          if(!mp3)return privateJson({error:'Cabecera MP3 inválida.'},415);
+          await env.EDITOR_SPRITES.put(key,data,{httpMetadata:{contentType:'audio/mpeg'}});
+          return privateJson({ok:true,id,category});
+        }
+        return privateJson({error:'Método no permitido.'},405);
       }
 
       // Recursos visuales privados de climas y escenarios. Se guardan separados del JSON del catálogo.
@@ -422,7 +462,7 @@ if (
       }
 
       // Catálogo privado de contenido. No ejecuta mecánicas en combate.
-      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags", "tutorial"];
+      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses"];
       const catalogMatch = url.pathname.match(/^\/editor-api\/catalog\/([a-z]+)(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?$/);
       if (catalogMatch) {
         const category = catalogMatch[1];
@@ -457,7 +497,7 @@ if (
           }
           if (category === "entities") {
             if(!Array.isArray(d.types)||d.types.length<1||d.types.length>3||new Set(d.types).size!==d.types.length||d.types.some(t=>!allTypes.includes(t)))return privateJson({error:"Se requieren 1–3 tipos distintos y válidos."},400);
-            for(const stat of ["hp","attack","defense","specialAttack","specialDefense","speed"]){const max=stat==="hp"?1000:200;if(!Number.isInteger(d[stat])||d[stat]<0||d[stat]>max)return privateJson({error:"Estadística inválida: "+stat+" (PS 0–1000; demás 0–200)."},400);} if(["attack","defense","specialAttack","specialDefense","speed"].reduce((n,k)=>n+d[k],0)>1000)return privateJson({error:"Las cinco estadísticas base no pueden superar 1000 en total."},400);
+            for(const stat of ["hp","attack","defense","specialAttack","specialDefense","speed"]){const max=stat==="hp"?500:200;if(!Number.isInteger(d[stat])||d[stat]<0||d[stat]>max)return privateJson({error:"Estadística inválida: "+stat+" (PS 0–500; demás 0–200)."},400);} if(["attack","defense","specialAttack","specialDefense","speed"].reduce((n,k)=>n+d[k],0)>1000)return privateJson({error:"Las cinco estadísticas base no pueden superar 1000 en total."},400);
             if(!Array.isArray(d.moveIds)||d.moveIds.length!==3||new Set([...d.moveIds,d.uniqueMoveId]).size!==4)return privateJson({error:"Se requieren tres ataques globales y uno exclusivo, todos distintos."},400);
             for(const [kind,ids] of [["moves",[...d.moveIds,d.uniqueMoveId]],["abilities",[d.globalAbilityId,d.uniqueAbilityId]]])for(const ref of ids) {
               if(!slug.test(ref||""))return privateJson({error:"Referencia inválida: "+ref},400);
@@ -765,7 +805,8 @@ if (
           if(body.expectedRevision!==(current?.revision||null))return privateJson({error:'El contenido publicado cambió; revisá otra vez la vista previa.'},409);
           const publishedAt=new Date().toISOString(),revision=`patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0,8)}`;
           const resources=await releaseResources(env,catalog,revision,current||{},TYPES);
-          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,assets:resources.assets};
+          const uiLayout=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||current?.uiLayout||{};
+          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,assets:resources.assets};
           // Recursos preparados antes del cambio del puntero público.
           await env.PUBLIC_CONTENT.put(`public-v1:snapshot:${revision}`,JSON.stringify(candidate));
           const history=await env.PUBLIC_CONTENT.get('public-v1:history','json');

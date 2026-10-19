@@ -1,6 +1,6 @@
 // Alpha 0.4: pure publication validation. Does not write to Cloudflare.
 import {validateDefinition} from './catalog-validation.js';
-const CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags'];
+const CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses'];
 const ID=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTION_REFS={apply_effect:'effects',apply_status:'statuses',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'};
 export function validateRelease(catalog, chart){
@@ -13,7 +13,6 @@ export function validateRelease(catalog, chart){
       try{validateDefinition(category,entry.definition);}catch(e){errors.push(`${category}/${id}: ${e.message}`);}
     }
   }
-  for(const label of Object.values(catalog?.tags||{}))for(const id of label.definition?.entityIds||[])if(!catalog?.entities?.[id])errors.push(`Etiqueta ${label.name}: personaje inexistente ${id}`);
   const exists=(cat,id,source)=>{if(!id||!catalog?.[cat]?.[id])errors.push(`${source}: referencia inexistente ${cat}/${id||'(vacía)'}`);};
   for(const e of Object.values(catalog?.entities||{})){
     const d=e.definition||{};

@@ -16,7 +16,7 @@ const chart={fuego:{fuego:'neutral'}};
 const r=simulate({left:'a',right:'b',leftTeam:['a','c'],rightTeam:['b'],leftOrders:[{move:'buff'}],rightOrders:[{move:'m2'}],turns:1,catalog,chart,randomTape:[0.1,0.1,0.1,0.1]});
 const statEvent=r.visualEvents.find(e=>e.type==='unit_state'&&e.side==='left'&&e.unit?.stages?.speed===1);
 assert.ok(statEvent,'Debe emitir estado visual inmediatamente al cambiar una stat');
-assert.equal(r.log[statEvent.logIndex].includes('Velocidad'),true);
+assert.equal(r.log[statEvent.logIndex].includes('speed'),true);
 
 const s=simulate({left:'a',right:'b',leftTeam:['a','c'],rightTeam:['b'],leftOrders:[{switch:1}],rightOrders:[{move:'m2'}],turns:1,catalog,chart,randomTape:[0.1,0.1,0.1]});
 const sw=s.visualEvents.find(e=>e.type==='switch'&&e.side==='left');

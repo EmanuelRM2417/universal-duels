@@ -1,5 +1,3 @@
-> **Nota Alpha 0.4:** este documento describe un flujo anterior. Para validar o publicar, el workflow vigente es solo `.github/workflows/deploy.yml`; consultá `WORKFLOW-SENCILLO.md`. No se necesita `wrangler.test.toml`.
-
 # Interfaz de estudio y sprites de tipos
 
 - Menú lateral: inicio/sprites de entidades, tabla de tipos, sprites de tipos, 8 catálogos y laboratorio. Los formularios existentes permanecen intactos y se navegan sin recargar.

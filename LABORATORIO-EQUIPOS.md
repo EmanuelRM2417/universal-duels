@@ -1,5 +1,3 @@
-> **Nota Alpha 0.4:** este documento describe un flujo anterior. Para validar o publicar, el workflow vigente es solo `.github/workflows/deploy.yml`; consultá `WORKFLOW-SENCILLO.md`. No se necesita `wrangler.test.toml`.
-
 # Motor de batallas simuladas — estado y uso
 
 Esta entrega extiende el laboratorio privado existente. NO altera las salas online públicas.

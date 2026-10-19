@@ -1,5 +1,3 @@
-> **Nota Alpha 0.4:** este documento describe un flujo anterior. Para validar o publicar, el workflow vigente es solo `.github/workflows/deploy.yml`; consultá `WORKFLOW-SENCILLO.md`. No se necesita `wrangler.test.toml`.
-
 # Estado real del editor de mecánicas — Universal Duels
 
 ## Implementado en esta entrega

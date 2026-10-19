@@ -1,5 +1,3 @@
-> **Nota Alpha 0.4:** este documento describe un flujo anterior. Para validar o publicar, el workflow vigente es solo `.github/workflows/deploy.yml`; consultá `WORKFLOW-SENCILLO.md`. No se necesita `wrangler.test.toml`.
-
 # Universal Duels — Editor privado y laboratorio de batalla
 
 Esta entrega se basa en `editor-privado` y **no cambia** la rama `main` ni su despliegue.

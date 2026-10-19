@@ -22,7 +22,7 @@ assert.deepEqual(a.stages,{},'los niveles temporales se reinician al salir');
 assert.deepEqual(a.statSources,[],'las fuentes de niveles temporales se limpian al salir');
 assert.equal(r.field,'arena','la habilidad de entrada puede volver a activar el campo tras expirar');
 assert.equal(r.fieldTurns,4,'el campo reactivado empieza en 5 y consume la ronda de reentrada');
-assert.equal(r.log.filter(x=>x.includes('Arena se activó')).length,2,'la habilidad on_enter limitada se rearma por entrada');
+assert.equal(r.log.filter(x=>x.includes('Se activa field: Arena')).length,2,'la habilidad on_enter limitada se rearma por entrada');
 assert.equal(a.cooldowns.boost,2,'el cooldown queda congelado en reserva y solo baja al volver activo');
 
 // Si vuelve antes de que termine, no debe refrescar la duración del campo.
@@ -30,6 +30,6 @@ const r2=simulate({left:'a',right:'c',leftTeam:['a','b'],rightTeam:['c'],catalog
   leftOrders:[{switch:1},{switch:0}],rightOrders:rightOrders.slice(0,2)});
 assert.equal(r2.field,'arena');
 assert.equal(r2.fieldTurns,3,'reentrar mientras el mismo campo sigue activo no reinicia sus 5 rondas');
-assert.equal(r2.log.filter(x=>x.includes('Arena se activó')).length,1,'no se reactiva el mismo campo mientras sigue activo');
+assert.equal(r2.log.filter(x=>x.includes('Se activa field: Arena')).length,1,'no se reactiva el mismo campo mientras sigue activo');
 
 console.log('PASS: switch resets stages, re-arms on-enter abilities, preserves environment duration and freezes reserve cooldowns');
