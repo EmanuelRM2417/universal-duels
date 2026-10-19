@@ -1,1270 +1,283 @@
-import { validateDefinition } from "./catalog-validation.js";
-import { simulate } from "./battle-engine.js";
-import {validateRelease,publicationDiff,nextHistory,selectRelease} from "./release-control.js";
-import {normalizeRegressionCase,runRegressionCase} from "./regression-suite.js";
-import {releaseResources} from "./release-assets.js";
+import { simulate, normalizeMoveTarget } from "./battle-engine.js";
+import {createPractice,advancePractice,publicPractice,PRACTICE_TTL} from "./practice-session.js";
 
-import { createRemoteJWKSet, jwtVerify } from "jose";
-const accessKeySets=new Map(); // Reuse fetched Access JWKS inside a warm Worker isolate.
-
-// Respuestas JSON.
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...cors,
-      "Content-Type": "application/json"
-    }
-  });
-
-// Verifica identidad mediante Cloudflare Access.
-async function verifyEditorAccess(request, env) {
-  try {
-    const token = request.headers.get("Cf-Access-Jwt-Assertion");
-
-    if (
-      !token ||
-      !env.ACCESS_TEAM_DOMAIN ||
-      !env.ACCESS_AUD ||
-      !env.EDITOR_EMAIL
-    ) {
-      return null;
-    }
-
-    const teamDomain = env.ACCESS_TEAM_DOMAIN
-      .replace(/^https?:\/\//, "")
-      .replace(/\/+$/, "");
-
-    const issuer = `https://${teamDomain}`;
-
-    let keys=accessKeySets.get(issuer);
-    if(!keys){keys=createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));accessKeySets.set(issuer,keys);}
-
-    const { payload } = await jwtVerify(token, keys, {
-      issuer,
-      audience: env.ACCESS_AUD
-    });
-
-    const authorizedEmail = env.EDITOR_EMAIL
-      .trim()
-      .toLowerCase();
-
-    const tokenEmail = String(payload.email || "")
-      .trim()
-      .toLowerCase();
-
-    if (!tokenEmail || tokenEmail !== authorizedEmail) {
-      return null;
-    }
-
-    return payload;
-  } catch {
-    return null;
-  }
+export const ACTION_MS=60_000, REPLACEMENT_MS=30_000;
+const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
+const TYPES=new Set(["fuego","planta","roca","hielo","rayo","metal","guerra","mente","encanto","espectro","divinidad","luz","oscuridad","viento","dragon","agua","veneno","tecnologia","agilidad","valor"]),ID=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export async function loadPublishedContent(env){if(!env.PUBLIC_CONTENT)throw Error("Contenido público no conectado.");const published=await env.PUBLIC_CONTENT.get("public-v1:current","json");if(!published?.revision||!published?.catalog||!published?.chart)throw Error("No hay un parche público cargado. Cargalo desde el editor privado.");return published;}
+async function snapshot(env,revision){if(!env.PUBLIC_CONTENT)throw Error("Contenido público no conectado.");if(revision){if(!/^[a-z0-9-]{1,80}$/.test(revision))throw Error("Revisión inválida.");const frozen=await env.PUBLIC_CONTENT.get(`public-runtime:snapshot:${revision}`,"json");if(frozen)return frozen;const publishedRevision=await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${revision}`,"json");if(publishedRevision)return publishedRevision;}const published=await loadPublishedContent(env);if(revision&&published.revision!==revision)throw Error("La revisión de esta batalla ya no está disponible.");return published;}
+async function freezeSnapshot(env,s){
+  // Publishing already stores immutable snapshots. Avoid one KV write per new match.
+  const key=`public-runtime:snapshot:${s.revision}`;
+  if(await env.PUBLIC_CONTENT.get(key))return;
+  if(await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${s.revision}`))return;
+  await env.PUBLIC_CONTENT.put(key,JSON.stringify(s),{expirationTtl:2592000});
 }
-
-// Respuestas privadas sin CORS público.
-const privateJson = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store"
-    }
-  });
-
-const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial'];
-async function candidateFromDrafts(env){
-  const catalog={};
-  for(const category of RELEASE_CATEGORIES){
-    const prefix=`catalog-v1:${category}:`;const entries=[];let cursor, pages=0;
-    do {
-      if(++pages>100)throw Error('Hay demasiadas páginas de catálogo para preparar el parche.');
-      const page=await env.EDITOR_DRAFTS.list({prefix,limit:1000,...(cursor?{cursor}:{})});
-      const values=await Promise.all(page.keys.map(k=>env.EDITOR_DRAFTS.get(k.name,'json')));
-      entries.push(...values.filter(Boolean));cursor=page.list_complete?undefined:page.cursor;
-    }while(cursor);
-    catalog[category]=Object.fromEntries(entries.map(e=>[e.id,e]));
-  }
-  const chartDraft=await env.EDITOR_DRAFTS.get('type-chart-draft','json');
-  return {catalog,chart:chartDraft?.chart||chartDraft};
+export function completedOutcome(result){
+  const leftAlive=Array.isArray(result?.leftTeam)&&result.leftTeam.some(u=>u.hp>0);
+  const rightAlive=Array.isArray(result?.rightTeam)&&result.rightTeam.some(u=>u.hp>0);
+  if(!leftAlive&&!rightAlive)return {finished:true,winner:null,reason:'double_ko'};
+  if(!leftAlive)return {finished:true,winner:'guest',reason:'ko'};
+  if(!rightAlive)return {finished:true,winner:'host',reason:'ko'};
+  return {finished:false,winner:null,reason:null};
 }
-async function releaseRegression(env,catalog,chart){
-  const tests=(await env.EDITOR_DRAFTS.get('alpha04:regression-tests:v1','json'))||[];
-  const results=[];
-  for(const test of tests.slice(0,10)){
-    try{results.push(runRegressionCase(test,catalog,chart));}
-    catch(e){results.push({name:test.name,passed:false,error:String(e.message||e)});}
-  }
-  return {passed:results.every(t=>t.passed)&&tests.length<=10,count:results.length,remaining:Math.max(0,tests.length-10),results};
+function publicCatalog(s){return{ok:true,version:s.version,revision:s.revision,publishedAt:s.publishedAt,types:s.types,chart:s.chart,catalog:s.catalog,uiLayout:s.uiLayout||{}};}
+function fixedCatalogResponse(s){const res=json(publicCatalog(s));res.headers.set('Cache-Control','public, max-age=31536000, immutable');return res;}
+// Stop reading oversized bodies before JSON parsing; Content-Length is optional
+// and may be absent or inaccurate for streamed requests.
+async function readLimitedJson(request,maxBytes,{allowEmpty=false}={}){
+  const advertised=Number(request.headers.get('content-length')||0);
+  const tooLarge=()=>Object.assign(new Error('Solicitud demasiado grande.'),{status:413});
+  if(advertised>maxBytes)throw tooLarge();
+  if(!request.body){if(allowEmpty)return {};throw Error('Se requiere un cuerpo JSON.');}
+  const reader=request.body.getReader(),chunks=[];let size=0;
+  try{
+    while(true){const {done,value}=await reader.read();if(done)break;
+      size+=value.byteLength;if(size>maxBytes){await reader.cancel().catch(()=>{});throw tooLarge();}
+      chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  if(!size){if(allowEmpty)return {};throw Error('Se requiere un cuerpo JSON.');}
+  const bytes=new Uint8Array(size);let offset=0;
+  for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
+function cleanName(v){const n=String(v||"Jugador").trim().replace(/[<>\u0000-\u001f]/g,"").slice(0,20);return n||"Jugador";}
+function makeCode(){const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",bytes=new Uint8Array(6);crypto.getRandomValues(bytes);return[...bytes].map(x=>chars[x%chars.length]).join("");}
+function randomTeam(catalog){const ids=Object.keys(catalog.entities||{});if(ids.length<8)throw Error("Se necesitan al menos 8 personajes publicados para Random Team.");for(let i=ids.length-1;i>0;i--){const b=new Uint32Array(1);crypto.getRandomValues(b);const j=b[0]%(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}return ids.slice(0,8);}
+function compactResult(r){return{mode:r.mode,rounds:r.rounds,winner:r.winner,left:r.left,right:r.right,leftActive:r.leftActive,rightActive:r.rightActive,leftActiveIndexes:r.leftActiveIndexes,rightActiveIndexes:r.rightActiveIndexes,leftTeam:r.leftTeam,rightTeam:r.rightTeam,needsReplacement:r.needsReplacement,forcedSwitches:r.forcedSwitches,weather:r.weather,field:r.field,scenario:r.scenario,weatherTurns:r.weatherTurns,fieldTurns:r.fieldTurns,scenarioTurns:r.scenarioTurns};}
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    // API privada del editor.
-    if (url.pathname.startsWith("/editor-api/")) {
-      if (request.method === "OPTIONS") {
-        return privateJson({
-          error: "Método no permitido."
-        }, 405);
-      }
-
-      const identity = await verifyEditorAccess(request, env);
-
-      if (!identity) {
-        return privateJson({
-          ok: false,
-          error: "Acceso no autorizado."
-        }, 401);
-      }
-
-      if (!env.EDITOR_DRAFTS) {
-        return privateJson({
-          ok: false,
-          error: "Almacenamiento no conectado."
-        }, 500);
-      }
-
-      // Comprobar conexión del editor.
-      if (url.pathname === "/editor-api/status") {
-        if (request.method !== "GET") {
-          return privateJson({
-            error: "Método no permitido."
-          }, 405);
-        }
-
-        return privateJson({
-          ok: true,
-          editor: "Universal Duels",
-          draftsConnected: true,
-          publicationMode: "manual"
-        });
-      }
-
-
-      // Sprites de tipos: recursos privados independientes de los sprites de entidades.
-      // Se permite reemplazarlos expresamente; no se alteran los valores de la tabla.
-      const typeIds = new Set(["fuego","planta","roca","hielo","rayo","metal","guerra","mente","encanto","espectro","divinidad","luz","oscuridad","viento","dragon","agua","veneno","tecnologia","agilidad","valor"]);
-      if (url.pathname === "/editor-api/type-icons" && request.method === "GET") {
-        if (!env.EDITOR_SPRITES) return privateJson({error:"Almacenamiento R2 no conectado."},500);
-        const objects = await env.EDITOR_SPRITES.list({prefix:"type-icons/",limit:100});
-        return privateJson({ok:true,types:objects.objects.map(o=>o.key.slice(11).replace(/\.png$/,"" )).filter(id=>typeIds.has(id))});
-      }
-      const iconMatch=url.pathname.match(/^\/editor-api\/type-icons\/([a-z]+)$/);
-      if(iconMatch){
-        const id=iconMatch[1];if(!typeIds.has(id))return privateJson({error:"Tipo desconocido."},400);
-        if(!env.EDITOR_SPRITES)return privateJson({error:"Almacenamiento R2 no conectado."},500);
-        const key=`type-icons/${id}.png`;
-        if(request.method==="GET"){
-          const obj=await env.EDITOR_SPRITES.get(key);if(!obj)return privateJson({error:"Sprite no encontrado."},404);
-          return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
-        }
-        if(request.method==="PUT"){
-          if(request.headers.get("Origin")!==url.origin)return privateJson({error:"Origen no autorizado."},403);
-          if(!(request.headers.get("Content-Type")||"").toLowerCase().startsWith("image/png"))return privateJson({error:"Solo PNG."},415);
-          const length=Number(request.headers.get("Content-Length")||0);if(length>2*1024*1024)return privateJson({error:"PNG demasiado grande."},413);
-          const bytes=await request.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>2*1024*1024)return privateJson({error:"El PNG debe pesar entre 1 byte y 2 MB."},413);
-          const sig=new Uint8Array(bytes).slice(0,8);if(![137,80,78,71,13,10,26,10].every((x,i)=>sig[i]===x))return privateJson({error:"Firma PNG inválida."},415);
-          await env.EDITOR_SPRITES.put(key,bytes,{httpMetadata:{contentType:"image/png"}});
-          return privateJson({ok:true,type:id,message:"Sprite guardado."});
-        }
-        return privateJson({error:"Método no permitido."},405);
-      }
-
-      // Estudio de interfaz: borrador privado, textos y orden de paneles seguros.
-      if(url.pathname==='/editor-api/ui-layout'&&['GET','PUT'].includes(request.method)){
-        if(!env.EDITOR_DRAFTS)return privateJson({error:'KV privado no conectado.'},503);
-        if(request.method==='GET')return privateJson({ok:true,layout:await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||{}});
-        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-        const raw=await request.text();if(raw.length>16000)return privateJson({error:'Configuración demasiado grande.'},413);
-        let data;try{data=JSON.parse(raw);}catch{return privateJson({error:'JSON inválido.'},400);}
-        const allowed=['brand','subtitle','createTitle','roomTitle','battleTitle','tutorialTitle','battleMoveLabel','battleSwitchLabel','battleInfoLabel','battleLogLabel','battlePlayerEffects','battleEnemyEffects','battleTypesLabel','battleSurrender','battleSpeedLabel','battleSpeedNormal','battleSpeedFast','battleSpeedDouble','battleMoveHint','battleWaiting','battleReplacement','battleFinished','battleMoveInfoLabel','battleSwitchActionLabel'];
-        if(!data||typeof data!=='object'||Array.isArray(data))return privateJson({error:'Configuración inválida.'},400);
-        const labels={};for(const key of allowed)if(data.labels?.[key]!==undefined){const v=data.labels[key];if(typeof v!=='string'||v.length>160||/[<>]/.test(v))return privateJson({error:'Texto inválido: '+key},400);labels[key]=v;}
-        const sections=['home','lobby','battleView'];let order=sections;
-        if(data.order!==undefined){if(!Array.isArray(data.order)||data.order.length!==3||new Set(data.order).size!==3||data.order.some(x=>!sections.includes(x)))return privateJson({error:'Orden inválido.'},400);order=data.order;}
-        const toolKeys=['player','enemy','environment','types','log'];let toolbar=toolKeys;if(data.toolbar!==undefined){if(!Array.isArray(data.toolbar)||data.toolbar.length!==toolKeys.length||new Set(data.toolbar).size!==toolKeys.length||data.toolbar.some(x=>!toolKeys.includes(x)))return privateJson({error:'Barra de combate inválida.'},400);toolbar=data.toolbar;}const opts=data.options||{};if(typeof opts!=='object'||Array.isArray(opts)||Object.keys(opts).some(x=>!['showMoveType','showMoveCategory','showMoveStab','showMoveAffinity'].includes(x))||Object.values(opts).some(x=>typeof x!=='boolean'))return privateJson({error:'Opciones de movimientos inválidas.'},400);const layout={labels,order,toolbar,options:opts};await env.EDITOR_DRAFTS.put('alpha04:ui-layout:v1',JSON.stringify(layout));
-        return privateJson({ok:true,layout,message:'Borrador guardado. Publicar con Cargar parche.'});
-      }
-
-      // Biblioteca privada de audio: MP3 con límite estricto y publicación manual.
-      const audioMatch=url.pathname.match(/^\/editor-api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
-      if(audioMatch){
-        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 no conectado.'},503);
-        const [,category,id]=audioMatch;
-        const allowed=['lobby','battle','stat-up','stat-down','physical','special','status','portal-in','portal-out'];
-        if(category==='global'&&!allowed.includes(id))return privateJson({error:'Audio global desconocido.'},400);
-        const key=`audio/${category}/${id}.mp3`;
-        if(request.method==='GET'){
-          const obj=await env.EDITOR_SPRITES.get(key);
-          return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}}):privateJson({error:'Audio no encontrado.'},404);
-        }
-        if(request.method==='PUT'){
-          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-          if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('audio/mpeg'))return privateJson({error:'Solo MP3.'},415);
-          const data=await request.arrayBuffer();
-          if(!data.byteLength||data.byteLength>8*1024*1024)return privateJson({error:'Máximo 8 MB.'},413);
-          const b=new Uint8Array(data),mp3=(b[0]===73&&b[1]===68&&b[2]===51)||(b[0]===255&&(b[1]&224)===224);
-          if(!mp3)return privateJson({error:'Cabecera MP3 inválida.'},415);
-          await env.EDITOR_SPRITES.put(key,data,{httpMetadata:{contentType:'audio/mpeg'}});
-          return privateJson({ok:true,id,category});
-        }
-        return privateJson({error:'Método no permitido.'},405);
-      }
-
-      // Recursos visuales privados de climas y escenarios. Se guardan separados del JSON del catálogo.
-      const environmentVisualMatch=url.pathname.match(/^\/editor-api\/environment-visuals\/(weathers|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
-      if(environmentVisualMatch){
-        const category=environmentVisualMatch[1],id=environmentVisualMatch[2];
-        if(!env.EDITOR_SPRITES)return privateJson({error:"Almacenamiento R2 no conectado."},500);
-        const key=`environment/${category}/${id}.png`;
-        if(request.method==="GET"){
-          const obj=await env.EDITOR_SPRITES.get(key);if(!obj)return privateJson({error:"Recurso visual no encontrado."},404);
-          return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
-        }
-        if(request.method==="PUT"){
-          if(request.headers.get("Origin")!==url.origin)return privateJson({error:"Origen no autorizado."},403);
-          if(!(request.headers.get("Content-Type")||"").toLowerCase().startsWith("image/png"))return privateJson({error:"Solo PNG."},415);
-          const bytes=await request.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>4*1024*1024)return privateJson({error:"El PNG debe pesar entre 1 byte y 4 MB."},413);
-          const sig=new Uint8Array(bytes).slice(0,8);if(![137,80,78,71,13,10,26,10].every((x,i)=>sig[i]===x))return privateJson({error:"Firma PNG inválida."},415);
-          await env.EDITOR_SPRITES.put(key,bytes,{httpMetadata:{contentType:"image/png"}});
-          return privateJson({ok:true,category,id,message:"Recurso visual guardado."});
-        }
-        return privateJson({error:"Método no permitido."},405);
-      }
-
-      // Subir imagen original de una entidad.
-if (
-  url.pathname === "/editor-api/sprites" &&
-  request.method === "POST"
-) {
-  if (!env.EDITOR_SPRITES) {
-    return privateJson({
-      error: "El almacenamiento de sprites no está conectado."
-    }, 500);
-  }
-
-  const origin = request.headers.get("Origin");
-
-  if (origin !== url.origin) {
-    return privateJson({
-      error: "Origen no autorizado."
-    }, 403);
-  }
-
-  const contentType = request.headers.get("Content-Type") || "";
-
-  if (!contentType.toLowerCase().startsWith("image/png")) {
-    return privateJson({
-      error: "Solo se permiten archivos PNG."
-    }, 415);
-  }
-
-  const maxSize = 2 * 1024 * 1024;
-  const bytes = await request.arrayBuffer();
-
-  if (bytes.byteLength === 0 || bytes.byteLength > maxSize) {
-    return privateJson({
-      error: "El PNG debe pesar entre 1 byte y 2 MB."
-    }, 413);
-  }
-
-  const signature = new Uint8Array(bytes).slice(0, 8);
-  const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
-
-  if (!pngSignature.every((value, i) => signature[i] === value)) {
-    return privateJson({
-      error: "El archivo no es un PNG válido."
-    }, 415);
-  }
-
-    // Identificador elegido por el usuario.
-  const spriteId = url.searchParams.get("id") || "";
-
-  // Solo letras minúsculas, números y guiones.
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(spriteId) ||
-      spriteId.length > 60) {
-    return privateJson({
-      error: "Usá entre 1 y 60 caracteres: letras minúsculas, números y guiones."
-    }, 400);
-  }
-
-  const key = `drafts/${spriteId}.png`;
-
-  // Evitar reemplazar un sprite existente.
-  const existing = await env.EDITOR_SPRITES.head(key);
-
-  if (existing) {
-    return privateJson({
-      error: "Ya existe un sprite con ese identificador."
-    }, 409);
-  }
-
-  await env.EDITOR_SPRITES.put(key, bytes, {
-    httpMetadata: {
-      contentType: "image/png"
-    }
-  });
-
-  return privateJson({
-    ok: true,
-    spriteId,
-    message: "Sprite original guardado como borrador."
-  });
+async function allowCreation(request,env,kind){
+  // Enforce an abuse ceiling, not a gameplay limit. Normal players only have one
+  // pending Practice and can start another immediately after the previous ends.
+  const address=request.headers.get('CF-Connecting-IP');
+  if(!address||!env.ROOMS)return true; // Local tests / development without CF headers.
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(address));
+  const hash=Array.from(new Uint8Array(digest)).slice(0,16).map(n=>n.toString(16).padStart(2,'0')).join('');
+  const gate=env.ROOMS.get(env.ROOMS.idFromName('security-gate:'+hash));
+  const response=await gate.fetch('https://room.internal/creation-gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind})});
+  return response.ok;
 }
-// Consultar un sprite privado guardado en R2.
-if (
-  url.pathname.startsWith("/editor-api/sprites/") &&
-  request.method === "GET"
-) {
-  if (!env.EDITOR_SPRITES) {
-    return privateJson({
-      error: "Almacenamiento de sprites no conectado."
-    }, 500);
+export default{async fetch(request,env){const url=new URL(request.url);if(request.method==="OPTIONS")return new Response(null,{headers:cors});if(url.pathname==="/health"){try{const s=await loadPublishedContent(env);return json({ok:true,service:"Universal Duels",version:"0.4.0-alpha",revision:s.revision,source:"manual-public-patch"});}catch(e){return json({ok:false,service:"Universal Duels",version:"0.4.0-alpha",error:e.message},503);}}
+  if(url.pathname==="/api/catalog"&&request.method==="GET"){try{return json(publicCatalog(await snapshot(env)));}catch(e){return json({error:e.message},503);}}
+  const catMatch=url.pathname.match(/^\/api\/catalog\/([a-z0-9-]{1,80})$/i);if(catMatch&&request.method==="GET"){try{return fixedCatalogResponse(await snapshot(env,catMatch[1]));}catch(e){return json({error:e.message},404);}}
+  const environmentMatch=url.pathname.match(/^\/api\/environment-visuals\/(scenarios|weathers)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(environmentMatch&&request.method==='GET'){
+    if(!env.PUBLIC_SPRITES)return json({error:'R2 no conectado.'},503);
+    try{
+      const requestedRevision=url.searchParams.get('revision')||'',snap=await snapshot(env,requestedRevision||undefined);
+      const [,category,id]=environmentMatch;
+      if(!Object.values(snap.catalog?.[category]||{}).some(x=>x?.definition?.imageId===id))return json({error:'Recurso no publicado.'},404);
+      const key=`${category}/${id}`,path=snap.assets?.environment?.[key]||`published/${snap.revision}/environment/${key}.png`;
+      const obj=await env.PUBLIC_SPRITES.get(path);
+      return obj?new Response(obj.body,{headers:{'Content-Type':'image/png','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Recurso no encontrado.'},404);
+    }catch(e){return json({error:String(e.message||e)},404);}
   }
-
-  const spriteId = url.pathname.slice(
-    "/editor-api/sprites/".length
-  );
-
-    if (
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(spriteId) ||
-    spriteId.length > 60
-  ) {
-      
-    return privateJson({
-      error: "Identificador inválido."
-    }, 400);
+  const audioMatch=url.pathname.match(/^\/api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(audioMatch&&request.method==='GET'){
+    if(!env.PUBLIC_SPRITES)return json({error:'Audio público no conectado.'},503);
+    try{
+      const requestedRevision=url.searchParams.get('revision')||'',snap=await snapshot(env,requestedRevision||undefined);
+      const [,category,id]=audioMatch,key=category==='global'?id:`scenarios/${id}`;
+      if(category==='scenarios'&&!Object.values(snap.catalog?.scenarios||{}).some(x=>x?.definition?.soundId===id))return json({error:'Audio no publicado.'},404);
+      const assetPath=snap.assets?.audio?.[key];
+      if(!assetPath)return json({error:'Audio no configurado.'},404);
+      const obj=await env.PUBLIC_SPRITES.get(assetPath);
+      return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Audio no encontrado.'},404);
+    }catch(e){return json({error:String(e.message||e)},404);}
   }
-
-  const object = await env.EDITOR_SPRITES.get(
-    `drafts/${spriteId}.png`
-  );
-
-  if (!object) {
-    return privateJson({
-      error: "Sprite no encontrado."
-    }, 404);
+  const spriteMatch=url.pathname.match(/^\/api\/sprites\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);if(spriteMatch&&request.method==="GET"){if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),id=spriteMatch[1],published=Object.values(s.catalog?.entities||{}).some(e=>e?.definition?.spriteId===id);if(!published)return json({error:"Sprite no publicado."},404);const assetPath=s.assets?.sprites?.[id]||`published/${s.revision}/sprites/${id}.png`;const obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Sprite no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
+  const typeMatch=url.pathname.match(/^\/api\/type-icons\/([a-z]+)$/);if(typeMatch&&request.method==="GET"){if(!TYPES.has(typeMatch[1]))return json({error:"Tipo desconocido."},404);if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),assetPath=s.assets?.typeIcons?.[typeMatch[1]]||`published/${s.revision}/type-icons/${typeMatch[1]}.png`,obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Icono no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
+  if(url.pathname==="/api/practice"&&request.method==="POST"){
+    try{
+      if(!await allowCreation(request,env,'practice'))return json({error:'Demasiadas solicitudes en poco tiempo. Probá más tarde.'},429);
+      const input=await readLimitedJson(request,4096),snap=await snapshot(env);
+      // A random, browser-held credential identifies one practice slot. It is
+      // not a visible match seed and never affects combat randomness.
+      const token=typeof input.token==='string'&&/^[0-9a-f-]{64,80}$/i.test(input.token)
+        ?input.token:crypto.randomUUID()+crypto.randomUUID();
+      const stub=env.ROOMS.get(env.ROOMS.idFromName('practice:'+token));
+      const response=await stub.fetch('https://room.internal/practice/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,revision:snap.revision})});
+      const data=await response.json();
+      return json({...data,...(response.ok?{token}:{})},response.status);
+    }catch(e){return json({error:String(e.message||e)},e.status||400);}
   }
-
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": "image/png",
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff"
-    }
-  });
-}      
-
-      // ========================================
-      // TABLA DE TIPOS
-      // ========================================
-
-      const TYPES = [
-        "fuego",
-        "planta",
-        "roca",
-        "hielo",
-        "rayo",
-        "metal",
-        "guerra",
-        "mente",
-        "encanto",
-        "espectro",
-        "divinidad",
-        "luz",
-        "oscuridad",
-        "viento",
-        "dragon",
-        "agua",
-        "veneno",
-        "tecnologia",
-        "agilidad",
-        "valor"
-      ];
-
-      const TYPE_VALUES = [
-        "neutral",
-        "ineficaz",
-        "eficaz",
-        "inmune"
-      ];
-
-      // Crear tabla inicialmente neutral.
-      function createDefaultTypeChart() {
-        const chart = {};
-
-        for (const attackType of TYPES) {
-          chart[attackType] = {};
-
-          for (const defenseType of TYPES) {
-            chart[attackType][defenseType] = "neutral";
-          }
-        }
-
-        return chart;
-      }
-
-      // Simulación de combate exclusivamente privada y sin escrituras.
-      if ((url.pathname === "/editor-api/simulate" || url.pathname === "/editor-api/simulate-step") && request.method === "POST") {
-        if (request.headers.get("Origin") !== url.origin) return privateJson({error:"Origen no autorizado."},403);
-        let input;
-        try { const raw=await request.text(); if(raw.length>400000) return privateJson({error:"Solicitud demasiado grande."},413); input=JSON.parse(raw); }
-        catch { return privateJson({error:"Solicitud inválida."},400); }
-        const idPattern=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-        if (!idPattern.test(input?.left||"") || !idPattern.test(input?.right||"")) return privateJson({error:"Elegí dos entidades válidas."},400);
-        const allIds=[...(Array.isArray(input.leftTeam)?input.leftTeam:[input.left]),...(Array.isArray(input.rightTeam)?input.rightTeam:[input.right])];
-        if(allIds.length>16||allIds.some(id=>!idPattern.test(id||"")))return privateJson({error:"Equipo inválido."},400);
-        const ids={entities:[...new Set(allIds)],moves:[],abilities:[],effects:[]};
-        const catalog={entities:{},moves:{},abilities:{},effects:{},statuses:{},weathers:{},fields:{},scenarios:{}};
-        async function get(category,id) {
-          if (!idPattern.test(id||"")) throw Error("Referencia inválida: "+id);
-          if (catalog[category][id]) return catalog[category][id];
-          const entry=await env.EDITOR_DRAFTS.get(`catalog-v1:${category}:${id}`,"json");
-          if(!entry) throw Error("No existe "+category+" / "+id);
-          catalog[category][id]=entry; return entry;
-        }
-        try {
-          for (const id of ids.entities) {
-            const e=await get("entities",id),d=e.definition;
-            for(const mid of [...(d.moveIds||[]),d.uniqueMoveId]) await get("moves",mid);
-            for(const aid of [d.globalAbilityId,d.uniqueAbilityId]) await get("abilities",aid);
-          }
-          // Efectos reutilizados: profundidad de referencia acotada.
-          let pending=[...Object.values(catalog.moves),...Object.values(catalog.abilities)];
-          for(let depth=0;depth<5;depth++) {
-            const next=[];
-            for(const entry of pending) for(const rule of entry.definition.rules||[]) if(rule.action?.type==="apply_effect") {
-              const eid=rule.action.value;
-              if(!catalog.effects[eid]) next.push(await get("effects",eid));
-            }
-            pending=next;if(!next.length)break;
-          }
-          // Cargar los entornos referenciados por habilidades/ataques/efectos.
-          const seen=new Set();
-          for(const [category,id] of [['weathers',input.weather],['fields',input.field],['scenarios',input.scenario]])if(id)await get(category,id);
-          for(const category of ['moves','abilities','effects'])for(const entry of Object.values(catalog[category]))for(const rule of entry.definition.rules||[]){
-            const envCategory={set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[rule.action?.type];
-            if(envCategory&&rule.action.value){const key=envCategory+':'+rule.action.value;if(!seen.has(key)){seen.add(key);await get(envCategory,rule.action.value);}}
-            if(rule.action?.type==='apply_status'&&rule.action.value){const key='statuses:'+rule.action.value;if(!seen.has(key)){seen.add(key);await get('statuses',rule.action.value);}}
-          }
-          const chart=await env.EDITOR_DRAFTS.get("type-chart-draft","json");
-          return privateJson(simulate({left:input.left,right:input.right,catalog,chart:chart?.chart||chart,turns:(input.turns === undefined || input.turns === null || input.turns === '') ? 10 : Math.min(50,Math.max(0,Number(input.turns))),randomTape:input.randomTape||[],weather:input.weather||"",field:input.field||"",scenario:input.scenario||"",leftMove:input.leftMove||"",rightMove:input.rightMove||"",leftTeam:input.leftTeam,rightTeam:input.rightTeam,leftOrders:input.leftOrders,rightOrders:input.rightOrders,leftReplacements:input.leftReplacements||[],rightReplacements:input.rightReplacements||[],mode:input.mode==='doubles'?'doubles':'singles'}));
-        } catch(e) { return privateJson({error:String(e.message||e)},400); }
-      }
-
-      // Catálogo privado de contenido. No ejecuta mecánicas en combate.
-      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags", "tutorial"];
-      const catalogMatch = url.pathname.match(/^\/editor-api\/catalog\/([a-z]+)(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?$/);
-      if (catalogMatch) {
-        const category = catalogMatch[1];
-        const id = catalogMatch[2];
-        if (!CATALOG_CATEGORIES.includes(category)) return privateJson({ error: "Categoría inválida." }, 404);
-        const prefix = `catalog-v1:${category}:`;
-        if (request.method === "GET" && !id) {
-          const listed = await env.EDITOR_DRAFTS.list({ prefix, limit: 1000 });
-          const entries = await Promise.all(listed.keys.map(async key => env.EDITOR_DRAFTS.get(key.name, "json")));
-          return privateJson({ ok: true, entries: entries.filter(Boolean), cursor: listed.list_complete ? null : listed.cursor });
-        }
-        if (request.method === "GET" && id) {
-          const entry = await env.EDITOR_DRAFTS.get(prefix + id, "json");
-          return entry ? privateJson({ ok: true, entry }) : privateJson({ error: "No encontrado." }, 404);
-        }
-        if (request.method === "PUT" && id) {
-          if (request.headers.get("Origin") !== url.origin) return privateJson({ error: "Origen no autorizado." }, 403);
-          const raw = await request.text();
-          if (raw.length > 60000) return privateJson({ error: "Contenido demasiado grande." }, 413);
-          let body;
-          try { body = JSON.parse(raw); } catch { return privateJson({ error: "JSON inválido." }, 400); }
-          if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.name !== "string" || !body.name.trim() || body.name.length > 100 || typeof body.description !== "string" || body.description.length > 2000 || !body.definition || typeof body.definition !== "object" || Array.isArray(body.definition)) {
-            return privateJson({ error: "Se requiere nombre, descripción y definición como objeto." }, 400);
-          }
-          // Validaciones de referencias y rangos del editor, sin modificar balance.
-          const d=body.definition;
-          try { validateDefinition(category,d); } catch (error) { return privateJson({error:error.message},400); }
-          const slug=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-          const allTypes=["fuego","planta","roca","hielo","rayo","metal","guerra","mente","encanto","espectro","divinidad","luz","oscuridad","viento","dragon","agua","veneno","tecnologia","agilidad","valor"];
-          if (category === "moves") {
-            if (!allTypes.includes(d.type)||!["physical","special","status"].includes(d.category)||!Number.isFinite(d.power)||d.power<0||d.power>500||!Number.isFinite(d.accuracy)||d.accuracy<0||d.accuracy>100||!Number.isFinite(d.criticalChance)||d.criticalChance<0||d.criticalChance>50||!Number.isInteger(d.priority)||d.priority< -5||d.priority>5) return privateJson({error:"Tipo, categoría, potencia, precisión, crítico o prioridad inválidos."},400);
-          }
-          if (category === "entities") {
-            if(!Array.isArray(d.types)||d.types.length<1||d.types.length>3||new Set(d.types).size!==d.types.length||d.types.some(t=>!allTypes.includes(t)))return privateJson({error:"Se requieren 1–3 tipos distintos y válidos."},400);
-            for(const stat of ["hp","attack","defense","specialAttack","specialDefense","speed"]){const max=stat==="hp"?500:200;if(!Number.isInteger(d[stat])||d[stat]<0||d[stat]>max)return privateJson({error:"Estadística inválida: "+stat+" (PS 0–500; demás 0–200)."},400);} if(["attack","defense","specialAttack","specialDefense","speed"].reduce((n,k)=>n+d[k],0)>1000)return privateJson({error:"Las cinco estadísticas base no pueden superar 1000 en total."},400);
-            if(!Array.isArray(d.moveIds)||d.moveIds.length!==3||new Set([...d.moveIds,d.uniqueMoveId]).size!==4)return privateJson({error:"Se requieren tres ataques globales y uno exclusivo, todos distintos."},400);
-            for(const [kind,ids] of [["moves",[...d.moveIds,d.uniqueMoveId]],["abilities",[d.globalAbilityId,d.uniqueAbilityId]]])for(const ref of ids) {
-              if(!slug.test(ref||""))return privateJson({error:"Referencia inválida: "+ref},400);
-              const found=await env.EDITOR_DRAFTS.get(`catalog-v1:${kind}:${ref}`,"json");
-              if(!found)return privateJson({error:`Falta ${kind} / ${ref}. Guardalo antes de crear la entidad.`},400);
-              const expected = kind==='moves' ? (ref===d.uniqueMoveId?'unique':'global') : (ref===d.uniqueAbilityId?'unique':'global');
-              if(found.definition.kind!==expected) return privateJson({error:`${kind} / ${ref}: la clase debe ser ${expected}.`},400);
-            }
-            if(d.spriteId && !slug.test(d.spriteId))return privateJson({error:"ID de sprite inválido."},400);
-          }
-          if(Array.isArray(d.rules))for(const rule of d.rules) {
-            if(!Number.isFinite(rule.chance??100)||(rule.chance??100)<0||(rule.chance??100)>100||!Number.isFinite(rule.duration??0)||(rule.duration??0)<0||!Number.isFinite(rule.limit??0)||(rule.limit??0)<0)return privateJson({error:"Probabilidad, duración o límite inválidos."},400);
-            if(rule.action?.type==="apply_effect" && rule.action.value && !await env.EDITOR_DRAFTS.get(`catalog-v1:effects:${rule.action.value}`,"json"))return privateJson({error:"Guardá primero el efecto "+rule.action.value},400);
-          }
-          const entry = { id, category, name: body.name.trim(), description: body.description, definition: body.definition, updatedAt: new Date().toISOString() };
-          await env.EDITOR_DRAFTS.put(prefix + id, JSON.stringify(entry));
-          return privateJson({ ok: true, entry });
-        }
-        if (request.method === "DELETE" && id) {
-          if (request.headers.get("Origin") !== url.origin) return privateJson({ error: "Origen no autorizado." }, 403);
-          await env.EDITOR_DRAFTS.delete(prefix + id);
-          return privateJson({ ok: true });
-        }
-        return privateJson({ error: "Método no permitido." }, 405);
-      }
-
-      // Recuperar tabla privada.
-      if (
-        url.pathname === "/editor-api/type-chart" &&
-        request.method === "GET"
-      ) {
-        const saved = await env.EDITOR_DRAFTS.get(
-          "type-chart-draft",
-          "json"
-        );
-
-        // Compatibilidad: conservar las relaciones guardadas cuando el tipo
-        // antes llamado "aire" pasa a llamarse "viento".
-        const chart = createDefaultTypeChart();
-        if (saved?.chart) {
-          for (const attack of TYPES) {
-            for (const defense of TYPES) {
-              const oldAttacks=[attack,attack==='viento'?'aire':attack,attack==='valor'?'espiritu':attack];
-              const oldDefenses=[defense,defense==='viento'?'aire':defense,defense==='valor'?'espiritu':defense];
-              let value;for(const oa of oldAttacks){for(const od of oldDefenses){value ??= saved.chart[oa]?.[od];}}
-              if (TYPE_VALUES.includes(value)) chart[attack][defense] = value;
-            }
-          }
-        }
-        // No reescribir KV en GET: se migra al guardar el siguiente cambio.
-        return privateJson({
-          ok: true,
-          types: TYPES,
-          chart,
-          updatedAt: saved?.updatedAt || null
-        });
-      }
-
-      // Guardar tabla privada.
-      if (
-        url.pathname === "/editor-api/type-chart" &&
-        request.method === "PUT"
-      ) {
-        if (request.headers.get("Origin") !== url.origin) {
-          return privateJson({
-            error: "Origen no autorizado."
-          }, 403);
-        }
-
-        let body;
-
-        try {
-          body = await request.json();
-        } catch {
-          return privateJson({
-            error: "JSON inválido."
-          }, 400);
-        }
-
-        const chart = body?.chart;
-
-        if (
-          !chart ||
-          typeof chart !== "object" ||
-          Array.isArray(chart)
-        ) {
-          return privateJson({
-            error: "Tabla inválida."
-          }, 400);
-        }
-
-        // Validar las 400 relaciones.
-        for (const attackType of TYPES) {
-          const row = chart[attackType];
-
-          if (
-            !row ||
-            typeof row !== "object" ||
-            Array.isArray(row)
-          ) {
-            return privateJson({
-              error: "Falta una fila de la tabla."
-            }, 400);
-          }
-
-          for (const defenseType of TYPES) {
-            if (
-              !TYPE_VALUES.includes(row[defenseType])
-            ) {
-              return privateJson({
-                error: "Hay una relación de tipos inválida."
-              }, 400);
-            }
-          }
-        }
-
-        const draft = {
-          chart,
-          updatedAt: new Date().toISOString()
-        };
-
-        await env.EDITOR_DRAFTS.put(
-          "type-chart-draft",
-          JSON.stringify(draft)
-        );
-
-        return privateJson({
-          ok: true,
-          message: "Tabla de tipos guardada.",
-          updatedAt: draft.updatedAt
-        });
-      }
-      if (
-        url.pathname === "/editor-api/draft" &&
-        request.method === "GET"
-      ) {
-        const draft = await env.EDITOR_DRAFTS.get(
-          "main-draft",
-          "json"
-        );
-
-        return privateJson({
-          ok: true,
-          draft: draft || {
-            notes: "",
-            updatedAt: null
-          }
-        });
-      }
-
-      // Guardar borrador.
-      if (
-        url.pathname === "/editor-api/draft" &&
-        request.method === "PUT"
-      ) {
-        const contentLength = Number(
-          request.headers.get("Content-Length") || 0
-        );
-
-        if (contentLength > 100000) {
-          return privateJson({
-            error: "El borrador es demasiado grande."
-          }, 413);
-        }
-
-        let body;
-
-        try {
-          const raw = await request.text();
-
-          if (raw.length > 100000) {
-            return privateJson({
-              error: "El borrador es demasiado grande."
-            }, 413);
-          }
-
-          body = JSON.parse(raw);
-        } catch {
-          return privateJson({
-            error: "JSON inválido."
-          }, 400);
-        }
-
-        if (
-          !body ||
-          typeof body !== "object" ||
-          Array.isArray(body) ||
-          typeof body.notes !== "string" ||
-          body.notes.length > 50000
-        ) {
-          return privateJson({
-            error: "Formato de borrador inválido."
-          }, 400);
-        }
-
-        const draft = {
-          notes: body.notes,
-          updatedAt: new Date().toISOString()
-        };
-
-        await env.EDITOR_DRAFTS.put(
-          "main-draft",
-          JSON.stringify(draft)
-        );
-
-        return privateJson({
-          ok: true,
-          message: "Borrador guardado.",
-          updatedAt: draft.updatedAt
-        });
-      }
-
-      // Regression suite lives in one private KV value; no list() per test.
-      if(url.pathname==='/editor-api/regression'){
-        if(!['GET','POST'].includes(request.method))return privateJson({error:'Método no permitido.'},405);
-        if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-        try{
-          const key='alpha04:regression-tests:v1',tests=await env.EDITOR_DRAFTS.get(key,'json')||[];
-          if(request.method==='GET')return privateJson({ok:true,tests});
-          const raw=await request.text();if(raw.length>25000)return privateJson({error:'Solicitud demasiado grande.'},413);
-          const body=JSON.parse(raw);
-          if(body.action==='save'){
-            const test=normalizeRegressionCase(body.test),index=tests.findIndex(t=>t.name===test.name);
-            if(index<0&&tests.length>=30)return privateJson({error:'Máximo de 30 pruebas guardadas.'},400);
-            if(index>=0)tests[index]=test;else tests.push(test);
-            await env.EDITOR_DRAFTS.put(key,JSON.stringify(tests));return privateJson({ok:true,count:tests.length});
-          }
-          if(body.action==='delete'){
-            if(typeof body.name!=='string')return privateJson({error:'Nombre inválido.'},400);
-            const remaining=tests.filter(t=>t.name!==body.name);
-            await env.EDITOR_DRAFTS.put(key,JSON.stringify(remaining));return privateJson({ok:true,count:remaining.length});
-          }
-          if(body.action==='run'){
-            const selected=body.name?tests.filter(t=>t.name===body.name):tests.slice(0,10);
-            if(!selected.length)return privateJson({error:'No se encontraron pruebas guardadas.'},404);
-            const {catalog,chart}=await candidateFromDrafts(env),results=[];
-            for(const test of selected){try{results.push(runRegressionCase(test,catalog,chart));}
-              catch(e){results.push({name:test.name,passed:false,error:String(e.message||e)});}}
-            return privateJson({ok:true,passed:results.every(r=>r.passed),results});
-          }
-          if(body.action==='compare'){
-            if(!env.PUBLIC_CONTENT)return privateJson({error:'PUBLIC_CONTENT no está conectado.'},503);
-            const latest=await env.PUBLIC_CONTENT.get('public-v1:current','json');
-            const published=body.revision?await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${body.revision}`,'json'):latest;
-            if(!published?.catalog||!published?.chart)return privateJson({error:'La versión pública seleccionada no existe.'},404);
-            const {catalog,chart}=await candidateFromDrafts(env),results=[];
-            for(const test of tests.slice(0,10)){
-              try{
-                const draft=runRegressionCase(test,catalog,chart),baseline=runRegressionCase(test,published.catalog,published.chart);
-                results.push({name:test.name,draftPass:draft.passed,publishedPass:baseline.passed,equal:JSON.stringify(draft.actual)===JSON.stringify(baseline.actual),draft:draft.actual,published:baseline.actual});
-              }catch(e){results.push({name:test.name,equal:false,error:String(e.message||e)});}
-            }
-            return privateJson({ok:true,revision:published.revision,total:tests.length,compared:results.length,results});
-          }
-          if(body.action==='capture'){
-            const test=normalizeRegressionCase(body.test),{catalog,chart}=await candidateFromDrafts(env);
-            return privateJson({ok:true,result:runRegressionCase(test,catalog,chart)});
-          }
-          return privateJson({error:'Acción desconocida.'},400);
-        }catch(e){return privateJson({error:String(e.message||e)},400);}
-      }
-      // Vista previa, historial y publicación: ninguna ruta de consulta publica contenido.
-      if(url.pathname==='/editor-api/release-preview'&&['GET','POST'].includes(request.method)){
-        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
-        try{
-          if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-          const draft=await candidateFromDrafts(env),current=await env.PUBLIC_CONTENT.get('public-v1:current','json');
-          const selection=request.method==='POST'?(await request.json()).selection:undefined;
-          const chosen=selectRelease(current?.catalog,draft.catalog,selection),validation=validateRelease(chosen.catalog,draft.chart);
-          const regression=validation.ok?await releaseRegression(env,chosen.catalog,draft.chart):{passed:false,count:0,results:[]};
-          return privateJson({ok:true,validation,regression,diff:publicationDiff(current,{catalog:draft.catalog}),autoIncluded:chosen.autoIncluded,currentRevision:current?.revision||null});
-        }catch(e){return privateJson({error:String(e.message||e)},500);}
-      }
-      if(url.pathname==='/editor-api/release-history'&&request.method==='GET'){
-        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
-        const [current,history]=await Promise.all([env.PUBLIC_CONTENT.get('public-v1:current','json'),env.PUBLIC_CONTENT.get('public-v1:history','json')]);
-        return privateJson({ok:true,currentRevision:current?.revision||null,history:history||[]});
-      }
-      if(url.pathname==='/editor-api/release-rollback'&&request.method==='POST'){
-        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-        if(!env.PUBLIC_CONTENT)return privateJson({error:'Falta conectar PUBLIC_CONTENT.'},503);
-        try{const body=await request.json();
-          if(body.confirm!==true||typeof body.revision!=='string'||!/^patch-[a-z0-9-]{1,70}$/.test(body.revision))return privateJson({error:'Confirmación o revisión inválida.'},400);
-          const history=await env.PUBLIC_CONTENT.get('public-v1:history','json')||[];
-          if(!history.some(item=>item.revision===body.revision))return privateJson({error:'Versión no incluida en historial.'},404);
-          const restored=await env.PUBLIC_CONTENT.get(`public-v1:snapshot:${body.revision}`,'json');
-          if(!restored)return privateJson({error:'Snapshot de esa versión no disponible; no se modificó el público.'},409);
-          // Solo el puntero mutable cambia. Los combates en curso conservan su revisión.
-          await env.PUBLIC_CONTENT.put('public-v1:current',JSON.stringify(restored));
-          return privateJson({ok:true,revision:restored.revision,message:'Reversión manual aplicada.'});
-        }catch(e){return privateJson({error:String(e.message||e)},500);}
-      }
-      if((url.pathname==='/editor-api/publish-alpha'||url.pathname==='/editor-api/publish-patch')&&request.method==='POST'){
-        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-        if(!env.PUBLIC_CONTENT||!env.EDITOR_SPRITES)return privateJson({error:'Falta conectar PUBLIC_CONTENT o EDITOR_SPRITES.'},503);
-        try{
-          const body=await request.json().catch(()=>({}));
-          if(body.confirm!==true)return privateJson({error:'Se requiere confirmación manual explícita.'},400);
-          const draft=await candidateFromDrafts(env);
-          const current=await env.PUBLIC_CONTENT.get('public-v1:current','json');
-          const chosen=selectRelease(current?.catalog,draft.catalog,body.selection),catalog=chosen.catalog,chart=draft.chart,validation=validateRelease(catalog,chart);
-          if(!validation.ok)return privateJson({error:'Parche con errores técnicos; no publicado.',validation},422);
-          const regression=await releaseRegression(env,catalog,chart);
-          if((!regression.passed||validation.warnings.length)&&body.confirmWarnings!==true)return privateJson({error:'Revisá las advertencias y pruebas fallidas antes de autorizar la publicación.',validation,regression},409);
-          if(body.expectedRevision!==(current?.revision||null))return privateJson({error:'El contenido publicado cambió; revisá otra vez la vista previa.'},409);
-          const publishedAt=new Date().toISOString(),revision=`patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0,8)}`;
-          const resources=await releaseResources(env,catalog,revision,current||{},TYPES);
-          const uiLayout=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||current?.uiLayout||{};
-          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,assets:resources.assets};
-          // Recursos preparados antes del cambio del puntero público.
-          await env.PUBLIC_CONTENT.put(`public-v1:snapshot:${revision}`,JSON.stringify(candidate));
-          const history=await env.PUBLIC_CONTENT.get('public-v1:history','json');
-          const previousEntry=current?.revision?{revision:current.revision,publishedAt:current.publishedAt||'versión anterior',counts:{}}:null;
-          await env.PUBLIC_CONTENT.put('public-v1:history',JSON.stringify(nextHistory(previousEntry?nextHistory(history,previousEntry):history,{revision,publishedAt,counts:validation.counts})));
-          await env.PUBLIC_CONTENT.put('public-v1:current',JSON.stringify(candidate));
-          return privateJson({ok:true,revision,publishedAt,resources:{copied:resources.copied,reused:resources.reused},validation,regression,message:'Parche publicado manualmente.'});
-        }catch(e){return privateJson({error:'Parche no publicado: '+String(e.message||e)},500);}
-      }
-
-      return privateJson({
-        error: "Ruta privada no encontrada."
-      }, 404);
-    }
-
-    // Rutas públicas existentes.
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: cors });
-    }
-
-    if (url.pathname === "/health") {
-      return json({
-        ok: true,
-        service: "Duelo Pixel Rooms",
-        version: 1
-      });
-    }
-
-    // Crear una sala.
-    if (
-      url.pathname === "/api/rooms" &&
-      request.method === "POST"
-    ) {
-      let body = {};
-
-      try {
-        body = await request.json();
-      } catch {}
-
-      const code = makeCode();
-      const id = env.ROOMS.idFromName(code);
-      const stub = env.ROOMS.get(id);
-
-      const init = await stub.fetch(
-        "https://room.internal/init",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            code,
-            createdAt: Date.now(),
-            hostName: cleanName(body.name)
-          })
-        }
-      );
-
-      if (!init.ok) {
-        return json({
-          error: "No se pudo crear la sala."
-        }, 500);
-      }
-
-      return json({ code });
-    }
-
-    // Conectar jugadores a una sala.
-    const match = url.pathname.match(
-      /^\/api\/rooms\/([A-Z0-9]{6})$/i
-    );
-
-    if (match) {
-      const code = match[1].toUpperCase();
-      const id = env.ROOMS.idFromName(code);
-      const stub = env.ROOMS.get(id);
-
-      const target = new URL(request.url);
-
-      target.pathname = "/connect";
-      target.searchParams.set("code", code);
-      target.searchParams.set(
-        "name",
-        cleanName(url.searchParams.get("name"))
-      );
-
-      return stub.fetch(
-        new Request(target, request)
-      );
-    }
-
-    if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
-    }
-
-    return json({
-      error: "Ruta no encontrada."
-    }, 404);
+  const practiceMatch=url.pathname.match(/^\/api\/practice\/([0-9a-f-]{64,80})$/i);
+  if(practiceMatch){
+    const stub=env.ROOMS.get(env.ROOMS.idFromName('practice:'+practiceMatch[1]));
+    return stub.fetch(new Request('https://room.internal/practice/session',{method:request.method,headers:request.headers,body:['POST','PUT'].includes(request.method)?request.body:undefined,duplex:'half'}));
   }
-};
+  if(url.pathname==="/api/rooms"&&request.method==="POST"){
+    let body;try{body=await readLimitedJson(request,2048,{allowEmpty:true});}catch(e){return json({error:String(e.message||e)},e.status||400);}
+    if(!await allowCreation(request,env,'room'))return json({error:'Demasiadas salas creadas en poco tiempo.'},429);
+    const code=makeCode(),id=env.ROOMS.idFromName(code),stub=env.ROOMS.get(id),battleMode=body.battleMode==="doubles"?"doubles":"singles",teamMode=body.teamMode==="random"?"random":"picked";const init=await stub.fetch("https://room.internal/init",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,createdAt:Date.now(),battleMode,teamMode})});if(!init.ok)return json({error:"No se pudo crear la sala."},500);return json({code});}
+  const roomMatch=url.pathname.match(/^\/api\/rooms\/([A-Z0-9]{6})$/i);if(roomMatch){const code=roomMatch[1].toUpperCase(),id=env.ROOMS.idFromName(code),stub=env.ROOMS.get(id),target=new URL(request.url);target.pathname="/connect";target.searchParams.set("code",code);target.searchParams.set("name",cleanName(url.searchParams.get("name")));return stub.fetch(new Request(target,request));}
+  if(env.ASSETS)return env.ASSETS.fetch(request);return json({error:"Ruta no encontrada."},404);
+}};
 
-// Generar código de sala.
-function makeCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(6);
-
-  crypto.getRandomValues(bytes);
-
-  return [...bytes]
-    .map(x => chars[x % chars.length])
-    .join("");
-}
-
-function cleanName(value) {
-  const name = String(value || "Jugador")
-    .trim()
-    .replace(/[<>\u0000-\u001f]/g, "")
-    .slice(0, 20);
-
-  return name || "Jugador";
-}
-
-// Sistema de salas online.
-export class Room {
-  constructor(state) {
-    this.state = state;
-    this.storage = state.storage;
+export class Room{
+  constructor(state,env){this.state=state;this.storage=state.storage;this.env=env;this.snapshotCache=new Map();}
+  async getSnapshot(revision){
+    const key=revision||"current",cached=this.snapshotCache.get(key);
+    // Immutable revisions are safe to cache. The current pointer is mutable; never cache it.
+    if(revision&&cached)return cached;
+    const value=await snapshot(this.env,revision);
+    if(revision){this.snapshotCache.set(key,value);if(this.snapshotCache.size>3)this.snapshotCache.delete(this.snapshotCache.keys().next().value);}
+    return value;
   }
-
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (
-      url.pathname === "/init" &&
-      request.method === "POST"
-    ) {
-      const body = await request.json();
-      const current = await this.storage.get("room");
-
-      if (!current) {
-        await this.storage.put("room", {
-          code: body.code,
-          createdAt: body.createdAt,
-          players: []
-        });
-
-        await this.state.storage.setAlarm(
-          Date.now() + 6 * 60 * 60 * 1000
-        );
-      }
-
-      return new Response("ok");
+  async fetch(request){const url=new URL(request.url);
+    if(url.pathname==='/creation-gate'&&request.method==='POST'){
+      const {kind}=await request.json(),now=Date.now(),key='creation-gate-v1';
+      if(!['practice','room'].includes(kind))return json({error:'Solicitud inválida.'},400);
+      const old=await this.storage.get(key)||{start:now,practice:0,room:0};
+      const count=now-old.start<3_600_000?old:{start:now,practice:0,room:0};
+      // This is an anti-abuse guard (240 practice starts / 40 new rooms per hour),
+      // not an arbitrary limit of 3 Practice matches.
+      if(count[kind]>=(kind==='practice'?240:40))return json({error:'Límite de seguridad alcanzado.'},429);
+      count[kind]++;await this.storage.put(key,count);await this.storage.setAlarm(count.start+3_600_000);
+      return json({ok:true});
     }
-
-    if (url.pathname !== "/connect") {
-      return new Response("Not found", {
-        status: 404
-      });
-    }
-
-    if (
-      request.headers.get("Upgrade") !== "websocket"
-    ) {
-      return new Response(
-        "Se requiere WebSocket",
-        { status: 426 }
-      );
-    }
-
-    const room = await this.storage.get("room");
-
-    if (!room) {
-      return new Response(
-        JSON.stringify({
-          error: "La sala no existe o expiró."
-        }),
-        {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json"
-          }
+    if(url.pathname.startsWith('/practice/')){
+      try{
+        if(url.pathname==='/practice/init'&&request.method==='POST'){
+          const existing=await this.storage.get('practice');
+          // Never overwrite a pending match: opening practice resumes it.
+          if(existing&&Date.now()<existing.expiresAt&&existing.status==='playing')
+            return json({ok:true,practice:publicPractice(existing),resumed:true});
+          const body=await readLimitedJson(request,4096),snap=await this.getSnapshot(body.revision);
+          const practice=createPractice({catalog:snap.catalog,chart:snap.chart,revision:snap.revision,mode:body.mode,difficulty:body.difficulty,leftTeam:body.leftTeam,rightTeam:body.rightTeam});
+          await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
+          return json({ok:true,practice:publicPractice(practice)});
         }
-      );
+        if(url.pathname!=='/practice/session')return json({error:'Ruta no encontrada.'},404);
+        const practice=await this.storage.get('practice');
+        if(!practice||Date.now()>=practice.expiresAt)return json({error:'La partida expiró o no existe.'},410);
+        if(request.method==='GET')return json({ok:true,practice:publicPractice(practice)});
+        if(request.method==='DELETE')return json({error:'Terminá la partida antes de crear otra.'},409);
+        if(request.method!=='POST')return json({error:'Método inválido.'},405);
+        const input=await readLimitedJson(request,8192),snap=await this.getSnapshot(practice.revision);
+        const state=advancePractice(practice,input.operation,input,{catalog:snap.catalog,chart:snap.chart});
+        await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
+        return json({ok:true,practice:state});
+      }catch(e){return json({error:String(e.message||e)},e.status||400);}
     }
-
-    const sockets = this.state.getWebSockets();
-
-    if (sockets.length >= 2) {
-      return new Response(
-        JSON.stringify({
-          error: "La sala ya tiene dos jugadores."
-        }),
-        {
-          status: 409,
-          headers: {
-            "Content-Type": "application/json"
-          }
-        }
-      );
-    }
-
-    const used = sockets.map(s => {
-      try {
-        return s.deserializeAttachment()?.role;
-      } catch {
-        return null;
-      }
-    });
-
-    const role = used.includes("host")
-      ? "guest"
-      : "host";
-
-    const pair = new WebSocketPair();
-
-    const client = pair[0];
-    const server = pair[1];
-
+if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json(),cur=await this.storage.get("room");if(!cur){await this.storage.put("room",{code:b.code,createdAt:b.createdAt,battleMode:b.battleMode==="doubles"?"doubles":"singles",teamMode:b.teamMode==="random"?"random":"picked",players:[],battle:null});await this.storage.setAlarm(Number(b.createdAt||Date.now())+6*60*60*1000);}return new Response("ok");}if(url.pathname!=="/connect")return new Response("Not found",{status:404});if(request.headers.get("Upgrade")!=="websocket")return new Response("Se requiere WebSocket",{status:426});const room=await this.getRoom();if(!room.code)return new Response(JSON.stringify({error:"La sala no existe o expiró."}),{status:404,headers:{"Content-Type":"application/json"}});const sockets=this.state.getWebSockets();
+    const credential=url.searchParams.get("session")||"";
+    const existing=(room.players||[]).find(p=>p.session&&p.session===credential);
+    // Never infer identity from an available socket: a disconnect must not free a player's seat.
+    if(credential&&!existing)return json({error:"Credencial de sesión inválida."},403);
+    const role=existing?.role||(!room.players.some(p=>p.role==="host")?"host":(!room.players.some(p=>p.role==="guest")?"guest":null));
+    if(!role)return json({error:"La sala ya tiene dos participantes. Necesitás tu sesión para volver."},409);
+    const name=existing?.name||cleanName(url.searchParams.get("name"));
+    const session=existing?.session||crypto.randomUUID()+"-"+crypto.randomUUID();
+    const connectionId=crypto.randomUUID();
+    const pair=new WebSocketPair(),client=pair[0],server=pair[1];
     this.state.acceptWebSocket(server);
-
-    server.serializeAttachment({
-      role,
-      name: cleanName(url.searchParams.get("name"))
-    });
-
-    const updated = await this.getRoom();
-
-    updated.players = (
-      updated.players || []
-    ).filter(p => p.role !== role);
-
-    updated.players.push({
-      role,
-      name: cleanName(url.searchParams.get("name")),
-      ready: false,
-      team: []
-    });
-
-    await this.storage.put("room", updated);
-
-    this.send(server, {
-      type: "welcome",
-      role,
-      code: updated.code
-    });
-
-    this.broadcast({
-      type: "room",
-      room: this.publicRoom(updated)
-    });
-
-    return new Response(null, {
-      status: 101,
-      webSocket: client
+    server.serializeAttachment({role,name,connectionId});
+    let player=existing;
+    if(!player){player={role,name,session,ready:false,team:[],runtimeTeam:[],connected:true};room.players.push(player);}
+    player.connectionId=connectionId;
+    player.connected=true;
+    await this.storage.put("room",room);
+    // Older devices remain subscribed, but are read-only. Their actions are rejected server-side.
+    for(const old of sockets){if(old===server)continue;const a=old.deserializeAttachment()||{};if(a.role===role)this.send(old,{type:"session_observer",message:"Esta sesión se controla desde un dispositivo más reciente."});}
+    this.send(server,{type:"welcome",role,code:room.code,session,controller:true});
+    this.send(server,{type:"room",room:this.publicRoom(room)});
+    if(room.battle)this.send(server,{type:"battle_sync",battle:this.publicBattle(room,role)});
+    this.broadcastRoom(room);
+    return new Response(null,{status:101,webSocket:client});}
+  async webSocketMessage(socket,message){
+    if((typeof message==='string'?message.length:message?.byteLength||0)>8192){this.send(socket,{type:'error',message:'Mensaje demasiado grande.'});return;}
+    let data;try{data=JSON.parse(typeof message==="string"?message:new TextDecoder().decode(message));}catch{return;}const role=socket.deserializeAttachment()?.role;if(!role)return;const room=await this.getRoom(),player=room.players.find(p=>p.role===role);if(!player)return;const attachment=socket.deserializeAttachment()||{};if(attachment.connectionId!==player.connectionId){this.send(socket,{type:"session_observer",message:"Solo el dispositivo más reciente puede realizar acciones."});return;}
+    if(data.type==="ping"){this.send(socket,{type:"pong",at:Date.now()});return;}
+    if(data.type==="settings"){if(role!=="host"){this.send(socket,{type:"error",message:"Solo el creador puede cambiar la modalidad."});return;}if(room.battle?.status==="playing"){this.send(socket,{type:"error",message:"No se puede cambiar la modalidad durante una batalla."});return;}room.battleMode=data.battleMode==="doubles"?"doubles":"singles";room.teamMode=data.teamMode==="random"?"random":"picked";for(const p of room.players)p.ready=false;await this.storage.put("room",room);this.broadcastRoom(room);return;}
+    if(data.type==="team"){if(room.battle?.status==="playing"){this.send(socket,{type:"error",message:"No podés cambiar el equipo durante una batalla."});return;}let s;try{s=await this.getSnapshot();}catch(e){this.send(socket,{type:"error",message:e.message});return;}if(!Array.isArray(data.team)||data.team.length!==8||new Set(data.team).size!==8||data.team.some(id=>!ID.test(id||"")||!s.catalog.entities[id])){this.send(socket,{type:"error",message:"El equipo debe contener 8 personajes publicados distintos."});return;}player.team=[...data.team];player.ready=false;}
+    else if(data.type==="ready"){if(room.teamMode==="picked"&&player.team.length!==8){this.send(socket,{type:"error",message:"Guardá un equipo de 8 antes de marcarte listo."});return;}player.ready=!!data.ready;}
+    else if(data.type==="select_order"){if(room.battle?.status!=="playing"||room.battle.phase!=="action"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo acciones."});return;}try{const normalized=await this.normalizeOrder(room,role,data.order);room.battle.selection[role]=normalized;await this.storage.put("room",room);if(room.battle.selectionDeadline)await this.storage.setAlarm(room.battle.selectionDeadline);this.send(socket,{type:"selection_accepted",round:room.battle.round});this.broadcast({type:"battle_selection",round:room.battle.round,host:!!room.battle.selection.host,guest:!!room.battle.selection.guest});}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});}return;}
+    else if(data.type==="cancel_selection"){if(room.battle?.status!=="playing"||room.battle.phase!=="action")return;if(room.battle.pending?.[role]){this.send(socket,{type:"error",message:"La acción ya fue enviada para esta ronda."});return;}room.battle.selection[role]=null;await this.storage.put("room",room);this.broadcast({type:"battle_selection",round:room.battle.round,host:!!room.battle.selection.host,guest:!!room.battle.selection.guest});return;}
+    else if(data.type==="order"){await this.handleOrder(socket,room,role,data.order);return;}
+    else if(data.type==="replacement"){await this.handleReplacement(socket,room,role,data.choices);return;}
+    else if(data.type==="surrender"){if(room.battle?.status!=="playing")return;room.battle.status="finished";room.battle.winner=role==="host"?"guest":"host";room.battle.finishReason="surrender";await this.storage.put("room",room);this.broadcastBattle(room,"battle_result",{reason:"surrender"});return;}
+    else if(data.type==="return_lobby"){if(room.battle?.status!=="finished")return;await this.resetAfterBattle(room);return;}
+    else{this.send(socket,{type:"error",message:"Mensaje no reconocido por el servidor."});return;}
+    await this.storage.put("room",room);this.broadcastRoom(room);await this.maybeStartBattle(room);
+  }
+  async maybeStartBattle(room){if(room.battle?.status==="playing")return;const host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");if(!host||!guest||!host.ready||!guest.ready)return;let s;try{s=await this.getSnapshot();}catch(e){this.broadcast({type:"error",message:e.message});return;}try{if(room.teamMode==="random"){host.runtimeTeam=randomTeam(s.catalog);guest.runtimeTeam=randomTeam(s.catalog);}else{if(host.team.length!==8||guest.team.length!==8)return;host.runtimeTeam=[...host.team];guest.runtimeTeam=[...guest.team];}await freezeSnapshot(this.env,s);const result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:0,mode:room.battleMode,randomTape:[],includeCheckpoint:true});room.battle={status:"playing",phase:"action",mode:room.battleMode,teamMode:room.teamMode,revision:s.revision,round:1,leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],pending:{host:null,guest:null},selection:{host:null,guest:null},replacementPending:{host:null,guest:null},selectionDeadline:Date.now()+ACTION_MS,replacementDeadline:null,randomTape:[],checkpoint:result.checkpoint,logLength:result.log.length,lastState:compactResult(result),recentLog:result.log.slice(-120),winner:null,finishReason:null};await this.storage.put("room",room);await this.storage.setAlarm(room.battle.selectionDeadline);this.broadcastBattle(room,"battle_start",{logs:result.log,visualEvents:result.visualEvents});}catch(e){this.broadcast({type:"error",message:"No se pudo iniciar: "+String(e.message||e)});}}
+  sideForRole(role){return role==="host"?"left":"right";}
+  async normalizeOrder(room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action")throw Error("La batalla no está esperando acciones.");if(!order||typeof order!=="object"||!Array.isArray(order.actions))throw Error("Acciones inválidas.");const side=this.sideForRole(role),active=side==="left"?b.lastState.leftActive:b.lastState.rightActive,team=side==="left"?b.lastState.leftTeam:b.lastState.rightTeam,needed=b.mode==="doubles"?2:1,s=await this.getSnapshot(b.revision),out=[],destinations=new Set();for(let slot=0;slot<needed;slot++){const unit=active.find(u=>Number(u.activeSlot)===slot);if(!unit||unit.hp<=0)continue;const raw=order.actions.find(a=>Number(a.slot)===slot);if(!raw)throw Error(`Falta la acción del personaje ${slot+1}.`);if(raw.switch!==undefined){const i=Number(raw.switch);if(!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i)||destinations.has(i))throw Error("Cambio inválido.");destinations.add(i);out.push({slot,switch:i});continue;}if(typeof raw.move!=="string"||!ID.test(raw.move))throw Error("Movimiento inválido.");const ent=s.catalog.entities[unit.id],allowed=[...(ent?.definition?.moveIds||[]),ent?.definition?.uniqueMoveId].filter(Boolean);if(!allowed.includes(raw.move))throw Error("Ese movimiento no pertenece al personaje activo.");if((unit.cooldowns?.[raw.move]||0)>0)throw Error("Ese movimiento todavía está en cooldown.");const m=s.catalog.moves[raw.move],targeting=normalizeMoveTarget(m?.definition||{}),act={slot,move:raw.move};if(b.mode==="doubles"&&targeting==="single"){const t=raw.target;if(!t||!["left","right"].includes(t.side)||![0,1].includes(Number(t.slot)))throw Error("Elegí un objetivo válido.");const targetActive=t.side==="left"?b.lastState.leftActive:b.lastState.rightActive,target=targetActive.find(x=>Number(x.activeSlot)===Number(t.slot));if(!target||target.hp<=0||(t.side===side&&Number(t.slot)===slot))throw Error("Ese personaje no puede ser objetivo.");act.target={side:t.side,slot:Number(t.slot)};}if(raw.switchChoice){const c=raw.switchChoice,i=Number(c.teamIndex);if(c.side!==side||Number(c.slot)!==slot||!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i))throw Error("Relevo del efecto inválido.");act.switchChoice={side,slot,teamIndex:i};}out.push(act);}return{actions:out};}
+  async handleOrder(socket,room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action"){this.send(socket,{type:"error",message:"La batalla no está esperando acciones."});return;}if(b.selectionDeadline&&Date.now()>=b.selectionDeadline){await this.finishOnTimeout(room,role);return;}if(b.pending[role]){this.send(socket,{type:"error",message:"Ya enviaste tus acciones."});return;}try{order=await this.normalizeOrder(room,role,order);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});return;}const selected=b.selection[role];if(!selected||JSON.stringify(selected)!==JSON.stringify(order)){this.send(socket,{type:"error",message:"La selección cambió. Elegí las acciones nuevamente."});return;}b.pending[role]=order;await this.storage.put("room",room);this.send(socket,{type:"order_accepted",round:b.round});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}
+  async resolveRound(room){const b=room.battle,host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");try{const s=await this.getSnapshot(b.revision),leftOrders=[...b.leftOrders,b.pending.host],rightOrders=[...b.rightOrders,b.pending.guest],result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders,rightOrders,leftReplacements:b.leftReplacements,rightReplacements:b.rightReplacements,randomTape:b.checkpoint?[]:b.randomTape,
+  resume:b.checkpoint||null,includeCheckpoint:true}),start=b.logLength||0,
+  newLogs=b.checkpoint?result.log:result.log.slice(start),
+  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftOrders=leftOrders;b.rightOrders=rightOrders;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.pending={host:null,guest:null};b.selection={host:null,guest:null};b.selectionDeadline=null;const outcome=completedOutcome(result);if(outcome.finished){b.status="finished";b.phase="finished";b.winner=outcome.winner;b.finishReason=outcome.reason;}else if(["left","right"].some(side=>(result.needsReplacement[side]?.length||0)>0&&result[side+"Team"].some((unit,i)=>unit.hp>0&&!result[side+"ActiveIndexes"].includes(i)))){b.phase="replacement";b.replacementPending={host:null,guest:null};b.replacementDeadline=Date.now()+REPLACEMENT_MS;}else{b.round++;b.phase="action";b.selectionDeadline=Date.now()+ACTION_MS;}await this.storage.put("room",room);await this.storage.setAlarm(b.replacementDeadline||b.selectionDeadline||Number(room.createdAt||Date.now())+6*60*60*1000);this.broadcastBattle(room,outcome.finished?"battle_result":"battle_round",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){b.pending={host:null,guest:null};b.selection={host:null,guest:null};await this.storage.put("room",room);this.broadcast({type:"error",message:"No se pudo resolver la ronda: "+String(e.message||e)});}}
+  normalizeReplacement(room,role,choices){
+    const b=room.battle,side=this.sideForRole(role),required=b.lastState.needsReplacement?.[side]||[];
+    if(!required.length)return [];
+    const team=side==="left"?b.lastState.leftTeam:b.lastState.rightTeam,active=side==="left"?b.lastState.leftActiveIndexes:b.lastState.rightActiveIndexes;
+    const available=team.map((unit,i)=>unit.hp>0&&!active.includes(i)?i:-1).filter(i=>i>=0);
+    const count=Math.min(required.length,available.length);
+    if(!Array.isArray(choices)||choices.length!==count)throw Error("Elegí los reemplazos disponibles.");
+    const used=new Set(),slots=new Set();
+    return choices.map(c=>{
+      const slot=Number(c?.slot),i=Number(c?.teamIndex);
+      if(!required.includes(slot)||slots.has(slot)||!available.includes(i)||used.has(i))throw Error("Reemplazo inválido.");
+      used.add(i);slots.add(slot);return{slot,teamIndex:i};
     });
   }
-
-  async webSocketMessage(socket, message) {
-    let data;
-
-    try {
-      data = JSON.parse(
-        typeof message === "string"
-          ? message
-          : new TextDecoder().decode(message)
-      );
-    } catch {
-      return;
-    }
-
-    const attachment =
-      socket.deserializeAttachment() || {};
-
-    const role = attachment.role;
-
-    if (!role) return;
-
-    const room = await this.getRoom();
-
-    const player = (
-      room.players || []
-    ).find(p => p.role === role);
-
-    if (!player) return;
-
-    if (data.type === "ready") {
-      player.ready = !!data.ready;
-
-    } else if (data.type === "team") {
-      if (
-        !Array.isArray(data.team) ||
-        data.team.length !== 8 ||
-        data.team.some(
-          x => typeof x !== "string" ||
-          x.length > 100
-        )
-      ) {
-        this.send(socket, {
-          type: "error",
-          message:
-            "El equipo debe contener exactamente 8 identificadores de criatura."
-        });
-        return;
-      }
-
-      player.team = [...new Set(data.team)];
-
-      if (player.team.length !== 8) {
-        this.send(socket, {
-          type: "error",
-          message:
-            "El equipo no puede tener criaturas duplicadas."
-        });
-        return;
-      }
-
-    } else if (data.type === "chat") {
-      const text = String(data.text || "")
-        .trim()
-        .slice(0, 240);
-
-      if (text) {
-        this.broadcast({
-          type: "chat",
-          role,
-          name: player.name,
-          text,
-          at: Date.now()
-        });
-      }
-
-      return;
-
-    } else if (data.type === "ping") {
-      this.send(socket, {
-        type: "pong",
-        at: Date.now()
-      });
-      return;
-
-    } else {
-      this.send(socket, {
-        type: "error",
-        message:
-          "Mensaje no reconocido por el servidor."
-      });
-      return;
-    }
-
-    await this.storage.put("room", room);
-
-    this.broadcast({
-      type: "room",
-      room: this.publicRoom(room)
-    });
-
-    if (
-      room.players.length === 2 &&
-      room.players.every(
-        p => p.ready && p.team.length === 8
-      )
-    ) {
-      this.broadcast({
-        type: "ready_to_battle",
-        message:
-          "Ambos jugadores están listos. La sala está preparada para iniciar el combate online."
-      });
-    }
+  randomReplacements(b,role){
+    const side=this.sideForRole(role),required=[...(b.lastState.needsReplacement?.[side]||[])];
+    const team=side==="left"?b.lastState.leftTeam:b.lastState.rightTeam,active=side==="left"?b.lastState.leftActiveIndexes:b.lastState.rightActiveIndexes;
+    const available=team.map((unit,i)=>unit.hp>0&&!active.includes(i)?i:-1).filter(i=>i>=0);
+    const pick=n=>{const bytes=new Uint32Array(1);crypto.getRandomValues(bytes);return bytes[0]%n;};
+    const choices=[];
+    while(required.length&&available.length){const slot=required.splice(pick(required.length),1)[0],teamIndex=available.splice(pick(available.length),1)[0];choices.push({slot,teamIndex});}
+    return choices;
   }
-
-  async alarm() {
-    for (
-      const socket of this.state.getWebSockets()
-    ) {
-      try {
-        socket.close(1000, "Sala expirada");
-      } catch {}
+  async finishOnTimeout(room,loser){
+    const b=room.battle;b.status="finished";b.phase="finished";b.winner=loser==="host"?"guest":"host";b.finishReason="timeout";b.selectionDeadline=null;b.replacementDeadline=null;
+    await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");
+  }
+  async handleReplacement(socket,room,role,choices){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="replacement"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo reemplazos."});return;}if(b.replacementDeadline&&Date.now()>=b.replacementDeadline){this.send(socket,{type:"error",message:"Terminó el tiempo de sustitución."});return;}let normalized;try{normalized=this.normalizeReplacement(room,role,choices);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});return;}b.replacementPending[role]=normalized;await this.storage.put("room",room);const hostNeeds=(b.lastState.needsReplacement.left||[]).length>0,guestNeeds=(b.lastState.needsReplacement.right||[]).length>0;if((!hostNeeds||b.replacementPending.host)&&(!guestNeeds||b.replacementPending.guest))await this.applyReplacements(room);else this.broadcastBattle(room,"battle_replacement_waiting");}
+  async applyReplacements(room){const b=room.battle,host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest"),left=[...b.leftReplacements],right=[...b.rightReplacements];left[b.round-1]={choices:b.replacementPending.host||[]};right[b.round-1]={choices:b.replacementPending.guest||[]};try{const s=await this.getSnapshot(b.revision),result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders:b.leftOrders,rightOrders:b.rightOrders,leftReplacements:left,rightReplacements:right,randomTape:b.checkpoint?[]:b.randomTape,
+  resume:b.checkpoint||null,replacementsOnly:!!b.checkpoint,includeCheckpoint:true}),start=b.logLength,
+  newLogs=b.checkpoint?result.log:result.log.slice(start),
+  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftReplacements=left;b.rightReplacements=right;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.replacementPending={host:null,guest:null};b.round++;b.phase="action";b.replacementDeadline=null;b.selectionDeadline=Date.now()+ACTION_MS;await this.storage.put("room",room);await this.storage.setAlarm(b.selectionDeadline);this.broadcastBattle(room,"battle_replacement",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){this.broadcast({type:"error",message:"No se pudo aplicar el reemplazo: "+String(e.message||e)});}}
+  async resetAfterBattle(room){for(const p of room.players){p.ready=false;p.runtimeTeam=[];}room.battle=null;await this.storage.put("room",room);this.broadcast({type:"battle_return_lobby"});this.broadcastRoom(room);}
+  publicBattle(room,role){const b=room.battle;if(!b)return null;return{status:b.status,phase:b.phase,mode:b.mode,teamMode:b.teamMode,revision:b.revision,round:b.round,state:b.lastState,recentLog:b.recentLog||[],winner:b.winner||null,finishReason:b.finishReason||null,submitted:!!b.pending?.[role],opponentSubmitted:!!b.pending?.[role==="host"?"guest":"host"],selected:!!b.selection?.[role],opponentSelected:!!b.selection?.[role==="host"?"guest":"host"],replacementSubmitted:!!b.replacementPending?.[role],selectionDeadline:b.selectionDeadline||null,replacementDeadline:b.replacementDeadline||null};}
+  broadcastBattle(room,type,extra={}){for(const s of this.state.getWebSockets()){let role;try{role=s.deserializeAttachment()?.role}catch{}if(role)this.send(s,{type,battle:this.publicBattle(room,role),...extra});}}
+  broadcastRoom(room){this.broadcast({type:"room",room:this.publicRoom(room)});}publicRoom(room){return{code:room.code,battleMode:room.battleMode||"singles",teamMode:room.teamMode||"picked",players:(room.players||[]).map(p=>({role:p.role,name:p.name,ready:!!p.ready,teamCount:(p.team||[]).length,connected:!!p.connected})),capacity:2,battleStatus:room.battle?.status||null};}
+  async webSocketClose(socket){await this.removeSocket(socket);}async webSocketError(socket){await this.removeSocket(socket);}async removeSocket(socket){let a={};try{a=socket.deserializeAttachment()||{}}catch{}const room=await this.getRoom(),p=room.players.find(x=>x.role===a.role);if(!p||p.connectionId!==a.connectionId)return;p.connected=false;await this.storage.put("room",room);this.broadcastRoom(room);this.broadcast({type:"notice",message:"Un jugador se desconectó. Su partida continuará y podrá reconectarse."});}
+  async alarm(){
+    const room=await this.getRoom(),now=Date.now(),b=room.battle;
+    if(b?.status==="playing"&&b.phase==="action"&&b.selectionDeadline){
+      if(b.selectionDeadline<=now){
+        // The acknowledged and validated select_order is already an explicit decision.
+        // If a confirm packet is lost during a disconnect, do not turn two valid
+        // selections into an artificial double-timeout. The timer remains strict
+        // for players who did not make a valid selection.
+        for(const role of ['host','guest'])if(!b.pending?.[role]&&b.selection?.[role])b.pending[role]=b.selection[role];
+        const missing=["host","guest"].filter(role=>!b.pending?.[role]);
+        if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");}
+        else if(missing.length===1)await this.finishOnTimeout(room,missing[0]);
+        else await this.resolveRound(room);
+        return;
+      }
+      await this.storage.setAlarm(b.selectionDeadline);return;
     }
-
+    if(b?.status==="playing"&&b.phase==="replacement"&&b.replacementDeadline){
+      if(b.replacementDeadline<=now){
+        for(const role of ["host","guest"])if(!b.replacementPending[role])b.replacementPending[role]=this.randomReplacements(b,role);
+        await this.applyReplacements(room);return;
+      }
+      await this.storage.setAlarm(b.replacementDeadline);return;
+    }
+    const practice=await this.storage.get('practice');
+    if(practice){if(now>=practice.expiresAt)await this.storage.delete('practice');else await this.storage.setAlarm(practice.expiresAt);return;}
+    const expires=Number(room.createdAt||now)+6*60*60*1000;
+    if(now<expires){await this.storage.setAlarm(expires);return;}
+    for(const socket of this.state.getWebSockets()){try{socket.close(1000,"Sala expirada")}catch{}}
     await this.storage.delete("room");
   }
-
-  async webSocketClose(socket) {
-    await this.removeSocket(socket);
-  }
-
-  async webSocketError(socket) {
-    await this.removeSocket(socket);
-  }
-
-  async removeSocket(socket) {
-    let attachment = {};
-
-    try {
-      attachment =
-        socket.deserializeAttachment() || {};
-    } catch {}
-
-    const room = await this.getRoom();
-
-    room.players = (
-      room.players || []
-    ).filter(
-      p => p.role !== attachment.role
-    );
-
-    await this.storage.put("room", room);
-
-    this.broadcast({
-      type: "room",
-      room: this.publicRoom(room)
-    });
-
-    this.broadcast({
-      type: "notice",
-      message:
-        "Un jugador se desconectó. La sala seguirá abierta para volver a entrar."
-    });
-  }
-
-  async getRoom() {
-    return (
-      await this.storage.get("room")
-    ) || {
-      code: "",
-      players: []
-    };
-  }
-
-  publicRoom(room) {
-    return {
-      code: room.code,
-      players: (
-        room.players || []
-      ).map(p => ({
-        role: p.role,
-        name: p.name,
-        ready: !!p.ready,
-        teamCount: (
-          p.team || []
-        ).length
-      })),
-      capacity: 2
-    };
-  }
-
-  send(socket, data) {
-    try {
-      socket.send(JSON.stringify(data));
-    } catch {}
-  }
-
-  broadcast(data) {
-    for (
-      const socket of this.state.getWebSockets()
-    ) {
-      this.send(socket, data);
-    }
-  }
+  async getRoom(){return(await this.storage.get("room"))||{code:"",players:[],battle:null};}send(socket,data){try{socket.send(JSON.stringify(data))}catch{}}broadcast(data){for(const socket of this.state.getWebSockets())this.send(socket,data);}
 }
-

@@ -1,4 +1,4 @@
-name = "universal-duels-editor-privado"
+name = "universalduels"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
@@ -10,26 +10,17 @@ class_name = "Room"
 tag = "v1"
 new_sqlite_classes = ["Room"]
 
-[[kv_namespaces]]
-binding = "EDITOR_DRAFTS"
-id = "453d2d63210e42149663b5771e76a803"
-
-# Existing catalog-v1 drafts and published snapshots share this KV namespace.
-# Keep distinct bindings because the application uses different key prefixes.
+# Alpha 0.2: main lee únicamente el último parche publicado manualmente desde el editor.
 [[kv_namespaces]]
 binding = "PUBLIC_CONTENT"
 id = "453d2d63210e42149663b5771e76a803"
 
+# Alpha 0.2: los sprites públicos se copian a una ruta versionada al cargar cada parche.
 [[r2_buckets]]
-binding = "EDITOR_SPRITES"
+binding = "PUBLIC_SPRITES"
 bucket_name = "universal-duels-sprites-test"
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/health", "/editor-api/*"]
-
-[vars]
-ACCESS_TEAM_DOMAIN = "nameless-water-b29a.cloudflareaccess.com"
-ACCESS_AUD = "c38edfabcf3221f1ad4fa4c1b9d69e99600c921b83e99fc197c083afd9fa205c"
-EDITOR_EMAIL = "2417erm@gmail.com"
+run_worker_first = ["/api/*", "/health"]
