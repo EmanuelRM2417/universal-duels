@@ -12,7 +12,7 @@ new_sqlite_classes = ["Room"]
 
 [[kv_namespaces]]
 binding = "EDITOR_DRAFTS"
-id = "1173494a63814d1b9093b9a409cf2832"
+id = "453d2d63210e42149663b5771e76a803"
 
 # Separate draft KV from the public snapshot KV. These bindings use the same public
 # namespace/bucket as the game Worker, but only the private, Access-gated API writes.
