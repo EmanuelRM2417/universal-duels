@@ -1,6 +1,6 @@
 // Alpha 0.4: pure publication validation. Does not write to Cloudflare.
 import {validateDefinition} from './catalog-validation.js';
-const CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses'];
+const CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial'];
 const ID=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTION_REFS={apply_effect:'effects',apply_status:'statuses',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'};
 export function validateRelease(catalog, chart){

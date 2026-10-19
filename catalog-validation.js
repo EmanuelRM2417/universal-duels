@@ -1,12 +1,12 @@
 // Validación de configuración, no balance automático. No muta el contenido.
-export const EVENTS = ['on_enter','on_death','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status'];
-export const CONDITIONS = ['always','hp_below','hp_above','weather_is','field_is','has_status','has_type','was_hit_by_type','stat_below','in_doubles'];
+export const EVENTS = ['on_enter','on_death','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status','on_condition','on_status_applied'];
+export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','has_status','has_type','was_hit_by_type','stat_below','in_doubles'];
 export const TARGETS = ['self','target','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','immunity','damage_multiplier','switch_character'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
-const ENV_ACTIONS=['damage_percent','heal_percent','stat_change','critical_change','remove_status','block_status','cooldown_change','cooldown_on_use','immunity'];
+const ENV_ACTIONS=['damage_percent','heal_percent','stat_change','critical_change','remove_status','block_status','cooldown_change','cooldown_on_use','immunity','final_damage'];
 const ENV_TIMINGS=['continuous','turn_start','turn_end','round_end'];
 const slug = v => typeof v === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) && v.length <= 60;
 const numeric = v => typeof v === 'number' && Number.isFinite(v);
@@ -26,10 +26,10 @@ export function validateRules(definition,category){
  for(const [i,r] of definition.rules.entries()){
   const at=`Regla ${i+1}`;
   if(!EVENTS.includes(r.event)) fail(at+': elegí un evento admitido.');
-  if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
+  if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_survive'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
   if(category==='effects' && r.event!=='manual') fail(at+': un efecto reutilizable solo admite el evento manual en este laboratorio.');
   if(['entities',...ENV_CATS].includes(category)) fail(at+': esta categoría no usa reglas propias.');
-  if(category==='statuses' && (r.event!=='on_status'||r.condition?.type!=='always'||r.conditions?.length||r.target!=='self'||r.limit!==0)) fail(at+': los estados usan automáticamente «Mientras tenga el estado», sin condiciones extra, sobre el portador y sin límite.');
+  if(category==='statuses' && ['manual','manual_doubles','on_survive'].includes(r.event)) fail(at+': ese evento no corresponde a un estado alterado.');
   condition(r.condition,at);
   if(!Array.isArray(r.conditions)) fail(at+': las condiciones adicionales deben ser una lista.');
   if(r.conditions.length>20) fail(at+': máximo 20 condiciones adicionales.');
@@ -59,6 +59,8 @@ export function validateRules(definition,category){
 }
 export function validateDefinition(category,d){
  if(!d || typeof d!=='object'||Array.isArray(d)) fail('Definición inválida.');
+ if(category==='tutorial'){if(typeof d.text!=='string'||d.text.length>12000)fail('Tutorial: se requiere un texto de máximo 12000 caracteres.');return;}
+ if(category==='tags'){if(!Array.isArray(d.entityIds)||d.entityIds.length>1000||new Set(d.entityIds).size!==d.entityIds.length||d.entityIds.some(id=>!slug(id)))fail('Etiquetas: personajes inválidos o repetidos.');return;}
  if(category==='moves'){
   if(!TYPES.includes(d.type)||!['physical','special','status'].includes(d.category)||!['global','unique'].includes(d.kind)) fail('Ataque: elegí clase, tipo y categoría.');
   const target=d.targeting||'single';
@@ -76,6 +78,7 @@ export function validateDefinition(category,d){
    if(x.sources!==undefined&&(!Array.isArray(x.sources)||x.sources.some(v=>!['move','effect','environment'].includes(v))))fail('Sobrevivir: fuente de daño inválida.');
  }
  if(category==='abilities'&&d.consecutiveAttack){const x=d.consecutiveAttack;
+   if(x.conditionMode!==undefined&&!['hit','use'].includes(x.conditionMode))fail('Carga: la condición debe ser acertar o usar golpes consecutivamente.');
    if(!within(Number(x.damagePerStack??10),0,1000)||!Number.isInteger(Number(x.speedStages??1))||Number(x.speedStages??1)<0||Number(x.speedStages??1)>10)fail('Carga: incremento de daño o Velocidad inválidos.');
  }
  if(['entities','moves','abilities'].includes(category) && (d.tags!==undefined && (!Array.isArray(d.tags)||d.tags.some(x=>typeof x!=='string'||!x.trim()||x.length>40)))) fail('Etiquetas: usá una lista de textos de hasta 40 caracteres.');

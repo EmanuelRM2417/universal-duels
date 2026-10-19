@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validateDefinition} from './catalog-validation.js';
+import {publicationDiff,selectRelease} from './release-control.js';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+const worker=readFileSync(new URL('./worker.js',import.meta.url),'utf8');
+for(const x of ['on_condition','on_status_applied','multihit','conditionMode','consecutiveAttack','data-studio-view="tutorial"','data-studio-view="labels"','udAudioLibrary','audioBox','ui-studio.html','survivePriority'])assert.ok(html.includes(x),`Editor: falta ${x}`);
+for(const x of ["'statuses','tags','tutorial'",'soundId','PUBLIC_CONTENT','Cargar parche'])assert.ok((worker+html).includes(x),`Publicación/editor: falta ${x}`);
+validateDefinition('tutorial',{text:'Texto editable'});
+validateDefinition('tags',{entityIds:['entidad-1']});
+assert.throws(()=>validateDefinition('tutorial',{text:'x'.repeat(12001)}));
+const prior={tutorial:{},tags:{}},draft={tutorial:{objetivo:{id:'objetivo',definition:{text:'ABC'}}},tags:{ejemplo:{id:'ejemplo',definition:{entityIds:['personaje']}}}};
+const {catalog}=selectRelease(prior,draft,{tutorial:['objetivo'],tags:['ejemplo']});
+assert.equal(catalog.tutorial.objetivo.definition.text,'ABC');
+assert.deepEqual(publicationDiff({catalog:prior},{catalog}).tutorial.added,['objetivo']);
+console.log('Editor Alpha 0.5: condiciones, rachas/cadenas, duplicación, Tutorial, etiquetas y parche manual OK');
