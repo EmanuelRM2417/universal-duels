@@ -1,4 +1,4 @@
-name = "duelo-pixel-rooms"
+name = "universalduels"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
