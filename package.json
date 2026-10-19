@@ -1,12 +1,12 @@
 {
-  "name": "universal-duels-alpha-02",
+  "name": "universal-duels-main",
   "private": true,
-  "version": "0.4.0-alpha",
+  "version": "0.5.0-alpha",
   "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "test": "node alpha04-practice-ai-types.test.mjs && node alpha04-multihit-events.test.mjs && node alpha04-additive-damage.test.mjs && node alpha04-request-limits.test.mjs && node alpha04-stat-math.test.mjs && node alpha04-worker-smoke.test.mjs && node alpha04-creation-gate.test.mjs && node alpha04-checkpoint.test.mjs && node alpha04-engine.test.mjs && node alpha04-survival.test.mjs && node alpha04-death.test.mjs && node alpha04-timers.test.mjs && node alpha04-reconnect.test.mjs && node alpha-public.test.mjs && node alpha-content.test.mjs && node lab-ui-parity.test.mjs && node alpha02-doubles.test.mjs && node patch-alpha02-regression.test.mjs && node alpha04-practice-ai.test.mjs && node alpha04-outcome-kv.test.mjs && node alpha04-long-match.test.mjs && node alpha04-practice-incremental.test.mjs && node alpha04-practice-session.test.mjs && node alpha04-practice-http.test.mjs && node alpha04-practice-ui.test.mjs"
+    "test": "node alpha04-practice-ai-types.test.mjs && node alpha04-multihit-events.test.mjs && node alpha04-additive-damage.test.mjs && node alpha04-request-limits.test.mjs && node alpha04-stat-math.test.mjs && node alpha04-worker-smoke.test.mjs && node alpha04-creation-gate.test.mjs && node alpha04-checkpoint.test.mjs && node alpha04-engine.test.mjs && node alpha04-survival.test.mjs && node alpha04-death.test.mjs && node alpha04-timers.test.mjs && node alpha04-reconnect.test.mjs && node alpha-public.test.mjs && node alpha-content.test.mjs && node lab-ui-parity.test.mjs && node alpha02-doubles.test.mjs && node patch-alpha02-regression.test.mjs && node alpha04-practice-ai.test.mjs && node alpha04-outcome-kv.test.mjs && node alpha04-long-match.test.mjs && node alpha04-practice-incremental.test.mjs && node alpha04-practice-session.test.mjs && node alpha04-practice-http.test.mjs && node alpha04-practice-ui.test.mjs && node alpha04-condition-target-regression.test.mjs && node alpha04-passive-conditional.test.mjs && node alpha04-room-live-visuals.test.mjs && node alpha05-unification.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.20.0"

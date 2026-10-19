@@ -252,6 +252,11 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     const room=await this.getRoom(),now=Date.now(),b=room.battle;
     if(b?.status==="playing"&&b.phase==="action"&&b.selectionDeadline){
       if(b.selectionDeadline<=now){
+        // The acknowledged and validated select_order is already an explicit decision.
+        // If a confirm packet is lost during a disconnect, do not turn two valid
+        // selections into an artificial double-timeout. The timer remains strict
+        // for players who did not make a valid selection.
+        for(const role of ['host','guest'])if(!b.pending?.[role]&&b.selection?.[role])b.pending[role]=b.selection[role];
         const missing=["host","guest"].filter(role=>!b.pending?.[role]);
         if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");}
         else if(missing.length===1)await this.finishOnTimeout(room,missing[0]);

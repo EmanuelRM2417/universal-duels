@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=f=>fs.readFileSync(new URL(f,import.meta.url),'utf8');
+const home=read('./public/index.html'),training=read('./public/practice.html'),tutorial=read('./public/tutorial.html'),audio=read('./public/audio-director.js'),engine=read('./battle-engine.js'),worker=read('./worker.js');
+for(const x of ['Alpha 0.5','udTutorialPanel','catalog?.tutorial','udRotateDevice','audio-director.js','function controlsHTML','function openTargetPicker','battle-message'])assert.ok(home.includes(x),`Main: falta ${x}`);
+assert.ok(home.includes('has?esc(udText("battleWaiting"'));
+assert.ok(!home.includes('\\${esc(udText('),'La interpolación no debe ser texto literal');
+for(const x of ['function validTargetPositions','function animateLogLines','function effectRows','battle-sprite-sheet','udSound.context','udRotateDevice'])assert.ok(training.includes(x),`Entrenamiento: falta ${x}`);
+for(const x of ['catalog?.tutorial','id="estados"','id="cooldowns"','id="prioridad"'])assert.ok(tutorial.includes(x),`Tutorial: falta ${x}`);
+for(const x of ['ud-audio-music','ud-audio-effects','ud-lobby-position','Volumen de música','Volumen de efectos'])assert.ok(audio.includes(x),`Audio: falta ${x}`);
+for(const x of ['streakModifier','conditionMode','consecutiveAttack','on_condition','on_status_applied','visualEvents'])assert.ok(engine.includes(x),`Motor: falta ${x}`);
+for(const x of ['public-v1:current','selectionDeadline','pending[role]=b.selection[role]'])assert.ok(worker.includes(x),`Worker: falta ${x}`);
+console.log('Alpha 0.5 unificada: interfaz, Entrenamiento completo, Tutorial, audio, motor, selección online OK');
