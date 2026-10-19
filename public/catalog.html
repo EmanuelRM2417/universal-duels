@@ -53,4 +53,4 @@ $('search').oninput=render;
 (async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo cargar el catálogo.');data=d;render();$('notice').textContent='Catálogo actualizado a '+d.revision;
   const params=new URLSearchParams(location.search),id=params.get('entity');if(id&&d.catalog.entities?.[id])open('entities',id);
 }catch(e){$('notice').textContent='Error: '+e.message;}})();
-</script></body></html>
+</script><script type="module">import {createSoundDirector} from '/audio-director.js';window.udSound=createSoundDirector();window.udSound.context('lobby');</script></body></html>
