@@ -5,7 +5,7 @@ for(const feature of ['function renderPracticeRoster','function validTargetPosit
   assert.ok(html.includes(feature),`La función/interfaz de entrenamiento debe conservar ${feature}`);
 }
 for(const visual of ['battle-stage','battle-sprite-sheet','battle-hp-fill','battle-modal','battle-message','function effectRows','function environmentLayers','function typeTableBody','function logBody','data-battle-modal'])assert.ok(html.includes(visual),`Entrenamiento sin interfaz completa: ${visual}`);
-assert.match(html,/window\.parent\.udSound\?window\.parent\.udSound:createSoundDirector/);
+assert.match(html,/const udSound=createSoundDirector/);
 assert.match(html,/udSound.context\('battle'/);
 assert.match(html,/udRotateDevice/);
 assert.doesNotMatch(html,/id="enemies" class="grid"/);
