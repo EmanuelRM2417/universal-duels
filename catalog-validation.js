@@ -6,7 +6,7 @@ export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status'
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
-const ENV_ACTIONS=['damage_percent','heal_percent','stat_change','critical_change','remove_status','block_status','cooldown_change','cooldown_on_use','immunity','final_damage'];
+const ENV_ACTIONS=['damage_percent','heal_percent','stat_change','critical_change','remove_status','block_status','cooldown_change','cooldown_on_use','immunity','restrict_moves','final_damage'];
 const ENV_TIMINGS=['continuous','turn_start','turn_end','round_end'];
 const slug = v => typeof v === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) && v.length <= 60;
 const numeric = v => typeof v === 'number' && Number.isFinite(v);
@@ -46,6 +46,7 @@ export function validateRules(definition,category){
   const a=r.action, v=a.value;
   if(['damage','heal','heal_from_damage','resurrect'].includes(a.type) && !(v!==''&&within(Number(v),0,100))) fail(at+': el porcentaje debe estar entre 0 y 100.');
   if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
+  if(a.type==='restrict_moves'){for(const [values,allowed,label] of [[a.categories,['physical','special','status'],'clases'],[a.types,TYPES,'tipos']])if(values!==undefined&&(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x))))fail(at+': restricción de '+label+' inválida.');}
   if(a.type==='switch_character' && !['manual','random'].includes(a.switchMode)) fail(at+': Cambio de personaje requiere modo manual o aleatorio.');
   if(a.type==='stat_change' && (!STATS.includes(a.stat)||!(v!==''&&Number.isInteger(Number(v))&&Number(v)>=-10&&Number(v)<=10))) fail(at+': elegí estadística y cambio entero entre −10 y +10 niveles.');
   if(['apply_status','apply_effect','remove_effect','set_weather','set_field','set_scenario'].includes(a.type)&&!slug(v)) fail(at+': la acción necesita un ID válido.');
@@ -77,6 +78,7 @@ export function validateDefinition(category,d){
    if(!within(Number(x.chance??100),0,100)||!Number.isInteger(Number(x.limit??0))||Number(x.limit??0)<0||!within(Number(x.hpPercent??1),0,100)||!within(Number(x.priority??0),-5,5))fail('Sobrevivir: probabilidad, usos, PS y prioridad inválidos.');
    if(x.fixedHp!==undefined&&(!Number.isInteger(Number(x.fixedHp))||Number(x.fixedHp)<1||Number(x.fixedHp)>500))fail('Sobrevivir: PS fijos inválidos.');
    if(x.sources!==undefined&&(!Array.isArray(x.sources)||x.sources.some(v=>!['move','effect','environment'].includes(v))))fail('Sobrevivir: fuente de daño inválida.');
+   if(x.limitScope!==undefined&&!['battle','entry','unlimited'].includes(x.limitScope))fail('Sobrevivir: el límite debe ser por entrada, por batalla o ilimitado.');
  }
  if(category==='abilities'&&d.consecutiveAttack){const x=d.consecutiveAttack;
    if(x.conditionMode!==undefined&&!['hit','use'].includes(x.conditionMode))fail('Carga: la condición debe ser acertar o usar golpes consecutivamente.');
@@ -99,7 +101,7 @@ export function validateDefinition(category,d){
    if(!ENV_ACTIONS.includes(e.type))fail(at+': operación no admitida.');
    if(!within(e.chance,0,100))fail(at+': probabilidad entre 0 y 100 %.');
    if(!ENV_TIMINGS.includes(e.timing))fail(at+': elegí un momento de activación válido.');
-   if(['cooldown_on_use','immunity'].includes(e.type)&&e.timing!=='continuous')fail(at+': este efecto debe permanecer en «Continuo mientras el entorno esté activo».');
+   if(['cooldown_on_use','immunity','restrict_moves'].includes(e.type)&&e.timing!=='continuous')fail(at+': este efecto debe permanecer en «Continuo mientras el entorno esté activo».');
    if(!['all','include','exclude'].includes(e.filter))fail(at+': elegí filtro de tipos.');
    if(!Array.isArray(e.types)||new Set(e.types).size!==e.types.length||e.types.some(t=>!TYPES.includes(t)))fail(at+': tipos inválidos o repetidos.');
    if(e.filter!=='all'&&!e.types.length)fail(at+': seleccioná al menos un tipo.');
@@ -108,6 +110,7 @@ export function validateDefinition(category,d){
    if(e.type==='stat_change'&&(!STATS.includes(e.stat)||!Number.isInteger(e.value)||e.value< -10||e.value>10))fail(at+': estadística y niveles enteros entre −10 y +10.');
    if(e.type==='critical_change'&&(!Number.isInteger(e.value)||e.value< -10||e.value>10))fail(at+': crítico entre −10 y +10 niveles.');
    if(['remove_status','block_status'].includes(e.type)&&e.value!==undefined)fail(at+': esta acción no lleva valor.');
+   if(e.type==='restrict_moves'){for(const [values,allowed,label] of [[e.categories||[],['physical','special','status'],'clases'],[e.moveTypes||[],TYPES,'tipos']])if(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x)))fail(at+': restricción de '+label+' inválida.');}
    if(e.type==='immunity'){if(!['all','physical','special'].includes(e.damageClass||'all'))fail(at+': inmunidad requiere Todos, Físico o Especial.');const q=e.immunityTypeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(q.mode)||!Array.isArray(q.types)||q.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de tipos de ataque inválido.');}
    if(['cooldown_change','cooldown_on_use'].includes(e.type)&&(!Number.isInteger(e.value)||e.value<-50||e.value>50))fail(at+': el cambio de cooldown debe ser un entero entre −50 y +50 turnos.');
    if(['damage_percent','heal_percent','cooldown_change'].includes(e.type)&&e.timing==='continuous')fail(at+': elegí Inicio de turno, Final de turno o Final de ronda para este efecto periódico.');

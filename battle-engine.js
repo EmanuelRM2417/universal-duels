@@ -100,12 +100,18 @@ function inflictDamage(target,amount,state,source='move'){
   if(before<=0||amount<=0)return 0;
   const lethal=amount>=before;
   if(lethal){
-    const candidates=(target.effects.some(e=>e.id==='suppressed')?[]:(target.abilities||[])).filter(a=>a?.definition?.survive).map(a=>({id:a.id,config:a.definition.survive})).concat((target.effects||[]).filter(e=>e.id==='survive').map(e=>({id:e.sourceId||'effect',config:e})));
+    // Las habilidades neutralizadas no participan; las protecciones por efectos sí.
+    const candidates=(target.effects.some(e=>e.id==='suppressed')?[]:(target.abilities||[]))
+      .filter(a=>a?.definition?.survive).map(a=>({id:a.id,kind:'ability',config:a.definition.survive}))
+      .concat((target.effects||[]).filter(e=>e.id==='survive'&&!(target.effects.some(x=>x.id==='suppressed')&&e.sourceKind==='habilidad')).map(e=>({id:e.sourceId||'effect',kind:'effect',config:e})));
     candidates.sort((a,b)=>(Number(b.config.priority)||0)-(Number(a.config.priority)||0));
     for(const candidate of candidates){
       const cfg=candidate.config,allowed=cfg.sources||['move','effect','environment'];
       if(Array.isArray(allowed)&&!allowed.includes(source))continue;
-      const key='survive:'+candidate.id,limit=cfg.limit===undefined?Infinity:Math.max(0,integer(cfg.limit));
+      const scope=cfg.limitScope||cfg.limitMode||'battle';
+      const entryScoped=scope==='entry'||scope==='per_entry'||scope==='oncePerEntry';
+      const key=(entryScoped?'survive-entry:':candidate.kind==='effect'?'survive-effect:':'survive:')+candidate.id;
+      const limit=scope==='unlimited'?Infinity:cfg.limit===undefined?Infinity:Math.max(0,integer(cfg.limit));
       if((target.used[key]||0)>=limit)continue;
       if(state.random()*100>=percent(cfg.chance??100))continue;
       const keep=cfg.fixedHp!==undefined?integer(cfg.fixedHp):Math.ceil(target.maxHp*percent(cfg.hpPercent??1)/100);
@@ -144,7 +150,18 @@ function action(rule,user,contextTarget,state,depth){
   }
   if(act.type==='survive'){
     // Opcional: instala la protección; la ejecución es automática y garantizada.
-    for(const t of targetSet(rule.target,user,contextTarget,state))if(t?.hp>0){t.effects.push({id:'survive',hpPercent:Math.max(0.01,Number(act.hpPercent??v??1)),limit:act.limit===undefined?1:Math.max(0,integer(act.limit)),sourceKind:state.currentSourceKind||'efecto',sourceId:state.currentSourceId||'',turns:Math.max(1,integer(rule.duration||99))});}
+    for(const t of targetSet(rule.target,user,contextTarget,state))if(t?.hp>0){
+      const duration=Math.max(1,integer(rule.duration||99));
+      const sid=state.currentSourceId||'';
+      // Actualizar una protección del mismo origen, sin acumular copias invisibles.
+      t.effects=t.effects.filter(e=>!(e.id==='survive'&&e.sourceId===sid&&e.sourceKind===(state.currentSourceKind||'efecto')));
+      t.effects.push({id:'survive',hpPercent:Math.max(0.01,Number(act.hpPercent??v??1)),
+        ...(act.fixedHp!==undefined?{fixedHp:Math.max(1,integer(act.fixedHp))}:{}),
+        chance:percent(act.chance??rule.chance??100),priority:Number(act.priority)||0,
+        sources:Array.isArray(act.sources)?act.sources:['move','effect','environment'],
+        limit:act.limit===undefined?1:Math.max(0,integer(act.limit)),limitScope:act.limitScope||'battle',
+        sourceKind:state.currentSourceKind||'efecto',sourceId:sid,turns:duration});
+    }
     return;
   }
   if(act.type==='damage_multiplier'){
@@ -161,9 +178,24 @@ function action(rule,user,contextTarget,state,depth){
     else if(act.type==='stat_change'&&['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'].includes(act.stat)){const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(`${battleLogName(t)}: ${act.stat} ${next}.`);state.pushVisualUnit?.(t);}}
     else if(act.type==='apply_status'&&!t.status&&!t.statusBlocked){const st=state.catalog.statuses?.[safe(v)],f=st?.definition?.typeFilter||{mode:'all',types:[]},matched=(f.types||[]).some(x=>t.types.includes(x)),immune=f.mode==='exclude'&&matched||f.mode==='include'&&!matched;if(immune)state.log.push(`${battleLogName(t)} es inmune a ${st?.name||safe(v)}.`);else{t.status={id:safe(v),turns:Math.max(0,integer(rule.duration))};state.log.push(`${battleLogName(t)} recibe ${st?.name||t.status.id}.`);state.refreshStatus?.();state.refreshPassives?.();rulesFor(null,'on_status_applied',t,user,state);state.pushVisualUnit?.(t);}}
     else if(act.type==='remove_status'){if(t.status){const oldId=t.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;t.status=null;clearStatusLinkedEffects(t,oldId);state.log.push(`${battleLogName(t)} pierde ${old}.`);state.refreshStatus?.();state.refreshPassives?.();state.pushVisualUnit?.(t);}}
-    else if(act.type==='suppress_abilities'){t.effects.push({id:'suppressed',turns:Math.max(1,integer(rule.duration)),...sourceMeta(state)});t.consecutiveCounters={};state.log.push(`${battleLogName(t)}: habilidades anuladas.`);}
+    else if(act.type==='suppress_abilities'){
+      const duration=Math.max(1,integer(rule.duration));
+      const meta=sourceMeta(state);
+      // Múltiples supresiones de distinto origen pueden coexistir; reaplicar la misma renueva duración.
+      const active=t.effects.find(e=>e.id==='suppressed'&&e.sourceKind===meta.sourceKind&&e.sourceId===meta.sourceId);
+      if(active)active.turns=Math.max(active.turns||0,duration);
+      else t.effects.push({id:'suppressed',turns:duration,...meta});
+      t.consecutiveCounters={};state.log.push(`${battleLogName(t)}: habilidades anuladas.`);
+      state.refreshEnvironment?.();state.pushVisualUnit?.(t);
+    }
     else if(act.type==='remove_effect')t.effects=t.effects.filter(e=>e.id!==v);
-    else if(act.type==='restrict_moves'){if(!t.effects.some(e=>e.id==='restrict_moves'&&e.sourceKind===state.currentSourceKind&&e.sourceId===state.currentSourceId))t.effects.push({id:'restrict_moves',turns:Math.max(1,integer(rule.duration)),...sourceMeta(state)});}
+    else if(act.type==='restrict_moves'){
+      // Una restricción activa a la vez; las nuevas reemplazan a las anteriores.
+      t.effects=t.effects.filter(e=>e.id!=='restrict_moves');
+      t.effects.push({id:'restrict_moves',turns:Math.max(1,integer(rule.duration)),categories:Array.isArray(act.categories)?act.categories.filter(x=>['physical','special','status'].includes(x)):[],types:Array.isArray(act.types)?act.types.filter(x=>typeof x==='string'):[],...sourceMeta(state)});
+      state.log.push(`${battleLogName(t)} tiene sus movimientos restringidos.`);
+      state.pushVisualUnit?.(t);
+    }
     else if(act.type==='modify_active_cooldowns'){for(const[mid,n]of Object.entries(t.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(v));t.cooldowns[mid]=next;const m=t.moves.find(x=>x.id===mid);state.log.push(`${battleLogName(t)}: cooldown activo de ${m?.name||mid} ${integer(v)>=0?'+':''}${integer(v)} → ${next}.`);}}
     else if(act.type==='cooldown_on_use')t.effects.push({id:'cooldown_on_use',value:integer(v),turns:Math.max(1,integer(rule.duration)),...sourceMeta(state)});
     else if(act.type==='immunity')t.effects.push({id:'immunity',damageClass:act.damageClass||'all',filter:act.typeFilter||{mode:'all',types:[]},turns:integer(rule.duration),permanent:integer(rule.duration)===0,...sourceMeta(state)});
@@ -210,10 +242,18 @@ function moveTargets(user,move,orderTarget,state){
   // single: Singles auto-selecciona al oponente. Doubles conserva la posición elegida.
   if(state.mode==='singles')return enemy.slice(0,1);const selected=resolvePosition(state,orderTarget);return selected&&selected!==user&&selected.hp>0?[selected]:[];
 }
+function restrictedMove(effect,move){
+  const categories=Array.isArray(effect.categories)?effect.categories:[];
+  const types=Array.isArray(effect.types)?effect.types:[];
+  // Legacy rules (no configured filters) continue to restrict all moves.
+  if(!categories.length&&!types.length)return true;
+  const definition=move?.definition||{};
+  return categories.includes(definition.category)||types.includes(definition.type);
+}
 function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   ensureActorRuntime(attacker);const d=move.definition;if(attacker.hp<=0)return;
   if((attacker.cooldowns[move.id]||0)>0){state.log.push(`${battleLogName(attacker)} no puede usar ${move.name}: quedan ${attacker.cooldowns[move.id]} turnos de cooldown.`);return;}
-  if(attacker.effects.some(e=>e.id==='restrict_moves')){state.log.push(`${battleLogName(attacker)} tiene ataques restringidos.`);return;}
+  if([...(attacker.effects||[]),...(attacker.environmentMoveRestrictions||[])].some(e=>e.id==='restrict_moves'&&restrictedMove(e,move))){state.log.push(`${battleLogName(attacker)} no puede usar ${move.name}: movimiento restringido.`);return;}
   const targets=moveTargets(attacker,move,orderTarget,state),context=targets[0]||firstOpponent(state,attacker);state.damageBonus=0;
   const counter=attacker.consecutiveCounters.attack||0;state.attackModifiers={power:[],accuracy:[],critical:[],final:[]};const charge=attacker.effects.some(e=>e.id==='suppressed')?null:(attacker.abilities||[]).find(a=>a.definition?.consecutiveAttack)?.definition.consecutiveAttack;
   let successfulHit=false;state.currentSwitchChoice=switchChoice;
@@ -269,7 +309,20 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   }
   applyMoveCooldown(attacker,move,state);
 }
-function tick(a,state){ensureActorRuntime(a);for(const e of a.effects)if(e.turns>0)e.turns--;a.effects=a.effects.filter(e=>e.permanent||e.turns!==0);if(a.status?.turns>0&&--a.status.turns===0){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state?.log.push(`${battleLogName(a)} deja de tener ${state?.catalog?.statuses?.[old]?.name||old}.`);state?.refreshStatus?.();state?.refreshPassives?.();state?.pushVisualUnit?.(a);}}
+function tick(a,state){ensureActorRuntime(a);
+  const hadSuppression=a.effects.some(e=>e.id==='suppressed');
+  const hadRestriction=a.effects.some(e=>e.id==='restrict_moves');
+  for(const e of a.effects)if(e.turns>0)e.turns--;
+  a.effects=a.effects.filter(e=>e.permanent||e.turns!==0);
+  if(hadSuppression&&!a.effects.some(e=>e.id==='suppressed')){
+    state?.log.push(`${battleLogName(a)} recupera sus habilidades.`);
+    state?.refreshEnvironment?.();state?.pushVisualUnit?.(a);
+  }
+  if(hadRestriction&&!a.effects.some(e=>e.id==='restrict_moves')){
+    state?.log.push(`${battleLogName(a)} puede volver a usar movimientos.`);
+    state?.pushVisualUnit?.(a);
+  }
+  if(a.status?.turns>0&&--a.status.turns===0){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state?.log.push(`${battleLogName(a)} deja de tener ${state?.catalog?.statuses?.[old]?.name||old}.`);state?.refreshStatus?.();state?.refreshPassives?.();state?.pushVisualUnit?.(a);}}
 
 export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=10,randomTape=[],randomSource,weather='',field='',scenario='',leftMove='',rightMove='',leftOrders=[],rightOrders=[],leftReplacements=[],rightReplacements=[],mode='singles',resume=null,replacementsOnly=false,includeCheckpoint=false}){
   mode=mode==='doubles'?'doubles':'singles';if(!Number.isInteger(turns)||turns<0||turns>300)throw Error('Rondas entre 0 y 300.');if(!Array.isArray(randomTape)||randomTape.length>30000||randomTape.some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0||v>=1))throw Error('Historial RNG inválido.');
@@ -324,7 +377,11 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
   const activeSummary=s=>active[s].map((_,slot)=>current(s,slot)).filter(Boolean).map(summary);
   const snapshotRound=round=>state.timeline.push({round,left:summary(current(0,0)),right:summary(current(1,0)),leftActive:activeSummary(0),rightActive:activeSummary(1),weather:state.weather,field:state.field,scenario:state.scenario,teams:teams.map(t=>t.map(summary))});
   state.captureUnit=a=>summary(a);state.pushVisualUnit=(a,type='unit_state')=>state.visualEvents.push({logIndex:state.log.length-1,type,side:a.side,slot:activeSlotOf(a),unit:summary(a)});state.pushVisualEnvironment=(kind='')=>state.visualEvents.push({logIndex:state.log.length-1,type:'environment',kind,id:state[kind]||'',turns:state[kind+'Turns']||0,weather:state.weather,field:state.field,scenario:state.scenario,weatherTurns:state.weatherTurns,fieldTurns:state.fieldTurns,scenarioTurns:state.scenarioTurns});
-  const enter=(s,slot)=>{const a=current(s,slot);if(!a||a.hp<=0)return;resetEntryAbilityUsage(a);rulesFor(null,'on_enter',a,firstOpponent(state,a),state);};
+  const enter=(s,slot)=>{const a=current(s,slot);if(!a||a.hp<=0)return;
+    // Sobrevivir «por entrada» vuelve a estar disponible tras reingresar.
+    for(const key of Object.keys(a.used||{}))if(key.startsWith('survive-entry:'))delete a.used[key];
+    resetEntryAbilityUsage(a);rulesFor(null,'on_enter',a,firstOpponent(state,a),state);
+  };
   const switchTo=(s,slot,index,forced=false,label='Cambio')=>{if(!Number.isInteger(index)||index<0||index>=teams[s].length||active[s].includes(index)||teams[s][index].hp<=0)throw Error('Cambio inválido en equipo '+(s===0?'izquierdo':'derecho')+'.');const leaving=current(s,slot);if(leaving)resetSwitchStages(leaving);active[s][slot]=index;syncMirrorTags();state.log.push(`${forced?label+': ':label+': '}${battleLogName(current(s,slot))} entra al campo.`);state.pushVisualUnit(current(s,slot),'switch');enter(s,slot);state.refreshEnvironment?.();state.pushVisualUnit(current(s,slot));};state.switchTo=switchTo;
   const parseAction=o=>{if(o===undefined||o===null||o==='')return null;if(typeof o==='string')return{move:o};if(typeof o!=='object'||Array.isArray(o))throw Error('Acción inválida.');if(o.switch!==undefined)return{switch:Number(o.switch)};if(o.move!==undefined)return{move:o.move,target:o.target||null,switchChoice:o.switchChoice||null};return null;};
   const parseSideOrder=(orders,round,defaultMove)=>{const raw=orders[round-1];if(mode==='singles'){const action=raw&&Array.isArray(raw.actions)?raw.actions.find(a=>Number(a.slot??0)===0):raw;const one=parseAction(action);return[one||{move:defaultMove||''}];}if(raw&&Array.isArray(raw.actions)){return[0,1].map(slot=>parseAction(raw.actions.find(a=>Number(a.slot)===slot))||null);}if(Array.isArray(raw))return[0,1].map(i=>parseAction(raw[i]));return[null,null];};
@@ -403,7 +460,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
     }finally{state._refreshingPassives=false;}
   };
   state.refreshPassives=refreshPassives;
-  const refreshEnvironment=()=>{const before=new Map();for(const a of state.allActive()){ensureActorRuntime(a);before.set(a,JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null}));a.environmentStages={};a.environmentCrit=0;a.environmentCooldownOnUse=[];a.environmentDamageImmunity=[];a.statusBlocked=false;a.environmentStatusBlocked=false;}for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!=='continuous')continue;for(const a of state.allActive()){if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))continue;if(e.type==='stat_change'){a.environmentStages[e.stat]=(a.environmentStages[e.stat]||0)+e.value;}else if(e.type==='critical_change')a.environmentCrit+=e.value;else if(e.type==='remove_status'&&a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state.refreshStatus?.();}else if(e.type==='block_status'){if(a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);}a.statusBlocked=true;a.environmentStatusBlocked=true;state.refreshStatus?.();}else if(e.type==='cooldown_on_use')a.environmentCooldownOnUse.push(e);else if(e.type==='immunity')a.environmentDamageImmunity.push({id:'immunity',damageClass:e.damageClass||'all',filter:e.immunityTypeFilter||{mode:'all',types:[]},sourceKind:kind,sourceName:entry.name});}}}refreshPassives();for(const a of state.allActive()){const after=JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null});if(before.get(a)!==after)state.pushVisualUnit?.(a);}};state.refreshEnvironment=refreshEnvironment;
+  const refreshEnvironment=()=>{const before=new Map();for(const a of state.allActive()){ensureActorRuntime(a);before.set(a,JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null}));a.environmentStages={};a.environmentCrit=0;a.environmentCooldownOnUse=[];a.environmentDamageImmunity=[];a.environmentMoveRestrictions=[];a.statusBlocked=false;a.environmentStatusBlocked=false;}for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!=='continuous')continue;for(const a of state.allActive()){if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))continue;if(e.type==='stat_change'){a.environmentStages[e.stat]=(a.environmentStages[e.stat]||0)+e.value;}else if(e.type==='critical_change')a.environmentCrit+=e.value;else if(e.type==='remove_status'&&a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state.refreshStatus?.();}else if(e.type==='block_status'){if(a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);}a.statusBlocked=true;a.environmentStatusBlocked=true;state.refreshStatus?.();}else if(e.type==='cooldown_on_use')a.environmentCooldownOnUse.push(e);else if(e.type==='restrict_moves')a.environmentMoveRestrictions.push({id:'restrict_moves',categories:e.categories||[],types:e.moveTypes||[]});else if(e.type==='immunity')a.environmentDamageImmunity.push({id:'immunity',damageClass:e.damageClass||'all',filter:e.immunityTypeFilter||{mode:'all',types:[]},sourceKind:kind,sourceName:entry.name});}}}refreshPassives();for(const a of state.allActive()){const after=JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null});if(before.get(a)!==after)state.pushVisualUnit?.(a);}};state.refreshEnvironment=refreshEnvironment;
   const applyEnv=(a,e,entry,kind)=>{if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))return;if(e.type==='damage_percent'){const amount=e.value===0?0:Math.max(1,integer(a.maxHp*e.value/100));if(amount>0){inflictDamage(a,amount,state,'environment');state.log.push(entry.name+': '+battleLogName(a)+' pierde '+amount+' PS ('+e.value+' %).');}}else if(e.type==='heal_percent'){const before=a.hp,amount=integer(a.maxHp*e.value/100);a.hp=Math.min(a.maxHp,a.hp+amount);const actual=a.hp-before;if(actual>0)state.log.push(entry.name+': '+battleLogName(a)+' recupera '+actual+' PS ('+e.value+' %).');}else if(e.type==='cooldown_change'){for(const[mid,n]of Object.entries(a.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(e.value));a.cooldowns[mid]=next;const m=a.moves.find(x=>x.id===mid);state.log.push(entry.name+': cooldown activo de '+(m?.name||mid)+' en '+battleLogName(a)+' '+(e.value>=0?'+':'')+e.value+' → '+next+'.');}}else if(e.type==='remove_status'&&a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}else if(e.type==='block_status'){if(a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}a.statusBlocked=true;}else if(e.type==='stat_change'){const stat=e.stat,before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}else if(e.type==='critical_change'){const stat='criticalChance',before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}};
   const environmentTimed=timing=>{for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!==timing)continue;for(const a of state.allActive())applyEnv(a,e,entry,kind);}}};
   const refreshStatus=()=>{for(const t of teams)for(const a of t){const before=JSON.stringify(a.statusStages||{});a.statusStages={};if(a.status){const st=state.catalog.statuses?.[a.status.id];for(const r of st?.definition?.rules||[]){if(!['on_status','on_condition'].includes(r.event)||r.action?.type!=='stat_change'||!conditionsPass(r,a,firstOpponent(state,a),state))continue;const stat=r.action.stat,val=integer(r.action.value);a.statusStages[stat]=(a.statusStages[stat]||0)+val;}}if(before!==JSON.stringify(a.statusStages||{}))state.pushVisualUnit?.(a);}};state.refreshStatus=refreshStatus;refreshStatus();refreshEnvironment();
