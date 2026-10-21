@@ -1,7 +1,7 @@
 // Pure R2 release resource handler: no Cloudflare-specific imports.
 // Build a versioned, immutable asset manifest. Unchanged bytes keep their old R2
 // object path, so small content patches don't re-upload the whole art collection.
-export async function releaseResources(env,catalog,revision,previous={},types=[]){
+export async function releaseResources(env,catalog,revision,previous={},types=[],playlists={}){
   if(!env.EDITOR_SPRITES)throw Error('Almacenamiento de sprites sin conectar.');
   const r2=env.EDITOR_SPRITES,assets={sprites:{},environment:{},typeIcons:{},audio:{}},pending=[];
   const choose=async(src,dest,oldPath,required)=>{
@@ -26,6 +26,10 @@ export async function releaseResources(env,catalog,revision,previous={},types=[]
     const id=entry?.definition?.soundId;if(!id)continue;
     const key=`${category}/${id}`,oldPath=previous.assets?.audio?.[key]||null;
     assets.audio[key]=await choose(`audio/${key}.mp3`,`published/${revision}/audio/${key}.mp3`,oldPath,true);
+  }
+  for(const category of ['lobby','battle'])for(const track of (playlists?.[category]||[])){
+    const id=category+'-'+track,oldPath=previous.assets?.audio?.[id]||null;
+    assets.audio[id]=await choose(`audio/global/${id}.mp3`,`published/${revision}/audio/global/${id}.mp3`,oldPath,true);
   }
   for(const id of ['lobby','battle','stat-up','stat-down','physical','special','status','portal-in','portal-out']){
     const oldPath=previous.assets?.audio?.[id]||null;

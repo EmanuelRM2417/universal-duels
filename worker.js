@@ -195,13 +195,27 @@ export default {
         return privateJson({ok:true,layout,message:'Borrador guardado. Publicar con Cargar parche.'});
       }
 
+      // Listas de música, aisladas en borrador y publicadas solo con Cargar parche.
+      if(url.pathname==='/editor-api/audio-playlists'){
+        if(request.method==='GET')return privateJson({ok:true,playlists:await env.EDITOR_DRAFTS.get('alpha05:audio-playlists:v1','json')||{lobby:[],battle:[]}});
+        if(request.method==='PUT'){
+          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          const body=await request.json(),lists={};
+          for(const kind of ['lobby','battle']){
+            const arr=body?.[kind];if(!Array.isArray(arr)||arr.some(id=>typeof id!=='string'||!(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).test(id)||id.length>72)||new Set(arr).size!==arr.length)return privateJson({error:'Lista de música inválida: '+kind},400);
+            lists[kind]=arr;
+          }
+          await env.EDITOR_DRAFTS.put('alpha05:audio-playlists:v1',JSON.stringify(lists));return privateJson({ok:true,playlists:lists});
+        }
+        return privateJson({error:'Método no permitido.'},405);
+      }
       // Biblioteca privada de audio: MP3 con límite estricto y publicación manual.
       const audioMatch=url.pathname.match(/^\/editor-api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
       if(audioMatch){
         if(!env.EDITOR_SPRITES)return privateJson({error:'R2 no conectado.'},503);
         const [,category,id]=audioMatch;
         const allowed=['lobby','battle','stat-up','stat-down','physical','special','status','portal-in','portal-out'];
-        if(category==='global'&&!allowed.includes(id))return privateJson({error:'Audio global desconocido.'},400);
+        if(category==='global'&&!allowed.includes(id)&&!(/^(?:lobby|battle)-[a-z0-9]+(?:-[a-z0-9]+)*$/).test(id))return privateJson({error:'Audio global desconocido.'},400);
         const key=`audio/${category}/${id}.mp3`;
         if(request.method==='GET'){
           const obj=await env.EDITOR_SPRITES.get(key);
@@ -804,9 +818,9 @@ if (
           if((!regression.passed||validation.warnings.length)&&body.confirmWarnings!==true)return privateJson({error:'Revisá las advertencias y pruebas fallidas antes de autorizar la publicación.',validation,regression},409);
           if(body.expectedRevision!==(current?.revision||null))return privateJson({error:'El contenido publicado cambió; revisá otra vez la vista previa.'},409);
           const publishedAt=new Date().toISOString(),revision=`patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0,8)}`;
-          const resources=await releaseResources(env,catalog,revision,current||{},TYPES);
+          const audioPlaylists=await env.EDITOR_DRAFTS.get('alpha05:audio-playlists:v1','json')||current?.audioPlaylists||{lobby:[],battle:[]};const resources=await releaseResources(env,catalog,revision,current||{},TYPES,audioPlaylists);
           const uiLayout=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||current?.uiLayout||{};
-          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,assets:resources.assets};
+          const candidate={ok:true,version:'0.5.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,audioPlaylists,assets:resources.assets};
           // Recursos preparados antes del cambio del puntero público.
           await env.PUBLIC_CONTENT.put(`public-v1:snapshot:${revision}`,JSON.stringify(candidate));
           const history=await env.PUBLIC_CONTENT.get('public-v1:history','json');
