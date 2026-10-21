@@ -195,6 +195,37 @@ export default {
         return privateJson({ok:true,layout,message:'Borrador guardado. Publicar con Cargar parche.'});
       }
 
+      // Bibliotecas musicales: borrador KV y MP3 privados R2, publicación manual.
+      const playlistMatch=url.pathname.match(/^\/editor-api\/music-playlists\/(lobby|battle)$/);
+      if(playlistMatch){
+        if(!env.EDITOR_DRAFTS||!env.EDITOR_SPRITES)return privateJson({error:'Faltan bindings de música.'},503);
+        const mode=playlistMatch[1],key='alpha05:music-playlist:'+mode;
+        if(request.method==='GET')return privateJson({ok:true,tracks:await env.EDITOR_DRAFTS.get(key,'json')||[]});
+        if(request.method==='PUT'){
+          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          const body=await request.json().catch(()=>null),tracks=body?.tracks;
+          if(!Array.isArray(tracks)||tracks.length>5000||tracks.some(t=>!t||typeof t.id!=='string'||!new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$').test(t.id)||t.id.length>90||typeof t.name!=='string'||t.name.length>120)||new Set(tracks.map(t=>t.id)).size!==tracks.length)return privateJson({error:'Lista de pistas inválida.'},400);
+          for(const track of tracks)if(!await env.EDITOR_SPRITES.head('audio/playlists/'+mode+'/'+track.id+'.mp3'))return privateJson({error:'Archivo MP3 no encontrado: '+track.id},400);
+          await env.EDITOR_DRAFTS.put(key,JSON.stringify(tracks));return privateJson({ok:true,tracks});
+        }
+        return privateJson({error:'Método no permitido.'},405);
+      }
+      const playlistFile=url.pathname.match(/^\/editor-api\/music-files\/(lobby|battle)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+      if(playlistFile){
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 no conectado.'},503);
+        const [,mode,id]=playlistFile,key='audio/playlists/'+mode+'/'+id+'.mp3';
+        if(request.method==='GET'){const obj=await env.EDITOR_SPRITES.get(key);return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':'private, no-store'}}):privateJson({error:'No encontrado.'},404);}
+        if(request.method==='PUT'){
+          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('audio/mpeg'))return privateJson({error:'Solo MP3.'},415);
+          const data=await request.arrayBuffer(),b=new Uint8Array(data);
+          if(!data.byteLength||data.byteLength>8*1024*1024)return privateJson({error:'MP3 máximo 8 MB.'},413);
+          if(!((b[0]===73&&b[1]===68&&b[2]===51)||(b[0]===255&&(b[1]&224)===224)))return privateJson({error:'Cabecera MP3 inválida.'},415);
+          await env.EDITOR_SPRITES.put(key,data,{httpMetadata:{contentType:'audio/mpeg'}});return privateJson({ok:true,id});
+        }
+        return privateJson({error:'Método no permitido.'},405);
+      }
+
       // Biblioteca privada de audio: MP3 con límite estricto y publicación manual.
       const audioMatch=url.pathname.match(/^\/editor-api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
       if(audioMatch){
@@ -804,9 +835,10 @@ if (
           if((!regression.passed||validation.warnings.length)&&body.confirmWarnings!==true)return privateJson({error:'Revisá las advertencias y pruebas fallidas antes de autorizar la publicación.',validation,regression},409);
           if(body.expectedRevision!==(current?.revision||null))return privateJson({error:'El contenido publicado cambió; revisá otra vez la vista previa.'},409);
           const publishedAt=new Date().toISOString(),revision=`patch-${Date.now().toString(36)}-${crypto.randomUUID().slice(0,8)}`;
-          const resources=await releaseResources(env,catalog,revision,current||{},TYPES);
+          const playlists={};for(const mode of ['lobby','battle'])playlists[mode]=await env.EDITOR_DRAFTS.get('alpha05:music-playlist:'+mode,'json')??current?.musicPlaylists?.[mode]??[];
+          const resources=await releaseResources(env,catalog,revision,current||{},TYPES,playlists);
           const uiLayout=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||current?.uiLayout||{};
-          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,assets:resources.assets};
+          const candidate={ok:true,version:'0.4.0-alpha',revision,publishedAt,types:TYPES,chart,catalog,uiLayout,musicPlaylists:playlists,assets:resources.assets};
           // Recursos preparados antes del cambio del puntero público.
           await env.PUBLIC_CONTENT.put(`public-v1:snapshot:${revision}`,JSON.stringify(candidate));
           const history=await env.PUBLIC_CONTENT.get('public-v1:history','json');

@@ -1,7 +1,7 @@
 // Pure R2 release resource handler: no Cloudflare-specific imports.
 // Build a versioned, immutable asset manifest. Unchanged bytes keep their old R2
 // object path, so small content patches don't re-upload the whole art collection.
-export async function releaseResources(env,catalog,revision,previous={},types=[]){
+export async function releaseResources(env,catalog,revision,previous={},types=[],playlists={}){
   if(!env.EDITOR_SPRITES)throw Error('Almacenamiento de sprites sin conectar.');
   const r2=env.EDITOR_SPRITES,assets={sprites:{},environment:{},typeIcons:{},audio:{}},pending=[];
   const choose=async(src,dest,oldPath,required)=>{
@@ -31,6 +31,10 @@ export async function releaseResources(env,catalog,revision,previous={},types=[]
     const oldPath=previous.assets?.audio?.[id]||null;
     const path=await choose(`audio/global/${id}.mp3`,`published/${revision}/audio/global/${id}.mp3`,oldPath,false);
     if(path)assets.audio[id]=path;
+  }
+  for(const mode of ['lobby','battle'])for(const track of playlists[mode]||[]){
+    const key=`playlists/${mode}/${track.id}`,oldPath=previous.assets?.audio?.[key]||null;
+    assets.audio[key]=await choose(`audio/${key}.mp3`,`published/${revision}/audio/${key}.mp3`,oldPath,true);
   }
   for(const id of types){
     const oldPath=previous.assets?.typeIcons?.[id]||(previous.revision?`published/${previous.revision}/type-icons/${id}.png`:null);
