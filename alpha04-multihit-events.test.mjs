@@ -8,7 +8,8 @@ const wait={id:'wait',name:'Esperar',definition:{type:'fuego',category:'status',
 const catalog={entities:{attacker:entity('attacker','onhit'),target:entity('target','ondamage')},moves:{chain:hit,wait},abilities:{onhit:{id:'onhit',definition:{rules:[rule('on_hit','self','speed')]}},ondamage:{id:'ondamage',definition:{rules:[rule('on_damage_taken','self','defense')]}},blank:{id:'blank',definition:{rules:[]}}},effects:{}};
 const options={catalog,left:'attacker',right:'target',turns:1,leftMove:'chain',rightMove:'wait',randomSource:()=>.9};
 const r=simulate(options);
-assert.equal(r.log.filter(x=>x.includes('Golpe ')).length,3);
+assert.equal(r.log.filter(x=>/recibió \d+ de daño \(golpe [123]\)\./.test(x)).length,3,'cada impacto indica su índice en el mensaje de daño');
+assert.equal(r.log.filter(x=>/^Golpe \d+\//.test(x)).length,0,'no se muestran líneas independientes Golpe 1/3');
 assert.equal(r.left.stages.speed,3,'la habilidad Al acertar se activa en cada impacto');
 assert.equal(r.right.stages.defense,3,'la habilidad Al recibir daño se activa en cada impacto');
 assert.equal(r.left.stages.attack,1,'el efecto chain del movimiento se aplica una vez al finalizar la cadena');
