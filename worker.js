@@ -74,6 +74,9 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
       return obj?new Response(obj.body,{headers:{'Content-Type':'image/png','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Recurso no encontrado.'},404);
     }catch(e){return json({error:String(e.message||e)},404);}
   }
+  if(url.pathname==='/api/music-playlists'&&request.method==='GET'){
+    try{const snap=await snapshot(env,url.searchParams.get('revision')||undefined);return json({ok:true,revision:snap.revision,playlists:snap.musicPlaylists||{lobby:[],battle:[]}});}catch(e){return json({error:String(e.message||e)},404);}
+  }
   const audioMatch=url.pathname.match(/^\/api\/audio\/(global|scenarios)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
   if(audioMatch&&request.method==='GET'){
     if(!env.PUBLIC_SPRITES)return json({error:'Audio público no conectado.'},503);
@@ -85,6 +88,14 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
       if(!assetPath)return json({error:'Audio no configurado.'},404);
       const obj=await env.PUBLIC_SPRITES.get(assetPath);
       return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Audio no encontrado.'},404);
+    }catch(e){return json({error:String(e.message||e)},404);}
+  }
+  const playlistAudio=url.pathname.match(/^\/api\/music-file\/(lobby|battle)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(playlistAudio&&request.method==='GET'){
+    try{const snap=await snapshot(env,url.searchParams.get('revision')||undefined),[,mode,id]=playlistAudio;
+      if(!(snap.musicPlaylists?.[mode]||[]).some(t=>t.id===id))return json({error:'Pista no publicada.'},404);
+      const key=snap.assets?.audio?.[`playlists/${mode}/${id}`];if(!key)return json({error:'Pista sin recurso.'},404);
+      const obj=await env.PUBLIC_SPRITES.get(key);return obj?new Response(obj.body,{headers:{'Content-Type':'audio/mpeg','Cache-Control':'public, max-age=300'}}):json({error:'Pista no encontrada.'},404);
     }catch(e){return json({error:String(e.message||e)},404);}
   }
   const spriteMatch=url.pathname.match(/^\/api\/sprites\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);if(spriteMatch&&request.method==="GET"){if(!env.PUBLIC_SPRITES)return json({error:"Sprites públicos no conectados."},503);try{const requestedRevision=url.searchParams.get("revision")||"",s=await snapshot(env,requestedRevision||undefined),id=spriteMatch[1],published=Object.values(s.catalog?.entities||{}).some(e=>e?.definition?.spriteId===id);if(!published)return json({error:"Sprite no publicado."},404);const assetPath=s.assets?.sprites?.[id]||`published/${s.revision}/sprites/${id}.png`;const obj=await env.PUBLIC_SPRITES.get(assetPath);if(!obj)return json({error:"Sprite no encontrado en este parche."},404);return new Response(obj.body,{headers:{"Content-Type":"image/png","Cache-Control":requestedRevision?"public, max-age=31536000, immutable":"public, max-age=300","X-Content-Type-Options":"nosniff"}});}catch(e){return json({error:e.message},404);}}
