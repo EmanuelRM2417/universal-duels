@@ -29,24 +29,20 @@ try{
   const left={actions:[{slot:0,move:'set-weather'}]},right={actions:[{slot:0,move:'hit'}]};
   await room.webSocketMessage(host,JSON.stringify({type:'select_order',order:left}));
   await room.webSocketMessage(guest,JSON.stringify({type:'select_order',order:right}));
-  assert.equal(host.messages.at(-1).type,'battle_selection');
-  assert.ok(host.messages.some(x=>x.type==='selection_accepted'));
-  await room.webSocketMessage(host,JSON.stringify({type:'order',order:left}));
-  await room.webSocketMessage(guest,JSON.stringify({type:'order',order:right}));
+  assert.ok(host.messages.some(x=>x.type==='order_accepted'),'selection itself must be committed and acknowledged');
+  assert.ok(guest.messages.some(x=>x.type==='order_accepted'),'guest must receive the same acknowledgement');
+  assert.ok(host.messages.some(x=>x.type==='battle_round'),'round must resolve without any second confirmation packet');
   b=storageData.get('room').battle;
   assert.equal(b.round,2,'both player actions actually resolve');
   assert.equal(b.status,'playing');assert.equal(b.lastState.weather,'rain');
   const changed=host.messages.filter(m=>m.type==='battle_round').at(-1);
   assert.ok(changed,'must send new state to both clients');
   assert.ok(changed.visualEvents.some(e=>e.type==='environment'&&e.weather==='rain'),'weather must change visually at activation');
-  // Acknowledged selections are decisions: a lost confirmation must not force false tie.
+  // Directly acknowledged selections are decisions; no second packet is needed.
   await room.webSocketMessage(host,JSON.stringify({type:'select_order',order:{actions:[{slot:0,move:'set-field'}]}}));
   await room.webSocketMessage(guest,JSON.stringify({type:'select_order',order:{actions:[{slot:0,move:'hit'}]}}));
-  b=storageData.get('room').battle;b.selectionDeadline=Date.now()-1;
-  await storage.put('room',storageData.get('room'));
-  await room.alarm();
   b=storageData.get('room').battle;
-  assert.equal(b.round,3,'alarm should commit valid selections before deciding timeout');
+  assert.equal(b.round,3,'the second round must resolve immediately, without waiting for alarm');
   assert.equal(b.lastState.field,'sand');
   assert.notEqual(b.finishReason,'both_timeout');
   // REST resources only from manifest and published entries.
@@ -74,7 +70,7 @@ try{
   for(const sock of [host,guest])await room.webSocketMessage(sock,JSON.stringify({type:'ready',ready:true}));
   b=storageData.get('room').battle;assert.equal(b.mode,'doubles');assert.equal(b.round,1);
   const dLeft={actions:[{slot:0,move:'hit',target:{side:'right',slot:0}},{slot:1,move:'hit',target:{side:'right',slot:1}}]},dRight={actions:[{slot:0,move:'hit',target:{side:'left',slot:0}},{slot:1,move:'hit',target:{side:'left',slot:1}}]};
-  for(const [sock,order] of [[host,dLeft],[guest,dRight]]){await room.webSocketMessage(sock,JSON.stringify({type:'select_order',order}));await room.webSocketMessage(sock,JSON.stringify({type:'order',order}))}
+  for(const [sock,order] of [[host,dLeft],[guest,dRight]])await room.webSocketMessage(sock,JSON.stringify({type:'select_order',order}));
   b=storageData.get('room').battle;
   assert.equal(b.round,2);assert.equal(b.mode,'doubles');assert.equal(b.status,'playing');
   console.log('Sala Singles/Doubles: 2 jugadores, acciones resueltas, recuperación de confirmación, entorno instantáneo, R2 versionado OK');
