@@ -72,6 +72,7 @@ export function validateDefinition(category,d){
  if(category==='moves'&&d.multihit){const x=d.multihit;
   if(!Number.isInteger(x.min)||!Number.isInteger(x.max)||x.min<1||x.max<x.min||x.max>20||!['each','chain'].includes(x.effects||'each'))fail('Multigolpe: mínimo, máximo o efectos inválidos.');
  }
+ if(category==='moves'&&d.streak?.enabled){if(d.streak.countUnit!==undefined&&(!d.multihit||!['hit','chain'].includes(d.streak.countUnit)))fail('La racha por golpe o por cadena requiere un movimiento de cadena válido.');}
  if(category==='abilities'&&d.survive){const x=d.survive;
    if(!within(Number(x.chance??100),0,100)||!Number.isInteger(Number(x.limit??0))||Number(x.limit??0)<0||!within(Number(x.hpPercent??1),0,100)||!within(Number(x.priority??0),-5,5))fail('Sobrevivir: probabilidad, usos, PS y prioridad inválidos.');
    if(x.fixedHp!==undefined&&(!Number.isInteger(Number(x.fixedHp))||Number(x.fixedHp)<1||Number(x.fixedHp)>500))fail('Sobrevivir: PS fijos inválidos.');

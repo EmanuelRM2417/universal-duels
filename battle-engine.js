@@ -32,7 +32,7 @@ function matchesEnvironmentAttack(a,move,e){
 }
 function streakModifier(move,user){
   const cfg=move?.definition?.streak;if(!cfg?.enabled)return null;
-  const mode=cfg.conditionMode==='use'?'use':'hit';
+  const mode=cfg.conditionMode==='use'?'use':move?.definition?.multihit&&cfg.countUnit==='hit'?'streakHits':'hit';
   const count=Math.max(0,Number(user.consecutiveCounters?.[mode]||0));
   const threshold=Math.max(1,integer(cfg.minStreak||1));
   if(count<threshold)return null;
@@ -128,7 +128,7 @@ function action(rule,user,contextTarget,state,depth){
     const kind={set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[act.type],key={weathers:'weather',fields:'field',scenarios:'scenario'}[kind],entry=state.catalog[kind]?.[v];
     if(!entry){state.log.push('Entorno no encontrado: '+safe(v));return;}if(state[key]===v){state.log.push('El entorno '+safe(v)+' ya está activo.');return;}
     if(state.allActive().some(a=>a.effects.some(e=>e.id==='prevent_environment'&&(e.kind==='all'||e.kind===kind)))){state.log.push('Activación de entorno bloqueada.');return;}
-    state[key]=safe(v);state[key+'Turns']=5;state.log.push('Se activa '+key+': '+entry.name+'.');state.pushVisualEnvironment?.(key);state.refreshEnvironment?.();return;
+    state[key]=safe(v);state[key+'Turns']=5;state.log.push(environmentText(kind,entry,true));state.pushVisualEnvironment?.(key);state.refreshEnvironment?.();return;
   }
   if(act.type==='apply_effect'){
     const effect=state.catalog.effects?.[v];if(effect&&depth<6)for(const sub of effect.definition.rules||[])if(sub.event==='manual'&&conditionsPass(sub,user,contextTarget,state)&&chance(sub,state))action(sub,user,contextTarget,state,depth+1);return;
@@ -236,7 +236,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
     const hits=minHits===maxHits?minHits:minHits+Math.floor(state.random()*(maxHits-minHits+1));
     for(let hit=1;hit<=hits;hit++){
       if(defender.hp<=0||attacker.hp<=0)break;
-      if(hits>1)state.log.push(`Golpe ${hit}/${hits} de ${move.name}.`);
+      // El índice de golpe acompaña exclusivamente al mensaje de daño.
       let damage=0;
       if(d.category!=='status'&&Number(d.power)>0){
         const effectImmune=[...(defender.effects||[]),...(defender.environmentDamageImmunity||[]),...(defender.passiveDamageImmunity||[])].some(e=>e.id==='immunity'&&(e.damageClass==='all'||e.damageClass===d.category)&&(()=>{const f=e.filter||{mode:'all',types:[]},matched=(f.types||[]).includes(d.type);return f.mode==='all'||f.mode==='include'&&matched||f.mode==='exclude'&&!matched})());
@@ -245,8 +245,8 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
         let bonus=(attacker.types.includes(d.type)?.2:0)+rel.bonus;
         if(charge)bonus+=counter*Number(charge.damagePerStack??10)/100;
         if(state.random()*100<criticalChance(modifiedValue(Number(d.criticalChance??0),state.attackModifiers.critical,[0,100]),attacker)){bonus+=.5;state.log.push(`${battleLogName(attacker)} hizo un golpe crítico contra ${battleLogName(defender)}.`);}
-        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));const actualDamage=inflictDamage(defender,damage,state,'move');state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage};defender.lastHitType=d.type;state.log.push(`${battleLogName(defender)} recibe ${damage} de daño.`);
-        successfulHit=true;
+        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));const actualDamage=inflictDamage(defender,damage,state,'move');state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage};defender.lastHitType=d.type;state.log.push(multi?`${battleLogName(defender)} recibió ${damage} de daño (golpe ${hit}).`:`${battleLogName(defender)} recibe ${damage} de daño.`);
+        successfulHit=true;attacker.consecutiveCounters.streakHits=(attacker.consecutiveCounters.streakHits||0)+1;
       }
       // Habilidades de acierto/daño y muertes se resuelven por impacto,
       // incluso si el efecto propio del movimiento se difiere al fin de la cadena.
@@ -260,6 +260,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   if(d.category!=='status'&&Number(d.power)>0){
     attacker.consecutiveCounters.use=(attacker.consecutiveCounters.use||0)+1;
     attacker.consecutiveCounters.hit=successfulHit?(attacker.consecutiveCounters.hit||0)+1:0;
+    if(!successfulHit)attacker.consecutiveCounters.streakHits=0;
     attacker.consecutiveCounters.lastAttackRound=state.round;
   }
   if(charge){
@@ -425,7 +426,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
     for(const turn of attacks){state.resolveDeaths();if(!remaining(0)||!remaining(1))break;if(current(turn.s,turn.slot)!==turn.actor||turn.actor.hp<=0)continue;executeMove(turn.actor,turn.move,turn.target,state,turn.switchChoice);}
     state.resolveDeaths();for(const a of state.allActive())if(a.hp>0){rulesFor(null,'on_status',a,firstOpponent(state,a),state);rulesFor(null,'turn_end',a,firstOpponent(state,a),state);}environmentTimed('turn_end');for(const a of state.allActive())if(a.hp>0)rulesFor(null,'round_end',a,firstOpponent(state,a),state);environmentTimed('round_end');state.resolveDeaths();
     // Los contadores de ataque consecutivo se reinician si no hubo impacto ofensivo este turno.
-    for(const a of state.allActive())if(a.consecutiveCounters.lastAttackRound!==round){a.consecutiveCounters.attack=0;a.consecutiveCounters.hit=0;a.consecutiveCounters.use=0;}
+    for(const a of state.allActive())if(a.consecutiveCounters.lastAttackRound!==round){a.consecutiveCounters.attack=0;a.consecutiveCounters.hit=0;a.consecutiveCounters.use=0;a.consecutiveCounters.streakHits=0;}
     // Los cooldowns solo avanzan mientras el personaje está activo y vivo. En reserva quedan congelados.
     for(const a of state.allActive())if(a.hp>0)for(const[mid,n]of Object.entries(a.cooldowns)){if(n<=0||a.cooldownSetRound[mid]===round)continue;const next=n-1;a.cooldowns[mid]=next;const m=a.moves.find(x=>x.id===mid);state.log.push(next>0?`${battleLogName(a)} tiene ${next} ${next===1?'turno restante':'turnos restantes'} para poder volver a usar ${m?.name||mid}.`:`${battleLogName(a)} puede volver a usar ${m?.name||mid}.`);}
     for(const t of teams)for(const a of t)if(a.hp>0)tick(a,state);refreshStatus();if(state.weatherTurns>0&&--state.weatherTurns===0){{const old=state.catalog.weathers?.[state.weather];state.weather='';state.log.push(old?environmentText('weathers',old,false):'Termina el entorno.');state.pushVisualEnvironment('weather');refreshEnvironment();}}if(state.fieldTurns>0&&--state.fieldTurns===0){{const old=state.catalog.fields?.[state.field];state.field='';state.log.push(old?environmentText('fields',old,false):'Termina el entorno.');state.pushVisualEnvironment('field');refreshEnvironment();}}if(state.scenarioTurns>0&&--state.scenarioTurns===0){{const old=state.catalog.scenarios?.[state.scenario];state.scenario='';state.log.push(old?environmentText('scenarios',old,false):'Termina el entorno.');state.pushVisualEnvironment('scenario');refreshEnvironment();}}

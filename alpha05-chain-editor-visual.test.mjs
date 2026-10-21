@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validateDefinition} from './catalog-validation.js';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+for(const token of ['streakCountUnit','Cada golpe acertado','Cadena completa','streak?.countUnit','[data-basic-key="multihitMode"]','portal-in','stat-up','stat-down','battle-stat-burst','passiveStages','environmentLayers(data)'])assert.ok(html.includes(token),`Editor Lab requiere ${token}`);
+const base={kind:'global',type:'fuego',category:'physical',targeting:'single',power:20,accuracy:100,criticalChance:0,priority:0,cooldown:0,rules:[],multihit:{min:2,max:3,effects:'each'},streak:{enabled:true,conditionMode:'hit',countUnit:'hit',minStreak:1,perStack:10,valueMode:'fixed'}};
+assert.doesNotThrow(()=>validateDefinition('moves',base));
+assert.doesNotThrow(()=>validateDefinition('moves',{...base,streak:{...base.streak,countUnit:'chain'}}));
+assert.throws(()=>validateDefinition('moves',{...base,streak:{...base.streak,countUnit:'other'}}),/racha por golpe/);
+assert.throws(()=>validateDefinition('moves',{...base,multihit:undefined}),/racha por golpe/);
+assert.match(html,/renderBattle\(battleDisplayData,formatBattleLine\(line\)\);for\(const e of \(by.get\(i\)\|\|\[\]\).filter\(e=>e.type==='switch'\)\)/,'Lab refresca el sprite en cada entrada');
+assert.ok(!html.includes("(unit?.types||[]).map(t=>labTypeIcon(t)).join(' / ')"),'Lab no divide los tipos con /');
+console.log('Editor Alpha 0.5: racha por golpe/cadena, validación y paridad Lab OK');

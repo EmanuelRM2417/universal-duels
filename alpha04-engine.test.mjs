@@ -7,7 +7,7 @@ const base={catalog,left:'rhino',right:'target',turns:3,leftOrders:[{move:'m'},{
 const r=simulate(base);
 assert.equal(r.left.consecutiveCounters.attack,3);
 assert.equal(r.left.stages.speed,3);
-assert.equal(r.log.filter(x=>x.includes('Golpe ')).length,9);
+assert.equal(r.log.filter(x=>/recibió \d+ de daño \(golpe \d+\)\./.test(x)).length,9);
 assert.deepEqual(simulate({...base,randomTape:r.randomTape}),r);
 const miss=simulate({...base,turns:2,leftOrders:[{move:'m'},{move:'m'}],randomSource:()=>0.7,catalog:{...catalog,moves:{...catalog.moves,m:{...catalog.moves.m,definition:{...catalog.moves.m.definition,accuracy:1}}}}});
 assert.equal(miss.left.consecutiveCounters.attack,0);
