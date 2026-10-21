@@ -15,7 +15,7 @@ const env={PUBLIC_CONTENT:{get:async(key)=>kv.get(key)||null,put:async(key,val)=
  }return {fetch:(url,init)=>roomStubs.get(id).fetch(url instanceof Request?url:new Request(url,init))};}}};
 const url='https://example.invalid';
 async function fetchIt(path,method='GET',body){const req=new Request(url+path,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const res=await app.fetch(req,env);const text=await res.text();let parsed;try{parsed=JSON.parse(text)}catch{parsed=text}return {status:res.status,body:parsed,headers:res.headers};}
-let r=await fetchIt('/health');assert.equal(r.status,200);assert.equal(r.body.version,'0.4.0-alpha');
+let r=await fetchIt('/health');assert.equal(r.status,200);assert.equal(r.body.version,'0.5.0-alpha');
 r=await fetchIt('/api/catalog');assert.equal(r.body.revision,'patch-smoke');
 r=await fetchIt('/api/catalog/patch-smoke');assert.equal(r.status,200);assert.match(r.headers.get('cache-control'),/immutable/);
 r=await fetchIt('/api/sprites/testcat?revision=patch-smoke');assert.equal(r.status,200);assert.equal(r.body,'image bytes');

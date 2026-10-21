@@ -6,7 +6,7 @@ export const MOVE_TARGETS=['self','ally_team','enemy_team','single','ally','all'
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number(n)||0));
 const integer=n=>Math.round(Number(n)||0);
 const safe=s=>String(s||'').slice(0,100);
-const STAT_NAMES={attack:'Ataque',defense:'Defensa',specialAttack:'Ataque especial',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Probabilidad de crítico'};
+const STAT_NAMES={attack:'Ataque',defense:'Defensa',specialAttack:'Ataque especial',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Prob. de crítico'};
 const statChangeText=(actor,stat,delta)=>`${STAT_NAMES[stat]||stat} de ${battleLogName(actor)} ${delta>0?'subió':'bajó'} ${delta>0?'+':''}${delta}.`;
 const environmentText=(kind,entry,on)=>kind==='fields'?`${entry.name} se ${on?'activó':'desactivó'}.`:kind==='weathers'?(on?`Ahora hay ${entry.name}.`:`${entry.name} desapareció.`):(on?`Ahora estamos en ${entry.name}.`:`Ya no estamos en ${entry.name}.`);
 const percent=x=>clamp(x,0,100);
