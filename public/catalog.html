@@ -1,50 +1,56 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Catálogo · Universal Duels</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#10131f;color:#f4f2fc;font:15px/1.5 system-ui,sans-serif}a{color:#cabdff}.wrap{max-width:1150px;margin:auto;padding:24px}.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.panel{background:#20243a;border:1px solid #393d57;border-radius:14px;padding:18px;margin:16px 0}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:12px}.card{background:#292d46;border:1px solid #4a4f70;border-radius:12px;padding:14px;color:inherit;text-align:left;cursor:pointer}.card:hover,.card:focus-visible{outline:2px solid #b4a4ff}.card img{width:90px;height:90px;object-fit:contain;image-rendering:pixelated;display:block;margin:auto}.types{font-size:12px;color:#9de6cb}.muted{color:#b3b5c9}input{padding:12px;background:#15192b;color:white;border:1px solid #525876;border-radius:9px;width:min(100%,350px)}button{background:#343a60;color:white;border:1px solid #596291;border-radius:9px;padding:9px;cursor:pointer}.details{max-width:780px;margin:auto}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:7px}.stat{background:#282d43;border-radius:8px;padding:9px}.ref{display:inline-flex;margin:4px;padding:8px;gap:4px;background:#343956}.rule{padding:12px;margin:9px 0;background:#242940;border-radius:10px;white-space:pre-wrap}h3{margin-bottom:7px}.stat strong{display:block}
-
-.front-sprite{width:124px;height:124px;overflow:hidden;margin:8px auto;image-rendering:pixelated}.front-sprite img{width:200%!important;height:100%!important;max-width:none!important;object-fit:fill!important;margin:0!important;display:block!important}.details .front-sprite{width:190px;height:190px}
-.stats{display:flex;align-items:end;min-height:248px;gap:12px;justify-content:center;margin:18px 0}.stat{width:15%;max-width:112px;min-width:65px;text-align:center;display:flex;align-items:center;flex-direction:column;justify-content:end;background:none;padding:4px}.stat strong{font-size:12px;min-height:37px}.stat-meter{width:100%;height:176px;background:#181d2e;display:flex;align-items:end;border:1px solid #3d4663;border-radius:5px;overflow:hidden}.stat-fill{width:100%;min-height:1px;transition:height .5s ease}.stat-value{margin:6px 0;font-weight:700}.filterbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}.filterbar label{font-size:13px;display:flex;flex-direction:column;gap:5px}.filterbar select{background:#161c30;color:white;border:1px solid #69729b;border-radius:8px;padding:8px}.type-picker{display:flex;flex-wrap:wrap;gap:6px;max-width:600px}.type-pick{padding:5px 7px}.type-pick[aria-pressed=true]{background:#535ca1;outline:2px solid #bdc6ff}.type-medal{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin:2px 4px}.type-medal img{width:23px;height:23px;image-rendering:pixelated}.taglink{margin:3px;border-radius:999px;background:#3b426a}.card .front-sprite{width:116px;height:116px}.card .types{min-height:30px}.detail-description{white-space:pre-wrap}
-body.embedded>.wrap>.row,body.embedded>.wrap>p:first-of-type{display:none}</style></head><body><div class="wrap"><div class="row"><h1>Catálogo de Universal Duels</h1><a href="/">← Volver al juego</a></div>
+.brand{display:flex;align-items:center;gap:12px}.brand-logo{width:64px;height:64px;object-fit:contain;filter:drop-shadow(0 10px 20px #0006)}.brand-row{justify-content:space-between;align-items:center}.brand-text{display:flex;flex-direction:column}</style></head><body><div class="wrap"><div class="row brand-row"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Catálogo de Universal Duels</h1></div></div><a href="/">← Volver al juego</a></div>
 <p class="muted">Personajes, estadísticas, movimientos, habilidades y sus relaciones. El catálogo corresponde al parche publicado.</p>
-<section id="browse" class="panel"><label for="search">Buscar personajes</label><div class="filterbar"><input id="search" placeholder="Nombre o #etiqueta" autocomplete="off" aria-label="Buscar nombre o #etiqueta"><label>Ordenar por<select id="sortStat"><option value="name">Nombre</option><option value="hp">PS</option><option value="attack">Ataque</option><option value="specialAttack">Ataque especial</option><option value="defense">Defensa</option><option value="specialDefense">Defensa especial</option><option value="speed">Velocidad</option></select></label><label>Orden<select id="sortDir"><option value="desc">Mayor a menor / Z–A</option><option value="asc" selected>Menor a mayor / A–Z</option></select></label></div><details><summary>Filtrar por hasta 3 tipos</summary><div id="typeFilter" class="type-picker"></div></details><p id="count" class="muted"></p><div id="cards" class="cards"></div></section>
+<section id="browse" class="panel"><label for="search">Buscar personajes</label><div><input id="search" placeholder="Nombre, tipo o etiqueta…" autocomplete="off"></div><p id="count" class="muted"></p><div id="cards" class="cards"></div></section>
 <section id="details" class="panel details" hidden><div class="row"><button id="back">← Volver</button><span id="revision" class="muted"></span></div><div id="detail"></div></section>
 <p id="notice" class="muted" role="status">Cargando catálogo…</p></div>
 <script type="module">
-const $=id=>document.getElementById(id);if(new URLSearchParams(location.search).has('embed'))document.body.classList.add('embedded');let data,nav=[],typesSelected=[];
-const STATS=[['PS','hp',1000],['Ataque','attack',200],['Ataque especial','specialAttack',200],['Defensa','defense',200],['Defensa especial','specialDefense',200],['Velocidad','speed',200]];
-const TYPE_NAMES={fuego:'Fuego',agua:'Agua',planta:'Planta',roca:'Roca',hielo:'Hielo',rayo:'Rayo',metal:'Metal',guerra:'Guerra',mente:'Mente',encanto:'Encanto',espectro:'Espectro',divinidad:'Divinidad',luz:'Luz',oscuridad:'Oscuridad',viento:'Viento',dragon:'Dragón',veneno:'Veneno',tecnologia:'Tecnología',agilidad:'Agilidad',impetu:'Ímpetu'};
-const text=(tag,value,cls)=>{const e=document.createElement(tag);e.textContent=String(value??'');if(cls)e.className=cls;return e;};
-const add=(to,...nodes)=>nodes.forEach(n=>to.append(n));
-const title=(cat,id)=>data?.catalog?.[cat]?.[id]?.name||id;
-const def=e=>e?.definition||{};
-const stat=(e,key)=>Number(def(e)[key]??def(e).stats?.[key]??0)||0;
-const identity=e=>e?.id||Object.keys(data.catalog.entities||{}).find(k=>data.catalog.entities[k]===e);
-function medal(id){const span=document.createElement('span');span.className='type-medal';const label=TYPE_NAMES[id]||id;const img=document.createElement('img');img.alt=label;img.title=label;img.src='/api/type-icons/'+encodeURIComponent(id)+'?revision='+encodeURIComponent(data.revision);const fallback=text('span',label);img.onerror=()=>{img.remove();fallback.hidden=false};img.onload=()=>{fallback.hidden=true};add(span,img,fallback);return span}
-function front(e){const id=def(e).spriteId;if(!id)return text('p','Sprite no disponible','muted');const box=document.createElement('div');box.className='front-sprite';const img=document.createElement('img');img.alt='Sprite frontal de '+e.name;img.loading='lazy';img.src='/api/sprites/'+encodeURIComponent(id)+'?revision='+encodeURIComponent(data.revision);box.append(img);return box}
-function goList(){nav=[];$('details').hidden=true;$('browse').hidden=false;}
-function link(cat,id){const b=text('button',title(cat,id),'ref');b.onclick=()=>open(cat,id);return b}
-function refs(panel,cat,label,ids){const section=document.createElement('section');section.append(text('h3',label));for(const id of ids.filter(Boolean))section.append(link(cat,id));panel.append(section)}
-function tagged(e){const explicit=def(e).tags||[];const more=Object.values(data?.catalog?.tags||{}).filter(t=>(def(t).entityIds||[]).includes(identity(e))).map(t=>t.name);return [...new Set([...explicit,...more].map(x=>String(x||'').replace(/^#/,'')))]}
-function showTags(panel,e){const tags=tagged(e);if(!tags.length)return;const div=document.createElement('div');add(div,text('h3','Etiquetas'));for(const tag of tags){const b=text('button','#'+tag,'taglink');b.onclick=()=>{goList();$('search').value='#'+tag;render()};div.append(b)}panel.append(div)}
-function addStats(panel,e){const wrap=document.createElement('div');wrap.className='stats';wrap.setAttribute('aria-label','Estadísticas base');for(const [label,key,max] of STATS){const n=Math.max(0,stat(e,key)),pct=Math.min(100,n/max*100),hue=Math.round(pct*1.2),cell=document.createElement('div'),meter=document.createElement('div'),fill=document.createElement('div');cell.className='stat';meter.className='stat-meter';fill.className='stat-fill';fill.style.height=pct+'%';fill.style.backgroundColor=`hsl(${hue} 75% 43%)`;meter.append(fill);add(cell,text('strong',label),meter,text('span',n,'stat-value'));cell.title=`${label}: ${n} de ${max}`;wrap.append(cell)}panel.append(wrap)}
-function open(cat,id){const entry=data?.catalog?.[cat]?.[id];if(!entry)return;nav.push([cat,id]);$('browse').hidden=true;$('details').hidden=false;$('revision').textContent=data.revision;const panel=$('detail');panel.replaceChildren(text('h2',entry.name),text('p',entry.description||def(entry).description||'Sin descripción registrada.','detail-description'));
- const d=def(entry);
- if(cat==='entities'){
-  panel.append(front(entry));const ty=document.createElement('div');for(const id of d.types||[])ty.append(medal(id));panel.append(ty);addStats(panel,entry);
-  refs(panel,'moves','Movimientos globales',d.moveIds||[]);refs(panel,'moves','Movimiento exclusivo',[d.uniqueMoveId]);
-  refs(panel,'abilities','Habilidad global',[d.globalAbilityId]);showTags(panel,entry);refs(panel,'abilities','Habilidad exclusiva',[d.uniqueAbilityId]);
- }else if(cat==='moves'){
-  const detail=document.createElement('div');const type=document.createElement('p');type.append(text('strong','Tipo: '),medal(d.type||''));detail.append(type);
-  for(const [name,k] of [['Categoría','category'],['Potencia','power'],['Precisión','accuracy'],['Prob. de crítico','criticalChance'],['Prioridad','priority'],['Cooldown','cooldown']])detail.append(text('p',name+': '+(k==='accuracy'&&Number(d[k])===0?'Infalible':d[k]??'—')));panel.append(detail);
- }
- // Habilidades, campos, escenarios, estados, climas y efectos muestran SOLO el texto del autor.
- panel.scrollIntoView({behavior:'smooth',block:'start'});
+const $=id=>document.getElementById(id);let data,history=[];
+const text=(tag,value,className)=>{const e=document.createElement(tag);e.textContent=String(value??'');if(className)e.className=className;return e;};
+const append=(to,...items)=>items.forEach(item=>to.appendChild(item));
+const name=(cat,id)=>data?.catalog?.[cat]?.[id]?.name||id;
+function link(cat,id){const button=text('button',name(cat,id),'ref');button.addEventListener('click',()=>open(cat,id));return button;}
+function showList(){if(history.length)history.pop();$('browse').hidden=false;$('details').hidden=true;$('search').focus({preventScroll:true});}
+function field(to,label,value){const row=text('p',`${label}: ${value??'—'}`);to.appendChild(row);}
+function refs(to,cat,label,ids){const section=document.createElement('div');append(section,text('h3',label));
+  for(const id of ids.filter(Boolean))append(section,link(cat,id));if(!ids.filter(Boolean).length)append(section,text('p','Ninguno','muted'));to.appendChild(section);}
+function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice').textContent='Referencia no encontrada: '+cat+'/'+id;return;}
+  history.push([cat,id]);$('browse').hidden=true;$('details').hidden=false;$('revision').textContent=data.revision;
+  const panel=$('detail');panel.replaceChildren(text('h2',item.name),text('p',item.description||item.definition?.description||'Sin descripción registrada.','muted'));
+  const d=item.definition||{};
+  if(cat==='entities'){
+    if(d.spriteId){const img=document.createElement('img');img.alt='Sprite de '+item.name;img.width=140;img.height=140;img.style.cssText='object-fit:contain;image-rendering:pixelated';img.src='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);panel.appendChild(img);}
+    field(panel,'Tipos',(d.types||[]).join(' · '));
+    const stats=document.createElement('div');stats.className='stats';for(const [label,key] of [['PS','hp'],['Ataque','attack'],['Defensa','defense'],['At. especial','specialAttack'],['Def. especial','specialDefense'],['Velocidad','speed']]){
+      const tile=document.createElement('div');tile.className='stat';append(tile,text('strong',label),text('span',d[key]));stats.appendChild(tile);
+    }panel.appendChild(stats);
+    refs(panel,'moves','Movimientos globales',d.moveIds||[]);refs(panel,'moves','Movimiento exclusivo',[d.uniqueMoveId]);
+    refs(panel,'abilities','Habilidad global',[d.globalAbilityId]);refs(panel,'abilities','Habilidad exclusiva',[d.uniqueAbilityId]);
+  }else{
+    if(cat==='moves'){field(panel,'Tipo',d.type);field(panel,'Clase',d.category);field(panel,'Potencia',d.power);field(panel,'Precisión',d.accuracy);field(panel,'Crítico',d.criticalChance);field(panel,'Prioridad',d.priority);field(panel,'Cooldown',d.cooldown);}
+    if(['weathers','fields','scenarios'].includes(cat)){field(panel,'Duración',d.duration+' rondas');for(const e of d.fieldEffects||[])panel.appendChild(text('div',JSON.stringify(e,null,2),'rule'));}
+    for(const rule of d.rules||[]){const r=document.createElement('div');r.className='rule';
+      append(r,text('strong','Evento: '+(rule.event||'manual')),text('p','Probabilidad: '+(rule.chance??100)+' % · Objetivo: '+(rule.target||'target')),text('p','Acción: '+(rule.action?.type||'')+' '+(rule.action?.value??'')));
+      const linked={apply_effect:'effects',apply_status:'statuses',set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[rule.action?.type];
+      if(linked&&rule.action.value)r.appendChild(link(linked,rule.action.value));
+      if(rule.condition)r.appendChild(text('p','Condición: '+JSON.stringify(rule.condition)));
+      panel.appendChild(r);
+    }
+  }
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
 }
-$('back').onclick=()=>{nav.pop();if(nav.length){const [cat,id]=nav.pop();open(cat,id)}else goList()};
-function fillTypes(){const box=$('typeFilter');for(const id of Object.keys(TYPE_NAMES)){const b=document.createElement('button');b.type='button';b.className='type-pick';b.setAttribute('aria-pressed','false');b.append(medal(id));b.onclick=()=>{if(typesSelected.includes(id))typesSelected=typesSelected.filter(x=>x!==id);else if(typesSelected.length<3)typesSelected.push(id);for(const item of box.querySelectorAll('button'))item.setAttribute('aria-pressed',String(typesSelected.includes(item.dataset.type)));render()};b.dataset.type=id;box.append(b)}}
-function render(){if(!data)return;const query=$('search').value.trim().toLocaleLowerCase('es'),byTag=query.startsWith('#'),needle=(byTag?query.slice(1):query).trim(),sort=$('sortStat').value,dir=$('sortDir').value;
- const list=Object.values(data.catalog.entities||{}).filter(e=>{const tags=tagged(e).map(t=>t.toLocaleLowerCase('es'));return (!needle||(byTag?tags.some(t=>t.includes(needle)):e.name.toLocaleLowerCase('es').includes(needle)))&&typesSelected.every(t=>(def(e).types||[]).includes(t))});
- list.sort((a,b)=>{const comp=sort==='name'?a.name.localeCompare(b.name,'es'):stat(a,sort)-stat(b,sort);return dir==='asc'?comp:-comp});$('count').textContent=list.length+' personajes';$('cards').replaceChildren();for(const e of list){const card=document.createElement('button');card.className='card';card.append(front(e),text('strong',e.name));const types=document.createElement('div');types.className='types';for(const t of def(e).types||[])types.append(medal(t));card.append(types);card.onclick=()=>open('entities',identity(e));$('cards').append(card)}}
-$('search').oninput=render;$('sortStat').onchange=render;$('sortDir').onchange=render;
-(async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),json=await r.json();if(!r.ok||!json.ok)throw Error(json.error||'Error de catálogo');data=json;fillTypes();render();$('notice').textContent='Catálogo actualizado a '+data.revision;const id=new URLSearchParams(location.search).get('entity');if(id&&data.catalog.entities?.[id])open('entities',id)}catch(e){$('notice').textContent='Error: '+e.message}})();
-</script><script type="module">import {createSoundDirector} from '/audio-director.js';if(window.parent===window){window.udSound=createSoundDirector();window.udSound.context('lobby');}</script></body></html>
+$('back').onclick=()=>{history.pop();if(history.length){const [cat,id]=history.pop();open(cat,id);}else showList();};
+function render(){const q=$('search').value.trim().toLocaleLowerCase('es'),entries=Object.values(data.catalog.entities||{}).filter(e=>{
+  const d=e.definition||{};return [e.name,...(d.types||[]),...(d.tags||[])].join(' ').toLocaleLowerCase('es').includes(q);
+}).sort((a,b)=>a.name.localeCompare(b.name,'es'));$('cards').replaceChildren();$('count').textContent=entries.length+' personajes';
+for(const e of entries){const card=document.createElement('button');card.className='card';
+  const d=e.definition||{};if(d.spriteId){const img=document.createElement('img');img.alt='';img.loading='lazy';img.src='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.appendChild(img);}
+  append(card,text('strong',e.name),text('p',(d.types||[]).join(' · '),'types'));card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
+}
+$('search').oninput=render;
+(async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo cargar el catálogo.');data=d;render();$('notice').textContent='Catálogo actualizado a '+d.revision;
+  const params=new URLSearchParams(location.search),id=params.get('entity');if(id&&d.catalog.entities?.[id])open('entities',id);
+}catch(e){$('notice').textContent='Error: '+e.message;}})();
+</script><script type="module">import {createSoundDirector} from '/audio-director.js';window.udSound=createSoundDirector();window.udSound.context('lobby');</script></body></html>
