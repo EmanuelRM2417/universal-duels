@@ -1,7 +1,7 @@
 // Universal Duels Alpha 0.5: event-driven sound, single music channel and independent SFX.
 // Browsers may require a user interaction before playing audio with sound.
 export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}/${id}?revision=${encodeURIComponent(revision||'')}`}={}){
-  const music=new Audio();music.loop=true;music.preload='none';
+  const music=new Audio();music.loop=false;music.preload='none';
   const clamp=x=>Math.max(0,Math.min(1,Number(x)||0));
   const store=(key,value)=>{try{localStorage.setItem(key,String(value));}catch{}};
   const remember=(key,value)=>{try{sessionStorage.setItem(key,String(value));}catch{}};
@@ -9,14 +9,14 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
   let musicVolume=clamp(localStorage.getItem('ud-audio-music')??localStorage.getItem('ud-audio-volume')??0.45);
   let effectVolume=clamp(localStorage.getItem('ud-audio-effects')??0.55);
   let muted=localStorage.getItem('ud-audio-muted')==='true';
-  let unlocked=false,mode='lobby',scenario='',revision='',current='',soundVolume=100,settingsOpen=false;
+  let unlocked=false,mode='lobby',scenario='',revision='',current='',soundVolume=100,settingsOpen=false,playlists={lobby:[],battle:[]},lastPlayed={lobby:[],battle:[]},activePlaylist='',trackSerial=0;
   let musicSlider=null,effectSlider=null,muteButton=null,panel=null;
   const sync=()=>{music.volume=muted?0:clamp(musicVolume*soundVolume/100);if(musicSlider)musicSlider.value=String(Math.round(musicVolume*100));if(effectSlider)effectSlider.value=String(Math.round(effectVolume*100));if(muteButton){muteButton.textContent=muted?'🔇':'🔊';muteButton.setAttribute('aria-label',muted?'Activar sonido':'Silenciar sonido');muteButton.title=muted?'Activar sonido':'Silenciar sonido';}};
   sync();
   const start=()=>{unlocked=true;if(current&&music.src&&!muted)music.play().catch(()=>{});};
   document.addEventListener('pointerdown',start,{once:true});document.addEventListener('keydown',start,{once:true});
   // Track lobby position without retaining two active players; it resumes when returning from battle.
-  const saveLobby=()=>{if(current.startsWith('global:lobby:')&&Number.isFinite(music.currentTime))remember('ud-lobby-position',music.currentTime);};
+  const saveLobby=()=>{if((current.startsWith('global:lobby:')||current.startsWith('global:lobby-'))&&Number.isFinite(music.currentTime)){remember('ud-lobby-position',music.currentTime);remember('ud-lobby-track',current.split(':')[1]);}};
   const saveIfLeaving=()=>saveLobby();
   window.addEventListener('pagehide',saveIfLeaving);
   function select(kind,id,vol=100){
@@ -25,18 +25,31 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
     saveLobby();current=key;soundVolume=vol;
     music.pause();music.removeAttribute('src');music.load();
     if(!id)return;
-    music.src=url(kind,id,revision);
-    if(kind==='global'&&id==='lobby'){
+    music.src=url(kind,id,revision);music.loop=!(activePlaylist&&((kind==='global'&&id.startsWith(activePlaylist+'-'))));
+    if(kind==='global'&&(id==='lobby'||id.startsWith('lobby-'))&&recall('ud-lobby-track')===id){
       const p=Number(recall('ud-lobby-position','0'));
       if(Number.isFinite(p)&&p>0){const seek=()=>{try{music.currentTime=p;}catch{}};music.addEventListener('loadedmetadata',seek,{once:true});}
     }
-    sync();if(unlocked&&!muted)music.play().catch(()=>{});
+    sync();if(!muted)music.play().then(()=>{unlocked=true}).catch(()=>{});
   }
-  function context(next,{scenarioId='',soundId='',scenarioVolume=100,revision:rev=''}={}){
+  function chooseTrack(kind){
+    const tracks=playlists[kind]||[];if(!tracks.length)return kind;
+    const previous=lastPlayed[kind];const available=tracks.filter(id=>!previous.includes(id));
+    // Para 1 o 2 canciones no existen suficientes alternativas: no prometemos lo imposible.
+    const pool=available.length?available:tracks.filter(id=>id!==previous[previous.length-1]);
+    const selected=(pool.length?pool:tracks)[Math.floor(Math.random()*(pool.length||tracks.length))];
+    previous.push(selected);while(previous.length>2)previous.shift();return kind+'-'+selected;
+  }
+  music.addEventListener('ended',()=>{
+    if(activePlaylist&&(mode===activePlaylist)&&!muted){select('global',chooseTrack(activePlaylist));}
+  });
+  function configurePlaylists(value={}){for(const kind of ['lobby','battle'])playlists[kind]=Array.isArray(value[kind])?[...new Set(value[kind])].filter(x=>/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(x)):[];}
+  function context(next,{scenarioId='',soundId='',scenarioVolume=100,revision:rev='',audioPlaylists}={}){
+    if(audioPlaylists)configurePlaylists(audioPlaylists);
     mode=next;revision=rev||revision;scenario=scenarioId||'';
-    if(mode==='lobby')select('global','lobby');
-    else if(soundId)select('scenarios',soundId,scenarioVolume);
-    else select('global','battle');
+    if(mode==='lobby'){if(activePlaylist==='lobby'&&current.startsWith('global:lobby-'))return;activePlaylist='lobby';const saved=recall('ud-lobby-track');const valid=playlists.lobby.length?playlists.lobby.some(id=>saved==='lobby-'+id):saved==='lobby';select('global',valid?saved:chooseTrack('lobby'));}
+    else if(soundId){activePlaylist='';select('scenarios',soundId,scenarioVolume);}
+    else {if(activePlaylist==='battle'&&current.startsWith('global:battle-'))return;activePlaylist='battle';select('global',chooseTrack('battle'));}
   }
   let audioCtx=null;
   function beep(id){
@@ -50,7 +63,7 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
       osc.connect(gain).connect(audioCtx.destination);osc.start(now);osc.stop(now+.21);
     }catch{}
   }
-  function effect(id){if(muted||!effectVolume||!unlocked||!id)return;
+  const lastEffectAt=new Map();function effect(id){if(muted||!effectVolume||!unlocked||!id)return;const now=performance.now();if(now-(lastEffectAt.get(id)||-1000)<130)return;lastEffectAt.set(id,now);
     const a=new Audio(url('global',id,revision));a.volume=effectVolume;
     a.play().catch(()=>{if(['stat-up','stat-down','physical','special','status','portal-in','portal-out'].includes(id))beep(id);});
   }
@@ -71,5 +84,5 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
     root.append(toggle,panel);document.body.append(root);sync();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',settings,{once:true});else settings();
-  return {context,effect,settings,unlock:start,get state(){return{mode,scenario,volume:musicVolume,musicVolume,effectVolume,muted,current}}};
+  return {context,configurePlaylists,effect,settings,unlock:start,get state(){return{mode,scenario,volume:musicVolume,musicVolume,effectVolume,muted,current}}};
 }

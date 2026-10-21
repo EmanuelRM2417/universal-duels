@@ -17,4 +17,4 @@
 // Solo los textos publicados por el editor reemplazan el contenido original.
 (async()=>{try{const response=await fetch('/api/catalog',{cache:'no-store'});if(!response.ok)return;const data=await response.json();const sections=data.catalog?.tutorial||{};for(const [id,entry] of Object.entries(sections)){const element=document.getElementById(id),copy=entry?.definition?.text;if(!element||typeof copy!=='string'||!copy.trim())continue;const paragraphs=[...element.querySelectorAll('p')];if(!paragraphs.length)continue;paragraphs[0].textContent=copy;for(const other of paragraphs.slice(1))other.hidden=true;}}catch{}})();
 </script>
-<script type="module">import {createSoundDirector} from '/audio-director.js';window.udSound=createSoundDirector();window.udSound.context('lobby');</script></body></html>
+<script type="module">import {createSoundDirector} from '/audio-director.js';if(window.parent===window){window.udSound=createSoundDirector();window.udSound.context('lobby');}</script></body></html>
