@@ -10,6 +10,7 @@ const STAT_NAMES={attack:'Ataque',defense:'Defensa',specialAttack:'Ataque especi
 const statChangeText=(actor,stat,delta)=>`${STAT_NAMES[stat]||stat} de ${battleLogName(actor)} ${delta>0?'subió':'bajó'} ${delta>0?'+':''}${delta}.`;
 const environmentText=(kind,entry,on)=>kind==='fields'?`${entry.name} se ${on?'activó':'desactivó'}.`:kind==='weathers'?(on?`Ahora hay ${entry.name}.`:`${entry.name} desapareció.`):(on?`Ahora estamos en ${entry.name}.`:`Ya no estamos en ${entry.name}.`);
 const percent=x=>clamp(x,0,100);
+const drainPercent=x=>clamp(x,0,1000);
 // Los modificadores solo existen si fueron configurados. El tope se refiere al
 // máximo bono/penalización en puntos o porcentaje, no al valor base del ataque.
 function modifiedValue(base,mods=[],bounds=[0,Infinity]){
@@ -70,7 +71,7 @@ function meets(cond,user,target,state){
   if(!cond||cond.type==='always')return true;const v=cond.value;const checked=cond.subject==='target'?target:user;if(!checked&&['hp_below','hp_above','hp_full','has_status','has_type','was_hit_by_type','stat_below'].includes(cond.type))return false;
   switch(cond.type){
     case'hp_below':return checked.hp/checked.maxHp*100<Number(v);case'hp_above':return checked.hp/checked.maxHp*100>Number(v);
-    case'hp_full':return checked.hp===checked.maxHp;case'weather_is':return state.weather===v;case'field_is':return state.field===v;case'has_status':return checked.status?.id===v;
+    case'hp_full':return checked.hp===checked.maxHp;case'weather_is':return !!state.weather&&(!v||state.weather===v);case'field_is':return !!state.field&&(!v||state.field===v);case'scenario_is':return !!state.scenario&&(!v||state.scenario===v);case'has_status':return !!checked.status&&(!v||checked.status.id===v);case'enemy_defeated':return !!state.currentDefeatActor&&state.currentDefeatActor.side===user.side&&state.currentDefeatActor.teamIndex===user.teamIndex;
     case'has_type':return checked.types.includes(v);case'was_hit_by_type':return checked.lastHitType===v;case'stat_below':return effective(checked,'speed')<Number(v);
     case'in_doubles':return state.mode==='doubles';default:return false;
   }
@@ -174,7 +175,8 @@ function action(rule,user,contextTarget,state,depth){
     if(act.type==='resurrect'){if(t.hp!==0)continue;const hp=act.fixedHp!==undefined?integer(act.fixedHp):Math.ceil(t.maxHp*percent(act.percent??v??25)/100);t.hp=Math.max(1,Math.min(t.maxHp,hp));state.log.push(`${battleLogName(t)} resucita con ${t.hp} PS.`);state.refreshPassives?.();}
     else if(act.type==='heal'){const before=t.hp,amount=Math.max(0,integer(t.maxHp*percent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0){state.log.push(`${battleLogName(t)} recupera ${actual} PS (${percent(v)} %).`);state.refreshPassives?.();state.refreshStatus?.();}}
     else if(act.type==='damage'){const amount=percent(v)===0?0:Math.max(1,integer(t.maxHp*percent(v)/100));if(amount>0){inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${amount} de daño adicional (${percent(v)} %).`);}}
-    else if(act.type==='heal_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0,before=t.hp,amount=Math.max(0,integer(dealt*percent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0)state.log.push(`${battleLogName(t)} recupera ${actual} PS (${percent(v)} % del daño infligido).`);}
+    else if(act.type==='damage_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0;const amount=Math.max(0,integer(dealt*drainPercent(v)/100));if(amount>0){const actual=inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${actual} PS de daño por el daño infligido (${drainPercent(v)} %).`);state.pushVisualUnit?.(t);}}
+    else if(act.type==='heal_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0,before=t.hp,amount=Math.max(0,integer(dealt*drainPercent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0)state.log.push(`${battleLogName(t)} recupera ${actual} PS (${drainPercent(v)} % del daño infligido).`);}
     else if(act.type==='stat_change'&&['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'].includes(act.stat)){const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(`${battleLogName(t)}: ${act.stat} ${next}.`);state.pushVisualUnit?.(t);}}
     else if(act.type==='apply_status'&&!t.status&&!t.statusBlocked){const st=state.catalog.statuses?.[safe(v)],f=st?.definition?.typeFilter||{mode:'all',types:[]},matched=(f.types||[]).some(x=>t.types.includes(x)),immune=f.mode==='exclude'&&matched||f.mode==='include'&&!matched;if(immune)state.log.push(`${battleLogName(t)} es inmune a ${st?.name||safe(v)}.`);else{t.status={id:safe(v),turns:Math.max(0,integer(rule.duration))};state.log.push(`${battleLogName(t)} recibe ${st?.name||t.status.id}.`);state.refreshStatus?.();state.refreshPassives?.();rulesFor(null,'on_status_applied',t,user,state);state.pushVisualUnit?.(t);}}
     else if(act.type==='remove_status'){if(t.status){const oldId=t.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;t.status=null;clearStatusLinkedEffects(t,oldId);state.log.push(`${battleLogName(t)} pierde ${old}.`);state.refreshStatus?.();state.refreshPassives?.();state.pushVisualUnit?.(t);}}
@@ -285,7 +287,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
         let bonus=(attacker.types.includes(d.type)?.2:0)+rel.bonus;
         if(charge)bonus+=counter*Number(charge.damagePerStack??10)/100;
         if(state.random()*100<criticalChance(modifiedValue(Number(d.criticalChance??0),state.attackModifiers.critical,[0,100]),attacker)){bonus+=.5;state.log.push(`${battleLogName(attacker)} hizo un golpe crítico contra ${battleLogName(defender)}.`);}
-        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));const actualDamage=inflictDamage(defender,damage,state,'move');state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage};defender.lastHitType=d.type;state.log.push(multi?`${battleLogName(defender)} recibió ${damage} de daño (golpe ${hit}).`:`${battleLogName(defender)} recibe ${damage} de daño.`);
+        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));const actualDamage=inflictDamage(defender,damage,state,'move');state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage,moveId:move.id};defender.lastHitType=d.type;state.log.push(multi?`${battleLogName(defender)} recibió ${damage} de daño (golpe ${hit}).`:`${battleLogName(defender)} recibe ${damage} de daño.`);
         successfulHit=true;attacker.consecutiveCounters.streakHits=(attacker.consecutiveCounters.streakHits||0)+1;
       }
       // Habilidades de acierto/daño y muertes se resuelven por impacto,
@@ -360,7 +362,15 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
           state.log.push(`${battleLogName(a)} queda fuera de combate.`);
           rulesFor(null,'on_death',a,firstOpponent(state,a),state);
           if(a.hp>0){koSeen.delete(a);state.pushVisualUnit?.(a,'unit_state');}
-          else state.deathEvents.push({side:a.side,teamIndex:a.teamIndex,round:state.round});
+          else {state.deathEvents.push({side:a.side,teamIndex:a.teamIndex,round:state.round});
+            const ld=state.lastDamage;
+            if(ld&&ld.defenderSide===a.side&&ld.defenderTeamIndex===a.teamIndex){
+              const killer=state.teams[sideIndex(ld.attackerSide)]?.[ld.attackerTeamIndex];
+              if(killer&&killer.hp>0&&killer.side!==a.side){state.currentDefeatActor=killer;
+                try{rulesFor(null,'on_enemy_ko',killer,a,state);const finishingMove=killer.moves?.find(m=>m.id===ld.moveId);if(finishingMove)runMoveRules(finishingMove,'on_enemy_ko',killer,a,state);}finally{state.currentDefeatActor=null;}
+              }
+            }
+          }
         }
         if(iteration===63)state.log.push('Protección contra bucles: se detuvo una cadena excesiva de eventos Al morir.');
       }
