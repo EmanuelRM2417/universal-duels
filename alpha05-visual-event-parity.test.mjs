@@ -12,7 +12,7 @@ for(const [kind,id,label] of [['weather','rain',`Ahora hay ${names.weather}.`],[
  assert.ok(sim.visualEvents.some(e=>e.type==='environment'&&e.kind===kind&&e.id===id&&e.logIndex===i),`${kind}: evento visual durante la línea de activación`);
 }
 const buff=simulate({catalog,left:'a',right:'b',turns:1,leftMove:'buff',rightMove:'idle',randomSource:()=>.88});
-const statLine=buff.log.findIndex(x=>/a: attack 1\./.test(x));
+const statLine=buff.log.findIndex(x=>/Ataque de a subió \+1\./.test(x));
 assert.ok(statLine>=0 && buff.visualEvents.some(e=>e.type==='unit_state'&&e.logIndex===statLine&&e.unit?.stages?.attack===1),'flecha de stat y sprite desde el evento real');
 // Estado y sustitución deben llegar con la misma línea que los anuncia.
 const affected=structuredClone(catalog);

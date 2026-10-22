@@ -27,6 +27,10 @@ const run=(session,catalog,chart,turns)=>{
 const updateState=(session,result)=>{
   session.randomTape=[];
   session.engineCheckpoint=result.checkpoint;
+  // Every resolved action sends its precise visual timeline with this turn's logs.
+  // Do not persist the full historical timeline or replay events from a previous turn.
+  session.lastTurnLogs=Array.isArray(result.log)?result.log.slice(-160):[];
+  session.visualEvents=(result.visualEvents||[]).filter(e=>Number.isInteger(e.logIndex)&&e.logIndex>=0&&e.logIndex<session.lastTurnLogs.length).map(e=>structuredClone(e));
   const previous=Array.isArray(session.lastState?.log)?session.lastState.log:[];
   // Incremental result.log is a delta. Keep a small recent window for the UI.
   session.lastState=compactState({...result,log:[...previous,...result.log].slice(-80)});
@@ -39,7 +43,7 @@ export function createPractice({catalog,chart={},revision,mode='singles',difficu
   const s={revision,mode,difficulty,leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
   const r=run(s,catalog,chart,0);updateState(s,r);return s;
 }
-export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState};}
+export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState,lastTurnLogs:session.lastTurnLogs||[],visualEvents:session.visualEvents||[]};}
 function validateOrders(session,order,catalog){
   const state=session.lastState,active=state.leftActive.filter(x=>x.hp>0),selected=Array.isArray(order?.actions)?order.actions:[order];
   const actions=[];
@@ -87,7 +91,17 @@ export function advancePractice(session,operation,payload,{catalog,chart={},now=
       const rightNeeds=r.needsReplacement?.right?.length&&aliveReserves(r,'right').length;
       if(rightNeeds){session.rightReplacements[session.round-1]={choices:autoReplacement(session,'right')};}
       if(leftNeeds){session.phase='replacement';}
-      else if(rightNeeds){const updated=run(session,catalog,chart,session.round);updateState(session,updated);}
+      else if(rightNeeds){
+        // La IA puede sustituir automáticamente después de resolver la ronda.
+        // Conservar ambos segmentos de narración y eventos: ataques y relevo.
+        const precedingLogs=[...(session.lastTurnLogs||[])];
+        const precedingVisual=(session.visualEvents||[]).map(e=>structuredClone(e));
+        const updated=run(session,catalog,chart,session.round);
+        updateState(session,updated);
+        const offset=precedingLogs.length;
+        session.lastTurnLogs=[...precedingLogs,...session.lastTurnLogs];
+        session.visualEvents=[...precedingVisual,...session.visualEvents.map(e=>({...e,logIndex:e.logIndex+offset}))];
+      }
       if(!leftNeeds)session.phase='action';
       session.round++;
     }
