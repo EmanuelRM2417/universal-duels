@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const page=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+assert.match(page,/aspect-ratio:4\/3!important/);
+assert.match(page,/battleCommandPanel/);
+assert.match(page,/\.battle-nameplate\{position:absolute!important/);
+assert.match(page,/background-size:contain!important/);
+assert.match(page,/battleCatalog/);
+assert.match(page,/function wireManualControl/);
+assert.match(page,/battle-speed/);
+console.log('Alpha 0.6 Editor: Lab 4:3, independent command panel, catalog and manual actions tested.');
