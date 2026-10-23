@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read=f=>fs.readFileSync(new URL(f,import.meta.url),'utf8');
 const home=read('./public/index.html'),training=read('./public/practice.html'),tutorial=read('./public/tutorial.html'),audio=read('./public/audio-director.js'),engine=read('./battle-engine.js'),worker=read('./worker.js');
-for(const x of ['Alpha 0.5','udTutorialPanel','catalog?.tutorial','udRotateDevice','audio-director.js','function controlsHTML','function openTargetPicker','battle-message'])assert.ok(home.includes(x),`Main: falta ${x}`);
+for(const x of ['Alpha 0.6','udTutorialPanel','catalog?.tutorial','udRotateDevice','audio-director.js','function controlsHTML','function openTargetPicker','battle-message'])assert.ok(home.includes(x),`Main: falta ${x}`);
 assert.ok(home.includes("waiting?udText('battleWaiting'"),'la narración única muestra espera abajo');
 assert.ok(!home.includes('\\${esc(udText('),'La interpolación no debe ser texto literal');
 for(const x of ['function validTargetPositions','function animateLogLines','function effectRows','battle-sprite-sheet','udSound.context','udRotateDevice'])assert.ok(training.includes(x),`Entrenamiento: falta ${x}`);

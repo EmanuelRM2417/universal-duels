@@ -4,7 +4,7 @@ const html=fs.readFileSync(new URL('./public/index.html',import.meta.url),'utf8'
 for(const token of ['anim-physical','anim-special','anim-hit','anim-status','physicalRight','physicalLeft','specialPulse','hitShake','statusOrbit'])assert.match(html,new RegExp(token));
 assert.match(html,/grid-template-columns:1fr 1fr!important/);
 assert.match(html,/Efectos jugador/);assert.match(html,/Efectos rival/);assert.match(html,/Campo · Clima · Escenario/);assert.match(html,/Battle log/);
-assert.match(html,/>Normal<\/button>/);assert.match(html,/>Rápida<\/button>/);assert.match(html,/>×2<\/button>/);
+assert.doesNotMatch(html,/>Rápida<\/button>/);assert.doesNotMatch(html,/>×2<\/button>/);assert.match(html,/battleHudTimer/);
 assert.match(html,/battleCancelMove/);assert.match(html,/>Cancelar<\/button>/);assert.match(html,/battleMoveInfo/);assert.match(html,/>Info<\/button>/);
 assert.doesNotMatch(html,/function scheduleOrderSend\(/,'online should not require a second confirmation');
 for(const ms of [650,250,800,350,1350,1650,900])assert.match(html,new RegExp(`wait\\(${ms}\\)`));

@@ -22,7 +22,7 @@ for(let i=0;i<steps.length;i++){
 }
 const html=readFileSync(new URL('./public/practice.html',import.meta.url),'utf8');
 assert.match(html,/session\.visualEvents\|\|\[\]/);
-assert.doesNotMatch(html,/setInterval\(/);
+assert.match(html,/udPracticeTimerEnabled/);assert.match(html,/if\(!udPracticeTimed\(\)/);
 for(const source of ['./public/index.html','./public/practice.html']) {
  const ui=readFileSync(new URL(source,import.meta.url),'utf8');
  assert.match(ui,/\.battle-unit\.enemy\.slot-1,\.battle-unit\.player\.slot-1\{transform:none!important\}/);

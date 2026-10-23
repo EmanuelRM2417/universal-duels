@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {Room,ACTION_MS,REPLACEMENT_MS} from './worker.js';
-assert.equal(ACTION_MS,60000);assert.equal(REPLACEMENT_MS,30000);
+import {Room,ACTION_MS,REPLACEMENT_MS,actionLimit,replacementLimit} from './worker.js';
+assert.equal(ACTION_MS,30000);assert.equal(REPLACEMENT_MS,15000);assert.equal(actionLimit('singles'),30000);assert.equal(actionLimit('doubles'),60000);assert.equal(replacementLimit('singles',1),15000);assert.equal(replacementLimit('doubles',2),30000);
 const data={battle:{lastState:{needsReplacement:{left:[0,1],right:[]},leftTeam:[{hp:0},{hp:0},{hp:45}],rightTeam:[],leftActiveIndexes:[0,1],rightActiveIndexes:[]}}};
 const room=new Room({getWebSockets:()=>[]},{})
 assert.deepEqual(room.normalizeReplacement(data,'host',[{slot:1,teamIndex:2}]),[{slot:1,teamIndex:2}]);
