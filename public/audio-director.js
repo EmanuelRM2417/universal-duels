@@ -102,5 +102,5 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
     root.append(toggle,panel);document.body.append(root);sync();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',settings,{once:true});else settings();
-  return {context,effect,settings,unlock:start,get state(){return{mode,scenario,volume:musicVolume,musicVolume,effectVolume,muted,current}}};
+  return {context,effect,settings,unlock:start,pause:()=>music.pause(),resume:()=>{if(unlocked&&!muted&&music.src)music.play().catch(()=>{});},get state(){return{mode,scenario,volume:musicVolume,musicVolume,effectVolume,muted,current}}};
 }
