@@ -1219,6 +1219,25 @@ const response = await fetch(
       select.value = value == null ? options[0][0] : String(value);
       return select;
     }
+    // Compatibilidad explícita para reglas guardadas con scenario_is.
+    // El selector de condiciones siempre debe ofrecer «Escenario activo»,
+    // aun si se construye desde opciones de una versión anterior.
+    function conditionSelect(selected) {
+      const select = optionSelect(conditionOptions, selected);
+      let choice = [...select.options].find(o => o.value === 'scenario_is');
+      if (!choice) {
+        choice = new Option('Escenario activo', 'scenario_is');
+        const fieldOption = [...select.options].find(o => o.value === 'field_is');
+        if (fieldOption) fieldOption.after(choice);
+        else select.add(choice);
+      }
+      choice.textContent = 'Escenario activo';
+      for (const other of [...select.options]) {
+        if (other !== choice && other.value === 'scenario_is') other.remove();
+      }
+      if (selected === 'scenario_is') select.value = 'scenario_is';
+      return select;
+    }
     const cachedCatalog = {};
     const TYPE_NAMES = Object.fromEntries(chartTypes);
     async function refreshReferences() {
@@ -1319,7 +1338,7 @@ const response = await fetch(
       const isStatus=catalogCategory.value==='statuses',isMove=catalogCategory.value==='moves';
       const statusEventOptions=eventOptions.filter(([id])=>!['manual','on_survive'].includes(id));
       const event=labeledControl(grid,'Evento',optionSelect(isMove?moveEventOptions:isStatus?statusEventOptions:eventOptions,rule.event||(isStatus?'on_status':'on_enter')),'event');
-      const conditionType=labeledControl(grid,'Condición',optionSelect(conditionOptions,rule.condition?.type||'always'),'conditionType');
+      const conditionType=labeledControl(grid,'Condición',conditionSelect(rule.condition?.type||'always'),'conditionType');
       const conditionSubject=labeledControl(grid,'Evaluar condición sobre',optionSelect([['self','Usuario'],['target','Objetivo']],rule.condition?.subject||'self'),'conditionSubject');
       const conditionValue=labeledControl(grid,'Valor de condición',fieldControl('text',rule.condition?.value),'conditionValue');
       const conditionRefWrap=document.createElement('label');conditionRefWrap.textContent='Contenido de la condición';const conditionRefHolder=document.createElement('div');conditionRefWrap.append(conditionRefHolder);grid.append(conditionRefWrap);
@@ -1342,7 +1361,7 @@ const response = await fetch(
       const duration=labeledControl(grid,'Duración (rondas)',fieldControl('number',rule.duration??''),'duration');
       const limit=labeledControl(grid,'Límite de activaciones (0 = sin límite)',fieldControl('number',isStatus?0:(rule.limit??'')),'limit');
       const extra=document.createElement('div');extra.className='builder-grid';extra.dataset.extraConditions='';
-      function appendCondition(c={}){const item=document.createElement('div');item.className='builder-row';const op=optionSelect([['AND','Y'],['OR','O']],c.operator||'AND');op.dataset.conditionPart='operator';const type=optionSelect(conditionOptions,c.type??'');type.dataset.conditionPart='type';const value=fieldControl('text',c.value);value.dataset.conditionPart='value';const subject=optionSelect([['self','Usuario'],['target','Objetivo']],c.subject||'self');subject.dataset.conditionPart='subject';const no=document.createElement('input');no.type='checkbox';no.checked=!!c.negate;no.dataset.conditionPart='negate';const lab=document.createElement('label');lab.textContent='NO';lab.append(no);const del=document.createElement('button');del.type='button';del.textContent='Quitar condición';del.onclick=()=>item.remove();const refHolder=document.createElement('span');refHolder.className='condition-extra-reference';
+      function appendCondition(c={}){const item=document.createElement('div');item.className='builder-row';const op=optionSelect([['AND','Y'],['OR','O']],c.operator||'AND');op.dataset.conditionPart='operator';const type=conditionSelect(c.type??'');type.dataset.conditionPart='type';const value=fieldControl('text',c.value);value.dataset.conditionPart='value';const subject=optionSelect([['self','Usuario'],['target','Objetivo']],c.subject||'self');subject.dataset.conditionPart='subject';const no=document.createElement('input');no.type='checkbox';no.checked=!!c.negate;no.dataset.conditionPart='negate';const lab=document.createElement('label');lab.textContent='NO';lab.append(no);const del=document.createElement('button');del.type='button';del.textContent='Quitar condición';del.onclick=()=>item.remove();const refHolder=document.createElement('span');refHolder.className='condition-extra-reference';
         item.append(op,type,subject,value,refHolder,lab,del);extra.append(item);
         const adaptExtra=()=>{const cat={weather_is:'weathers',field_is:'fields',scenario_is:'scenarios',has_status:'statuses'}[type.value];refHolder.replaceChildren();
           if(cat){const ref=referenceSearch(cat,value.value);const stored=ref.querySelector('[data-reference-value]');stored.addEventListener('change',()=>value.value=stored.value);const clear=document.createElement('button');clear.type='button';clear.textContent='Cualquiera';clear.onclick=()=>{stored.value='';value.value='';refHolder.replaceChildren();adaptExtra();};refHolder.append(ref,clear);}
