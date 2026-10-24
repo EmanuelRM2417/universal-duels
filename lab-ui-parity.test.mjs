@@ -5,7 +5,7 @@ for(const token of ['anim-physical','anim-special','anim-hit','anim-status','phy
 assert.match(html,/grid-template-columns:1fr 1fr!important/);
 assert.match(html,/Efectos jugador/);assert.match(html,/Efectos rival/);assert.match(html,/Campo · Clima · Escenario/);assert.match(html,/Battle log/);
 assert.doesNotMatch(html,/>Rápida<\/button>/);assert.doesNotMatch(html,/>×2<\/button>/);assert.match(html,/battleHudTimer/);
-assert.match(html,/battleCancelMove/);assert.match(html,/>Cancelar<\/button>/);assert.match(html,/battleMoveInfo/);assert.match(html,/>Info<\/button>/);
+assert.match(html,/battleCancelMove/);assert.match(html,/>Cancelar<\/button>/);assert.match(html,/data-move-info/);assert.doesNotMatch(html,/id="battleMoveInfo"/);
 assert.doesNotMatch(html,/function scheduleOrderSend\(/,'online should not require a second confirmation');
 for(const ms of [650,250,800,350,1350,1650,900])assert.match(html,new RegExp(`wait\\(${ms}\\)`));
 assert.match(html,/wait\(cat==='status'\?1300:1150\)/);

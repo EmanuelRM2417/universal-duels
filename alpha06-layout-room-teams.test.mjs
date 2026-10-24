@@ -10,12 +10,12 @@ for(const [id,html] of [['Main',main],['Entrenamiento',practice]]){
   assert.match(html,/background-size:contain!important/,`${id}: clima no repetido`);
 }
 assert.doesNotMatch(main.slice(main.indexOf('<section id="home"'),main.indexOf('<section id="teamBuilder"')),/id="homeBattleMode"|id="homeTeamMode"/);
-for(const id of ['udHomeTeams','udHomeCatalog','udHomePractice','udHomeVolume','udLeaveRoom','udBuilderSave','udLobbyTeams','udEmbeddedOverlay'])assert.ok(main.includes(id),id);
+for(const id of ['udHomeTeams','udHomeCatalog','udHomePractice','udLeaveRoom','udBuilderSave','udLobbyTeams','udEmbeddedOverlay'])assert.ok(main.includes(id),id);
 assert.match(main,/ud-alpha-last-room/);assert.match(main,/ud-alpha06-named-teams/);assert.match(main,/udBackToHome/);
 assert.match(practice,/udPracticeTimerEnabled/);assert.match(practice,/if\(!udPracticeTimed\(\)/);
 assert.match(practice,/udPracticeSavedTeam/);assert.doesNotMatch(practice,/Reanudable hasta/);
-assert.equal(ACTION_MS,30000);assert.equal(REPLACEMENT_MS,15000);
-assert.equal(actionLimit('singles'),30000);assert.equal(actionLimit('doubles'),60000);
+assert.equal(ACTION_MS,60000);assert.equal(REPLACEMENT_MS,15000);
+assert.equal(actionLimit('singles'),60000);assert.equal(actionLimit('doubles'),120000);
 assert.equal(replacementLimit('singles',1),15000);assert.equal(replacementLimit('doubles',2),30000);
 class MockSocket{constructor(role,conn){this.msg=[];this.role=role;this.conn=conn;}deserializeAttachment(){return{role:this.role,connectionId:this.conn};}send(text){this.msg.push(JSON.parse(text));}close(){this.closed=true;}}
 const memory=new Map(),host=new MockSocket('host','h1'),guest=new MockSocket('guest','g1'),sockets=[host,guest];

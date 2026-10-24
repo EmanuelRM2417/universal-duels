@@ -1,8 +1,8 @@
 import { simulate, normalizeMoveTarget } from "./battle-engine.js";
 import {createPractice,advancePractice,publicPractice,PRACTICE_TTL} from "./practice-session.js";
 
-// Time is per acting character; Singles 30/15s, Doubles 60/30s.
-export const ACTION_MS=30_000, REPLACEMENT_MS=15_000;
+// Time is per acting character; Singles 60/15s, Doubles 120/30s.
+export const ACTION_MS=60_000, REPLACEMENT_MS=15_000;
 export const actionLimit=mode=>ACTION_MS*(mode==='doubles'?2:1);
 export const replacementLimit=(mode,requiredCount=1)=>REPLACEMENT_MS*Math.max(1,Math.min(mode==='doubles'?2:1,requiredCount));
 const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
