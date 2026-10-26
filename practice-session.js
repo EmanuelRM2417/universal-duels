@@ -57,6 +57,15 @@ function validateOrders(session,order,catalog){
       if(!target||target.hp<=0||(side==='left'&&slot===u.activeSlot))throw Error('Objetivo inválido.');
       a.target={side,slot};
     }
+    // Preserve the preselected recipient of a self-switch effect through the
+    // server-authoritative Practice order validation. Previously this value
+    // was discarded and the engine requested the same choice again after turn end.
+    if(raw.switchChoice!==undefined){
+      const c=raw.switchChoice,idx=Number(c?.teamIndex);
+      const hasSelfChoice=(move.definition?.rules||[]).some(r=>r.action?.type==='switch_character'&&r.action.switchMode==='manual'&&r.target==='self');
+      if(!hasSelfChoice||c?.side!=='left'||Number(c.slot)!==u.activeSlot||!Number.isInteger(idx)||!aliveReserves(state,'left').includes(idx))throw Error('Relevo del efecto inválido.');
+      a.switchChoice={side:'left',slot:u.activeSlot,teamIndex:idx};
+    }
     actions.push(a);
   }
   return session.mode==='singles'?actions[0]:{actions};
