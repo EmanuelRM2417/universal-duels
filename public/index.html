@@ -134,83 +134,166 @@
 #home .ud-room-entry button{width:min(100%,190px);min-height:43px}
 #home .ud-menu-tile{width:min(100%,310px);min-height:70px;justify-self:center;font-size:clamp(14px,1.3vw,17px)}
 @media(max-width:540px){#home .ud-home-actions{gap:12px}#home .ud-room-entry button{min-height:48px}#home .ud-menu-tile{min-height:62px}}
-/* Compact landscape battle keeps the complete selection panel in sight on phones. */
-@media(min-width:600px) and (max-height:650px) and (orientation:landscape){
-  body:has(#battleView:not(.hidden)) .top{display:none!important}
-  body:has(#battleView:not(.hidden)) .wrap{padding:2px!important}
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell{width:min(100%,calc((100dvh - 220px) * 4 / 3))!important;margin-top:0!important}
-  body:has(#battleView:not(.hidden)) .battle-toolbar{min-height:38px;flex-wrap:nowrap;gap:4px;padding:3px 5px;white-space:nowrap;overflow-x:auto}
-  body:has(#battleView:not(.hidden)) .battle-toolbar button{flex:none;padding:4px 6px;font-size:11px}
-  body:has(#battleView:not(.hidden)) .battle-command-panel{min-height:116px;height:116px;padding:4px;gap:5px}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left{grid-template-rows:repeat(2,minmax(0,1fr))!important;min-height:0!important;gap:4px!important}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left button{min-height:0!important;padding:4px}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left::after{min-height:0!important}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move-grid{grid-template-rows:repeat(2,minmax(42px,1fr))!important;gap:4px!important}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot{min-height:42px}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move{min-height:42px;padding:4px 30px 4px 6px;font-size:11px}
-  body:has(#battleView:not(.hidden)) .battle-command-panel .battle-actions>small{display:none}
-  body:has(#battleView:not(.hidden)) #battleView>.row{margin-top:4px!important}
-  body:has(#battleView:not(.hidden)) #battleView>.row button{padding:5px 10px;font-size:11px}
+
+
+/* Alpha 0.7 / responsive battle composition: the only 4:3 area is the arena. */
+body:has(#battleView:not(.hidden)) .top{display:none!important}
+body:has(#battleView:not(.hidden)) #udRotateDevice{display:none!important}
+#udRotateDevice{display:none!important}
+body:has(#battleView:not(.hidden)) .battle-shell{
+  --ud-side:clamp(148px,17vw,192px);
+  display:grid!important;
+  grid-template-columns:var(--ud-side) minmax(0,1fr)!important;
+  grid-template-rows:auto auto!important;
+  width:min(100%,1160px,calc((100dvh - 280px) * 4 / 3 + var(--ud-side)))!important;
+  max-width:100%!important;
+  margin:5px auto!important;
+}
+body:has(#battleView:not(.hidden)) .battle-toolbar{
+  grid-column:1;grid-row:1 / 3;
+  display:flex!important;flex-direction:column!important;align-items:stretch!important;
+  justify-content:flex-start!important;gap:6px!important;
+  padding:10px!important;overflow:visible!important;
+  background:#1b2033;border-right:2px solid #464b68;border-bottom:0!important;
+}
+body:has(#battleView:not(.hidden)) .battle-toolbar .spacer{display:none!important}
+body:has(#battleView:not(.hidden)) .battle-toolbar > button,
+body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed > button{
+  display:flex;justify-content:center;align-items:center;width:100%!important;
+  min-width:0!important;min-height:42px!important;height:auto!important;
+  padding:7px 5px!important;margin:0!important;
+  white-space:normal!important;line-height:1.12!important;text-align:center;
+  font-size:clamp(10px,1.03vw,13px)!important;
+  border-radius:9px;
+}
+body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed{
+  display:contents!important;
+}
+body:has(#battleView:not(.hidden)) .ud-online-battle-shell .battle-speed{display:none!important}
+body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed [aria-pressed="true"]{background:#6258a2;border-color:#c2b7ff}
+body:has(#battleView:not(.hidden)) .battle-stage{
+  grid-column:2;grid-row:1;width:100%!important;height:auto!important;
+  aspect-ratio:4 / 3!important;min-height:0!important;max-height:none!important;
+}
+body:has(#battleView:not(.hidden)) .battle-command-panel{
+  grid-column:2;grid-row:2;
+  min-width:0!important;min-height:0!important;
+  padding:7px!important;gap:7px!important;
+  border-top:2px solid #444966!important;
+}
+/* One oval, smaller, and colored at precisely the same boundary as field effects. */
+body:has(#battleView:not(.hidden)) .battle-stage::before{display:none!important}
+body:has(#battleView:not(.hidden)) .battle-stage::after{
+  left:10%!important;right:10%!important;bottom:19%!important;height:28%!important;
+  background:radial-gradient(ellipse,
+    color-mix(in srgb,var(--field-color,#3b4148) 88%,white 12%) 0 43%,
+    color-mix(in srgb,var(--field-color,#3b4148) 72%,black 28%) 44% 65%,
+    transparent 66%)!important;
+}
+body:has(#battleView:not(.hidden)) .battle-stage .ud-field-layer{display:none!important}
+/* Readable, associated nameplates: opposing top left, own bottom right. */
+body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate{
+  width:39%!important;height:14.5%!important;
+  font-size:clamp(9px,1.15vw,14px)!important;min-width:0!important;
+  padding:clamp(2px,.7vw,8px)!important;
+  border-width:clamp(2px,.3vw,4px)!important;
+}
+body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate strong{min-width:0!important}
+body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate strong>span:first-child{
+  min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-0 .battle-nameplate{top:17%!important;bottom:auto!important;left:3%!important}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-1 .battle-nameplate{top:33%!important;bottom:auto!important;left:3%!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-0 .battle-nameplate{bottom:19%!important;top:auto!important;left:58%!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-1 .battle-nameplate{bottom:3%!important;top:auto!important;left:58%!important}
+body:has(#battleView:not(.hidden)) .battle-unit .battle-sprite-window{
+  width:21%!important;height:auto!important;aspect-ratio:1!important;
+}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-0 .battle-sprite-window{left:63%!important;top:17%!important;bottom:auto!important}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-1 .battle-sprite-window{left:78%!important;top:26%!important;bottom:auto!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-0 .battle-sprite-window{left:6%!important;bottom:20%!important;top:auto!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-1 .battle-sprite-window{left:23%!important;bottom:25%!important;top:auto!important}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-0 .battle-stat-layer{left:63%!important;top:15%!important}
+body:has(#battleView:not(.hidden)) .battle-unit.enemy.slot-1 .battle-stat-layer{left:78%!important;top:24%!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-0 .battle-stat-layer{left:6%!important;bottom:43%!important;top:auto!important}
+body:has(#battleView:not(.hidden)) .battle-unit.player.slot-1 .battle-stat-layer{left:23%!important;bottom:48%!important;top:auto!important}
+/* Compact tablets keep the information rail and the actions visible. */
+@media (min-width:701px) and (max-width:1050px){
+ body:has(#battleView:not(.hidden)) .top{display:none!important}
+ body:has(#battleView:not(.hidden)) .wrap{padding:4px!important}
+ body:has(#battleView:not(.hidden)) .battle-shell{--ud-side:146px;width:min(100%,calc((100dvh - 270px) * 4 / 3 + var(--ud-side)))!important}
+ body:has(#battleView:not(.hidden)) .battle-toolbar{padding:5px!important;gap:4px!important}
+ body:has(#battleView:not(.hidden)) .battle-toolbar > button,
+ body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed > button{min-height:34px!important;font-size:11px!important;padding:5px 3px!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move{min-height:43px!important}
+}
+/* Mobile portrait: information above, never squeezed at the side. */
+@media (max-width:700px) and (orientation:portrait){
+ body:has(#battleView:not(.hidden)) .top{display:none!important}
+ body:has(#battleView:not(.hidden)) .wrap{padding:2px!important}
+ body:has(#battleView:not(.hidden)) #battleView .battle-shell{
+    display:flex!important;flex-direction:column!important;
+    width:min(100%,calc((100dvh - 190px) * 4 / 3))!important;
+    margin:0 auto!important;border-radius:7px!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-toolbar{
+    display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    grid-auto-rows:minmax(32px,auto)!important;gap:4px!important;
+    padding:4px!important;border-right:0!important;border-bottom:2px solid #464b68!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-toolbar > strong,
+ body:has(#battleView:not(.hidden)) .battle-toolbar > .battle-round-label{display:none!important}
+ body:has(#battleView:not(.hidden)) .battle-toolbar > button,
+ body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed > button{
+    min-height:32px!important;padding:3px 2px!important;font-size:10px!important;
+    overflow-wrap:anywhere!important;line-height:1.12!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-stage{
+    display:block!important;width:100%!important;height:auto!important;aspect-ratio:4/3!important;
+    min-height:0!important;flex:none;
+ }
+ body:has(#battleView:not(.hidden)) .battle-command-panel{
+    display:grid!important;grid-template-columns:minmax(75px,1fr) minmax(0,2.8fr)!important;
+    gap:4px!important;padding:3px!important;min-height:0!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left{
+    display:grid!important;grid-template-columns:1fr!important;grid-template-rows:repeat(2,minmax(42px,1fr))!important;gap:4px!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left::after,
+ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-action-spacer{display:none!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-command-left button{
+    grid-column:1!important;grid-row:auto!important;min-height:42px!important;font-size:11px!important;padding:4px 2px!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move-grid{grid-template-rows:repeat(2,minmax(43px,1fr))!important;gap:3px!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot{min-height:43px!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move{min-height:43px!important;padding:3px 25px 3px 4px!important;font-size:10px!important;line-height:1.12!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-info{width:22px!important;height:22px!important;top:2px!important;right:2px!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-actions>small{display:none!important}
+ body:has(#battleView:not(.hidden)) #battleView>.row{margin-top:3px!important}
+ body:has(#battleView:not(.hidden)) #battleView>.row button{padding:4px 10px!important;font-size:11px!important}
+ body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate{
+    font-size:9px!important;padding:2px 3px!important;height:15%!important;border-width:2px!important;
+ }
+ body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate .battle-hp-text{font-size:8px!important;margin-top:0!important}
+ body:has(#battleView:not(.hidden)) .battle-unit .battle-nameplate .ud-type-mark img{width:14px!important;height:14px!important}
+ body:has(#battleView:not(.hidden)) .battle-stage .ud-environment-hud{font-size:9px!important}
+ .battle-modal{padding:5px!important}
+ .battle-modal-card{max-height:calc(100dvh - 10px)!important;padding:8px!important}
+}
+/* A horizontal phone is supported, but portrait is the primary touch layout. */
+@media (orientation:landscape) and (max-height:650px) and (pointer:coarse){
+ .ud-embedded-overlay{inset:2px!important}
+ .ud-embedded-header{min-height:30px!important;padding:2px 7px!important}
+ .ud-embedded-overlay iframe{min-height:0!important;flex:1 1 0!important}
+ body:has(#battleView:not(.hidden)) .top{display:none!important}
+ body:has(#battleView:not(.hidden)) .wrap{padding:2px!important}
+ body:has(#battleView:not(.hidden)) .battle-shell{--ud-side:130px;width:min(100%,calc((100dvh - 230px) * 4 / 3 + var(--ud-side)))!important}
+ body:has(#battleView:not(.hidden)) .battle-toolbar{gap:2px!important;padding:2px!important}
+ body:has(#battleView:not(.hidden)) .battle-toolbar > button,
+ body:has(#battleView:not(.hidden)) .battle-toolbar .battle-speed > button{min-height:29px!important;font-size:10px!important;padding:3px 2px!important}
+ body:has(#battleView:not(.hidden)) .battle-command-panel .battle-move{min-height:37px!important}
 }
 
-/* Alpha 0.7: mobile landscape layout only. Never squeeze the 4:3 arena to a sliver. */
-@media (orientation:portrait) and (max-width:1024px){
-  body:not(:has(#battleView:not(.hidden))) #udRotateDevice{display:none!important}
-}
-@media (orientation:landscape) and (max-height:650px) and (pointer:coarse){
-  /* Let setup/catalog remain scrollable; give an embedded training page its real viewport. */
-  .ud-embedded-overlay{inset:2px!important;border-radius:9px!important}
-  .ud-embedded-header{min-height:36px!important;padding:3px 8px!important;gap:8px!important}
-  .ud-embedded-header button{padding:5px 10px!important;min-height:32px!important}
-  .ud-embedded-overlay iframe{display:block!important;flex:1 1 0!important;min-height:0!important;min-width:0!important;width:100%!important}
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell{
-    /* Width is based on actual height, with a usable floor. Small iframe viewports
-       scroll vertically instead of shrinking the arena down to a few pixels. */
-    width:min(100%,max(360px,calc((100dvh - 70px) * 4 / 3)))!important;
-    min-width:0!important;margin:0 auto!important;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-stage{
-    width:100%!important;aspect-ratio:4 / 3!important;height:auto!important;
-    min-height:0!important;max-height:none!important;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar{min-height:35px;flex-wrap:nowrap;overflow-x:auto;gap:4px;padding:3px 5px}
-  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar button{flex-shrink:0;min-height:32px;padding:4px 8px;font-size:11px}
-  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel{
-    height:auto!important;min-height:116px!important;grid-template-columns:minmax(108px,1fr) minmax(0,2fr)!important;
-    overflow:visible!important;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-command-left button,
-  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-move{min-height:44px!important}
-  /* During action selection use the spare horizontal room for controls instead
-     of pushing all commands below the arena. The arena alone stays 4:3. */
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)){
-    display:grid!important;
-    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
-    grid-template-rows:auto auto!important;
-    width:min(100%,max(620px,calc((100dvh - 45px) * 8 / 3)))!important;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-toolbar{
-    grid-column:1 / -1;grid-row:1;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-stage{
-    grid-column:1;grid-row:2;align-self:start;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-command-panel{
-    grid-column:2;grid-row:2;display:grid!important;
-    grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto;
-    align-content:start;max-height:calc(100dvh - 45px)!important;
-    overflow-y:auto!important;overflow-x:hidden!important;
-    border-top:0;border-left:2px solid #444966;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-command-left{
-    grid-template-rows:repeat(2,minmax(44px,auto))!important;
-  }
-  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-move-grid{
-    grid-template-rows:repeat(2,minmax(44px,auto))!important;
-  }
-  .battle-modal{padding:5px!important}
-  .battle-modal-card{width:min(100%,820px)!important;max-height:calc(100dvh - 10px)!important;overflow:auto!important;padding:12px!important}
-}
 </style></head><body><div class="wrap"><header class="top"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Universal Duels</h1><small>Combates por turnos · Alpha pública</small></div></div><nav><span class="badge">Alpha 0.7</span></nav></header>
 <section id="home" class="panel"><h2>Crear o entrar a una sala</h2><div class="ud-home-actions"><div class="ud-room-entry"><label class="field">Tu nombre<input id="name" maxlength="20" placeholder="Jugador"></label><button id="create" class="primary">Crear sala</button></div><div class="ud-room-entry"><label class="field">Código de sala<input id="joinCode" maxlength="6" placeholder="ABC234" style="text-transform:uppercase"></label><button id="join">Unirme a sala</button></div><button type="button" class="ud-menu-tile" id="udTutorialOpen">Tutorial</button><button type="button" class="ud-menu-tile" id="udHomePractice">Entrenamiento</button><button type="button" class="ud-menu-tile" id="udHomeCatalog">Catálogo</button><button type="button" class="ud-menu-tile" id="udHomeTeams">Team Builder</button></div><p id="homeStatus" class="status"></p></section>
 <section id="teamBuilder" class="panel hidden"><div class="row" style="justify-content:space-between"><h2>Team Builder</h2><button type="button" id="udBuilderBack">Volver al menú</button></div>
@@ -220,7 +303,7 @@
 <section id="lobby" class="hidden"><div class="panel"><div class="row" style="justify-content:space-between"><div><small class="muted">Sala</small><div id="roomCode" class="roomcode"></div></div><div class="row"><button id="copyCode">Copiar código</button><button id="udLeaveRoom" class="danger">Salir de la sala</button></div></div><div id="players" class="players" style="margin-top:12px"></div><h3>Modalidad</h3><div class="grid2"><div><small class="muted">Combate</small><div class="toggle-group" id="roomBattleMode"><button data-value="singles">Singles</button><button data-value="doubles">Doubles</button></div></div><div><small class="muted">Equipo</small><div class="toggle-group" id="roomTeamMode"><button data-value="picked">Picked Team</button><button data-value="random">Random Team</button></div></div></div><p id="roomStatus" class="status"></p></div><div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Tu equipo</h2><label>Equipo guardado <select id="udLobbyTeams"><option value="">Elegir equipo</option></select></label><button id="diceTeam" title="Armar 8 al azar">🎲 Equipo al azar</button></div><p id="randomNotice" class="muted hidden">Random Team activo: tu equipo se sorteará al comenzar y permanecerá oculto hasta la batalla. Tu Picked Team se conserva.</p><div class="team-layout" id="teamEditor"><div><div class="field"><label>Buscar personaje</label><input id="teamSearch" type="search" placeholder="Nombre, tipo o etiqueta"></div><div id="roster" class="roster" style="margin-top:10px"></div></div><div><div class="row" style="justify-content:space-between"><strong>Orden del equipo</strong><span id="teamCount">0 / 8</span></div><p class="muted" style="font-size:12px">Arrastrá las casillas para ordenar. #1 sale en Singles; #1 y #2 salen en Doubles.</p><div id="teamSlots" class="team-slots"></div><div class="row" style="margin-top:14px"><button id="saveTeam" class="primary">Guardar equipo</button><button id="ready">Estoy listo</button></div><p id="teamStatus" class="status"></p></div></div></div></section>
 <section id="battleView" class="hidden"><div class="battle-shell ud-online-battle-shell"><div class="battle-toolbar"><strong id="battleModeLabel">Singles</strong><span id="roundLabel" class="battle-round-label"></span><span class="spacer"></span><button data-battle-modal="player">Efectos jugador</button><button data-battle-modal="enemy">Efectos rival</button><button data-battle-modal="environment">Campo · Clima · Escenario</button><button data-battle-modal="types">Tabla de tipos</button><button data-battle-modal="log">Battle log</button></div><div class="battle-stage" id="battleStage"><div class="battle-message">Esperando el inicio.</div></div><div class="battle-command-panel" id="battleCommandPanel" aria-label="Acciones de combate"></div></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button id="surrender" class="danger">Rendirse</button></div></section>
 </div><div id="udEmbeddedOverlay" class="ud-embedded-overlay" hidden><div class="ud-embedded-header"><strong id="udEmbeddedTitle">Catálogo</strong><button type="button" id="udEmbeddedClose">Cerrar</button></div><iframe id="udEmbeddedFrame" title="Sección de Universal Duels" loading="lazy"></iframe></div>
-<div id="udTutorialPanel" class="ud-tutorial-panel" hidden role="dialog" aria-modal="true" aria-labelledby="udTutorialHeading"><div class="ud-tutorial-scroll"><div class="row" style="justify-content:space-between;align-items:center"><h2 id="udTutorialHeading">Tutorial de Universal Duels</h2><button type="button" id="udTutorialClose">Cerrar</button></div><div id="udTutorialContent"></div></div></div><div id="udRotateDevice" role="status"><div><strong>Girá tu teléfono</strong><p>Universal Duels se juega horizontalmente.</p><span style="font-size:40px" aria-hidden="true">↻</span></div></div><div class="battle-modal" id="battleModal" hidden><div class="battle-modal-card"><header><h3 id="battleModalTitle">Detalles</h3><button id="battleModalClose">Cerrar</button></header><div id="battleModalBody"></div></div></div>
+<div id="udTutorialPanel" class="ud-tutorial-panel" hidden role="dialog" aria-modal="true" aria-labelledby="udTutorialHeading"><div class="ud-tutorial-scroll"><div class="row" style="justify-content:space-between;align-items:center"><h2 id="udTutorialHeading">Tutorial de Universal Duels</h2><button type="button" id="udTutorialClose">Cerrar</button></div><div id="udTutorialContent"></div></div></div><div id="udRotateDevice" role="status"><div><strong>Girá tu teléfono</strong><p>Universal Duels está adaptado para jugar en vertical.</p><span style="font-size:40px" aria-hidden="true">↻</span></div></div><div class="battle-modal" id="battleModal" hidden><div class="battle-modal-card"><header><h3 id="battleModalTitle">Detalles</h3><button id="battleModalClose">Cerrar</button></header><div id="battleModalBody"></div></div></div>
 <script src="/sprite-renderer.js"></script><script src="/type-icon-cleanup.js"></script><script type="module">import {createSoundDirector} from '/audio-director.js';window.udSound=createSoundDirector();window.udSound.context('lobby');</script>
 <script>
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -272,7 +355,7 @@ function sendPendingOrder(){if(!battle||battle.status!=='playing'||battle.phase!
  return sent;
 }
 
-const sleep=ms=>new Promise(r=>setTimeout(r,ms)),speedFactor=()=>({normal:1,fast:.58,x2:.34}[battleSpeed]||1),wait=ms=>sleep(Math.round(ms*speedFactor())),clone=v=>structuredClone(v);function playerSide(){return role==='guest'?'right':'left'}
+let udPlaybackDeadline=0;const sleep=ms=>new Promise(r=>setTimeout(r,ms)),speedFactor=()=>({normal:1,fast:.58,x2:.34}[battleSpeed]||1),wait=ms=>sleep(Math.min(Math.round(ms*speedFactor()),udPlaybackDeadline?Math.max(0,udPlaybackDeadline-Date.now()):Infinity)),clone=v=>structuredClone(v);function playerSide(){return role==='guest'?'right':'left'}
 function pUnits(data){const left=playerSide()==='left';return{playerActive:left?data.leftActive:data.rightActive,enemyActive:left?data.rightActive:data.leftActive,playerTeam:left?data.leftTeam:data.rightTeam,enemyTeam:left?data.rightTeam:data.leftTeam,playerSide:left?'left':'right',enemySide:left?'right':'left'};}
 function typeMark(t,table=false){const name=TYPE_NAMES[t]||t,url='/api/type-icons/'+encodeURIComponent(t)+'?revision='+encodeURIComponent(battle?.revision||revision);return `<span class="ud-type-mark ${table?'ud-type-table':''}"><span class="ud-type-text">${esc(name)}</span><img src="${url}" alt="" hidden></span>`;}
 function wireTypeMarks(root=document){root.querySelectorAll('.ud-type-mark img:not([data-listened])').forEach(img=>{img.dataset.listened='1';const show=()=>{if(img.naturalWidth>0){img.hidden=false;if(!img.closest('.ud-type-table'))img.previousElementSibling.hidden=true;}};img.addEventListener('load',show);img.addEventListener('error',()=>{img.hidden=true;img.previousElementSibling.hidden=false;});if(img.complete)show();});}
@@ -324,7 +407,13 @@ function findUnitByIdentity(id){const all=[...(battleDisplayData?.leftActive||[]
 function applyVisualLine(line){let m=line.match(/^(.+?) (?:recibe|recibió) (\d+) de daño/);if(m){const u=findUnitByIdentity(m[1]);if(u){u.hp=Math.max(0,u.hp-Number(m[2]));hpDom(u)}return}m=line.match(/^(.+?) recupera (\d+) PS/);if(m){const u=findUnitByIdentity(m[1]);if(u){u.hp=Math.min(u.maxHp,u.hp+Number(m[2]));hpDom(u)}}}
 function refreshOpenEffectsModal(){if($('battleModal').hidden||!['player','enemy'].includes(battleModalKind))return;openModal(battleModalKind)}
 const udStatusBeats=[];function applyVisualEvent(e,msg=''){if(!battleDisplayData)return [];if(e?.type==='environment'){for(const k of ['weather','field','scenario','weatherTurns','fieldTurns','scenarioTurns'])if(e[k]!==undefined)battleDisplayData[k]=e[k];return [];}if(!e?.unit)return [];const key=e.side==='left'?'leftActive':'rightActive',arr=battleDisplayData[key]||[],i=arr.findIndex(u=>Number(u.activeSlot)===Number(e.slot));const before=i>=0?clone(arr[i]):null;if(before&&before.teamIndex===e.unit.teamIndex&&before.status?.id!==e.unit.status?.id)udStatusBeats.push({side:e.side,slot:e.slot});if(i>=0)arr[i]=clone(e.unit);else arr.push(clone(e.unit));return e.type==='switch'||(before&&before.teamIndex!==e.unit.teamIndex)?[]:udStatDelta(before,e.unit,e.slot);}
-async function animateLogLines(lines,finalData,visual=[]){battleAnimating=true;renderBattle(battleDisplayData,'');const by=new Map();for(const e of visual){const i=Number(e.localIndex);if(!by.has(i))by.set(i,[]);by.get(i).push(e)}for(let i=0;i<lines.length;i++){const line=lines[i],use=line.match(/^(.+?) usó (.+?)\.$/);let msg=$('battleMessage');if(!msg){msg=document.createElement('div');msg.id='battleMessage';msg.className='battle-message';$('battleStage').append(msg)}msg.textContent=formatLine(line);displayedBattleLog.push(line);udStatusBeats.length=0;const udChanges=[],beatEvents=by.get(i)||[];for(const e of beatEvents){const c=applyVisualEvent(e,msg.textContent);if(c?.length)udChanges.push(...c);}if(!udChanges.length)udChanges.push(...udStatFromLine(line));if(beatEvents.length||udChanges.length){renderBattle(battleDisplayData,msg.textContent);msg=$('battleMessage')||msg;refreshOpenEffectsModal();for(const e of beatEvents.filter(e=>e.type==='switch')){window.udSound?.effect('portal-in');document.querySelector(`.battle-unit[data-side="${e.side}"][data-slot="${e.slot}"]`)?.classList.add('ud-portal-arrive');}}if(udStatusBeats.length){window.udSound?.effect('status');for(const change of udStatusBeats)document.querySelector(`.battle-unit[data-side="${change.side}"][data-slot="${change.slot}"]`)?.classList.add('anim-status');}if(udChanges.length)udPlayStatFx(udChanges,line);if(use){await wait(650);const id=battleIdentity(use[1]),u=findUnitByIdentity(use[1]),m=Object.values(catalog.moves||{}).find(x=>x.name===use[2]),el=u?document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`):null,cat=m?.definition?.category||'status';el?.classList.add(cat==='physical'?'anim-physical':cat==='special'?'anim-special':'anim-status');window.udSound?.effect(cat);await wait(cat==='status'?1300:1150);el?.classList.remove('anim-physical','anim-special','anim-status');if(cat==='special'){await wait(250);const te=(by.get(i)||[]).find(e=>e.type==='move_targets');const targets=te?.targets||[];for(const t of targets)document.querySelector(`.battle-unit[data-side="${t.side}"][data-slot="${t.slot}"]`)?.classList.add('anim-hit');await wait(800);document.querySelectorAll('.anim-hit').forEach(x=>x.classList.remove('anim-hit'));}await wait(350);continue}if(/(?:se debilita|fuera de combate|se retira|abandona el combate)/i.test(line)){const who=line.split(/ se debilita| fuera de combate| se retira| abandona el combate/i)[0];const u=findUnitByIdentity(who);if(u){const el=document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`);el?.classList.add('ud-portal-leave');window.udSound?.effect('portal-out');}}applyVisualLine(line);if(!udChanges.length)udPlayStatFx([],line);if(/recibe \d+ de daño|falló|crítico|estado|recupera|pierde|inmune|cooldown|volver a usar/i.test(line))await wait(1350);else if(/debilitado|fuera de combate|entra|termina/i.test(line))await wait(1650);else await wait(900)}battleDisplayData=clone(finalData);battleLastData=battleDisplayData;battleAnimating=false;actionDraft=[];pendingLocalOrder=null;renderBattle(battleDisplayData,'');}
+async function animateLogLines(lines,finalData,visual=[]){
+  // The server clock starts when the round resolves, not after browser playback.
+  // Keep narration, but reserve time to choose replacements/actions before timeout.
+  const serverDeadline=Number(battle?.replacementDeadline||battle?.selectionDeadline)||0;
+  const playbackLimit=battle?.phase==='replacement'?4500:7000;
+  udPlaybackDeadline=Date.now()+Math.max(0,Math.min(playbackLimit,serverDeadline?serverDeadline-Date.now()-8500:playbackLimit));
+  battleAnimating=true;renderBattle(battleDisplayData,'');const by=new Map();for(const e of visual){const i=Number(e.localIndex);if(!by.has(i))by.set(i,[]);by.get(i).push(e)}for(let i=0;i<lines.length;i++){const line=lines[i],use=line.match(/^(.+?) usó (.+?)\.$/);let msg=$('battleMessage');if(!msg){msg=document.createElement('div');msg.id='battleMessage';msg.className='battle-message';$('battleStage').append(msg)}msg.textContent=formatLine(line);displayedBattleLog.push(line);udStatusBeats.length=0;const udChanges=[],beatEvents=by.get(i)||[];for(const e of beatEvents){const c=applyVisualEvent(e,msg.textContent);if(c?.length)udChanges.push(...c);}if(!udChanges.length)udChanges.push(...udStatFromLine(line));if(beatEvents.length||udChanges.length){renderBattle(battleDisplayData,msg.textContent);msg=$('battleMessage')||msg;refreshOpenEffectsModal();for(const e of beatEvents.filter(e=>e.type==='switch')){window.udSound?.effect('portal-in');document.querySelector(`.battle-unit[data-side="${e.side}"][data-slot="${e.slot}"]`)?.classList.add('ud-portal-arrive');}}if(udStatusBeats.length){window.udSound?.effect('status');for(const change of udStatusBeats)document.querySelector(`.battle-unit[data-side="${change.side}"][data-slot="${change.slot}"]`)?.classList.add('anim-status');}if(udChanges.length)udPlayStatFx(udChanges,line);if(use){await wait(650);const id=battleIdentity(use[1]),u=findUnitByIdentity(use[1]),m=Object.values(catalog.moves||{}).find(x=>x.name===use[2]),el=u?document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`):null,cat=m?.definition?.category||'status';el?.classList.add(cat==='physical'?'anim-physical':cat==='special'?'anim-special':'anim-status');window.udSound?.effect(cat);await wait(cat==='status'?1300:1150);el?.classList.remove('anim-physical','anim-special','anim-status');if(cat==='special'){await wait(250);const te=(by.get(i)||[]).find(e=>e.type==='move_targets');const targets=te?.targets||[];for(const t of targets)document.querySelector(`.battle-unit[data-side="${t.side}"][data-slot="${t.slot}"]`)?.classList.add('anim-hit');await wait(800);document.querySelectorAll('.anim-hit').forEach(x=>x.classList.remove('anim-hit'));}await wait(350);continue}if(/(?:se debilita|fuera de combate|se retira|abandona el combate)/i.test(line)){const who=line.split(/ se debilita| fuera de combate| se retira| abandona el combate/i)[0];const u=findUnitByIdentity(who);if(u){const el=document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`);el?.classList.add('ud-portal-leave');window.udSound?.effect('portal-out');}}applyVisualLine(line);if(!udChanges.length)udPlayStatFx([],line);if(/recibe \d+ de daño|falló|crítico|estado|recupera|pierde|inmune|cooldown|volver a usar/i.test(line))await wait(1350);else if(/debilitado|fuera de combate|entra|termina/i.test(line))await wait(1650);else await wait(900)}battleDisplayData=clone(finalData);battleLastData=battleDisplayData;battleAnimating=false;udPlaybackDeadline=0;actionDraft=[];pendingLocalOrder=null;renderBattle(battleDisplayData,'');}
 function statusEffectText(statusId){const st=catalog?.statuses?.[statusId];if(!st)return'Estado no encontrado.';const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Probabilidad de crítico'};return(st.definition?.rules||[]).map(r=>{const a=r.action||{};if(a.type==='damage')return`−${a.value}% PS`;if(a.type==='heal')return`+${a.value}% PS`;if(a.type==='stat_change')return`${Number(a.value)>0?'+':''}${a.value} ${names[a.stat]||a.stat}`;return`${a.type}${a.value!==''&&a.value!=null?' · '+a.value:''}`}).join('\n')||'Sin efectos configurados.'}
 function statBreakdown(u,stat){const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Probabilidad de crítico'},rows=[];for(const x of u?.statSources||[])if(x.stat===stat)rows.push(`${x.value>0?'+':''}${x.value} · ${x.sourceName} · ${x.sourceActor||'fuente'}`);return`<h3>${names[stat]||stat}</h3>${rows.map(x=>`<div class="environment-effect">${esc(x)}</div>`).join('')||'<p>Sin fuentes registradas.</p>'}`}
 function effectRows(u){if(!u)return'<p>Sin personaje.</p>';const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Crítico'},core=['attack','defense','specialAttack','specialDefense','speed'];let a=[];if(u.baseStats&&u.currentStats)a.push(`<div class="stat-comparison"><strong>Stats base → actuales</strong>${core.map(k=>`<div>${names[k]}: ${u.baseStats[k]} → <b>${u.currentStats[k]}</b></div>`).join('')}</div>`);if(u.status)a.push(`<button class="effect-chip battle-effect-detail" data-status="${esc(u.status.id)}" data-side="${u.side}" data-team="${u.teamIndex}">${esc(catalog.statuses?.[u.status.id]?.name||u.status.id)}</button>`);for(const k of Object.keys(names)){const v=(u.stages?.[k]||0)+(u.environmentStages?.[k]||0)+(u.statusStages?.[k]||0);if(v)a.push(`<button class="effect-chip battle-effect-detail" data-stat="${k}" data-side="${u.side}" data-team="${u.teamIndex}">${names[k]} ${v>0?'+':''}${v}</button>`)}for(const e of u.effects||[])a.push(`<span class="effect-chip">${esc(e.id)}${e.turns?' · '+e.turns+' r.':''}</span>`);return a.join('')||'<p>Sin efectos.</p>'}
@@ -335,7 +424,7 @@ function logBody(){let out='',open=false;for(const l of displayedBattleLog){if(l
 function openModal(kind){$('battleModalClose').hidden=false;battleModalKind=kind;const p=pUnits(battleLastData),title=$('battleModalTitle'),body=$('battleModalBody');if(kind==='player'){title.textContent='Efectos · equipo aliado';body.innerHTML=p.playerActive.map(u=>`<div class="environment-card"><h4>${esc(u.name)}</h4>${effectRows(u)}</div>`).join('')}else if(kind==='enemy'){title.textContent='Efectos · equipo rival';body.innerHTML=p.enemyActive.map(u=>`<div class="environment-card"><h4>${esc(u.name)}</h4>${effectRows(u)}</div>`).join('')}else if(kind==='environment'){title.textContent='Campo · Clima · Escenario';body.innerHTML=environmentBody()}else if(kind==='types'){title.textContent='Tabla de tipos';body.innerHTML=typeTableBody()}else{title.textContent='Battle log';body.innerHTML=logBody()}wireTypeMarks(body);body.querySelectorAll('.battle-effect-detail').forEach(b=>b.onclick=()=>{const side=b.dataset.side,team=Number(b.dataset.team),u=(side==='left'?battleLastData.leftTeam:battleLastData.rightTeam)?.[team];if(b.dataset.status){title.textContent=catalog.statuses?.[b.dataset.status]?.name||b.dataset.status;body.innerHTML='<pre style="white-space:pre-wrap">'+esc(statusEffectText(b.dataset.status))+'</pre>'}else if(b.dataset.stat){title.textContent='Desglose · '+u.name;body.innerHTML=statBreakdown(u,b.dataset.stat)}});$('battleModal').hidden=false}
 document.querySelectorAll('[data-battle-modal]').forEach(b=>b.onclick=()=>openModal(b.dataset.battleModal));$('battleModalClose').onclick=()=>{if(battle?.phase==='replacement')return;$('battleModal').hidden=true;};$('battleModal').onclick=e=>{if(e.target.id==='battleModal'&&battle?.phase!=='replacement')e.currentTarget.hidden=true};document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{battleSpeed=b.dataset.speed;document.querySelectorAll('[data-speed]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)))});$('surrender').onclick=()=>{if(confirm('¿Rendirse de esta batalla?'))send({type:'surrender'})};
 async function receiveBattle(m){const prevRound=battle?.round,prevPhase=battle?.phase;battle=m.battle;if(!battle)return;if(prevRound!==undefined&&(Number(prevRound)!==Number(battle.round)||battle.phase==='finished'||battle.phase==='replacement')){pendingLocalOrder=null;actionDraft=[];clearRememberedOrder();}if(battle.revision!==revision)await loadCatalog(battle.revision);$('lobby').classList.add('hidden');$('battleView').classList.remove('hidden');if(!battleDisplayData){battleDisplayData=clone(battle.state);battleLastData=battleDisplayData;displayedBattleLog=[...(battle.recentLog||[])];renderBattle(battleDisplayData,'Comienza la batalla.')}const start=Number(m.logStart||0),events=(m.visualEvents||[]).map(e=>({...e,localIndex:Number(e.logIndex)-start}));if((m.logs||[]).length)await animateLogLines(m.logs,battle.state,events);else{battleDisplayData=clone(battle.state);battleLastData=battleDisplayData;renderBattle(battleDisplayData,'')}if(battle.status==='finished'){const won=battle.winner===role,msg=battle.winner===null?(battle.finishReason==='double_ko'?'¡Empate! Ambos equipos quedaron fuera de combate.':'La partida terminó en empate.'):(battle.finishReason==='surrender'?(won?'El rival se rindió.':'Te rendiste.'):(won?'¡Ganaste la batalla!':'Perdiste la batalla.'));renderBattle(battleDisplayData,msg);await wait(1800);send({type:'return_lobby'});}else if(battle.phase==='replacement')openReplacementPicker();else if(m.type==='battle_sync'&&battle.phase==='action'&&!battle.submitted)sendPendingOrder();}
-function handle(m){if(m.type==='welcome'){role=m.role;controller=!!m.controller;if(m.session)localStorage.setItem(sessionKey(m.code),m.session);localStorage.setItem('ud-alpha-last-room',m.code);$('roomCode').textContent=m.code;return}if(m.type==='left_room'){udBackToHome();return}if(m.type==='notice'){$('roomStatus').textContent=m.message;return}if(m.type==='selection_cancelled'){if(battle){battle.submitted=false;actionDraft=[];pendingLocalOrder=null;clearRememberedOrder();renderBattle(battleDisplayData,'');}return}if(m.type==='session_observer'){controller=false;$('roomStatus').textContent=m.message;return}if(m.type==='room'){room=m.room;renderRoom();return}if(m.type==='error'){if(!battle?.submitted){pendingLocalOrder=null;actionDraft=[];clearRememberedOrder();}if(battle?.status==='playing'){if(!battle.submitted)battle.submitted=false;renderBattle(battleDisplayData,m.message);$('roundLabel').textContent=m.message;}else $('roomStatus').textContent=m.message;return}if(m.type==='battle_selection'){return}if(m.type==='order_accepted'){if(battle&&(!m.round||Number(m.round)===Number(battle.round))){battle.submitted=true;clearRememberedOrder();renderBattle(battleDisplayData,'Esperando al rival…');}return}if(m.type==='battle_replacement_waiting')return;if(['battle_start','battle_round','battle_replacement','battle_result','battle_sync','battle_retry'].includes(m.type)){receiveBattle(m);return}if(m.type==='battle_return_lobby'){clearRememberedOrder();battle=null;battleLastData=battleDisplayData=null;displayedBattleLog=[];actionDraft=[];pendingLocalOrder=null;$('battleView').classList.add('hidden');$('lobby').classList.remove('hidden');window.udSound?.context('lobby',{revision});return}}
+let battleReceiveQueue=Promise.resolve();function handle(m){if(m.type==='welcome'){role=m.role;controller=!!m.controller;if(m.session)localStorage.setItem(sessionKey(m.code),m.session);localStorage.setItem('ud-alpha-last-room',m.code);$('roomCode').textContent=m.code;return}if(m.type==='left_room'){udBackToHome();return}if(m.type==='notice'){$('roomStatus').textContent=m.message;return}if(m.type==='selection_cancelled'){if(battle){battle.submitted=false;actionDraft=[];pendingLocalOrder=null;clearRememberedOrder();renderBattle(battleDisplayData,'');}return}if(m.type==='session_observer'){controller=false;$('roomStatus').textContent=m.message;return}if(m.type==='room'){room=m.room;renderRoom();return}if(m.type==='error'){if(!battle?.submitted){pendingLocalOrder=null;actionDraft=[];clearRememberedOrder();}if(battle?.status==='playing'){if(!battle.submitted)battle.submitted=false;renderBattle(battleDisplayData,m.message);$('roundLabel').textContent=m.message;}else $('roomStatus').textContent=m.message;return}if(m.type==='battle_selection'){return}if(m.type==='order_accepted'){if(battle&&(!m.round||Number(m.round)===Number(battle.round))){battle.submitted=true;clearRememberedOrder();renderBattle(battleDisplayData,'Esperando al rival…');}return}if(m.type==='battle_replacement_waiting')return;if(['battle_start','battle_round','battle_replacement','battle_result','battle_sync','battle_retry'].includes(m.type)){battleReceiveQueue=battleReceiveQueue.then(()=>receiveBattle(m)).catch(e=>{console.error('Error mostrando combate:',e);battleAnimating=false;udPlaybackDeadline=0;});return}if(m.type==='battle_return_lobby'){clearRememberedOrder();battle=null;battleLastData=battleDisplayData=null;displayedBattleLog=[];actionDraft=[];pendingLocalOrder=null;$('battleView').classList.add('hidden');$('lobby').classList.remove('hidden');window.udSound?.context('lobby',{revision});return}}
 // Alpha 0.6 - Main menu stays mounted, so the URL and active soundtrack are preserved.
 function udOpenEmbed(kind){const training=kind==='practice',frame=$('udEmbeddedFrame');$('udEmbeddedTitle').textContent=training?'Entrenamiento':'Catálogo';$('udEmbeddedOverlay').hidden=false;if(training)window.udSound?.pause?.();frame.src=training?'/practice.html':'/catalog.html';}
 function udCloseEmbed(){const wasTraining=$('udEmbeddedFrame').getAttribute('src')?.startsWith('/practice');$('udEmbeddedFrame').removeAttribute('src');$('udEmbeddedOverlay').hidden=true;if(wasTraining)window.udSound?.resume?.();}
