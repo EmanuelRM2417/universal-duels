@@ -130,6 +130,65 @@ body:has(#battleView:not(.hidden)) #notice{display:none!important}
   body:has(#battleView:not(.hidden)) #battleView>.row{margin-top:4px!important}
   body:has(#battleView:not(.hidden)) #battleView>.row button{padding:5px 10px;font-size:11px}
 }
+
+/* Alpha 0.7: mobile landscape layout only. Never squeeze the 4:3 arena to a sliver. */
+@media (orientation:portrait) and (max-width:1024px){
+  body:not(:has(#battleView:not(.hidden))) #udRotateDevice{display:none!important}
+}
+@media (orientation:landscape) and (max-height:650px) and (pointer:coarse){
+  /* Let setup/catalog remain scrollable; give an embedded training page its real viewport. */
+  .ud-embedded-overlay{inset:2px!important;border-radius:9px!important}
+  .ud-embedded-header{min-height:36px!important;padding:3px 8px!important;gap:8px!important}
+  .ud-embedded-header button{padding:5px 10px!important;min-height:32px!important}
+  .ud-embedded-overlay iframe{display:block!important;flex:1 1 0!important;min-height:0!important;min-width:0!important;width:100%!important}
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell{
+    /* Width is based on actual height, with a usable floor. Small iframe viewports
+       scroll vertically instead of shrinking the arena down to a few pixels. */
+    width:min(100%,max(360px,calc((100dvh - 70px) * 4 / 3)))!important;
+    min-width:0!important;margin:0 auto!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-stage{
+    width:100%!important;aspect-ratio:4 / 3!important;height:auto!important;
+    min-height:0!important;max-height:none!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar{min-height:35px;flex-wrap:nowrap;overflow-x:auto;gap:4px;padding:3px 5px}
+  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar button{flex-shrink:0;min-height:32px;padding:4px 8px;font-size:11px}
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel{
+    height:auto!important;min-height:116px!important;grid-template-columns:minmax(108px,1fr) minmax(0,2fr)!important;
+    overflow:visible!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-command-left button,
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-move{min-height:44px!important}
+  /* During action selection use the spare horizontal room for controls instead
+     of pushing all commands below the arena. The arena alone stays 4:3. */
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)){
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+    grid-template-rows:auto auto!important;
+    width:min(100%,max(620px,calc((100dvh - 45px) * 8 / 3)))!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-toolbar{
+    grid-column:1 / -1;grid-row:1;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-stage{
+    grid-column:1;grid-row:2;align-self:start;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-command-panel{
+    grid-column:2;grid-row:2;display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto;
+    align-content:start;max-height:calc(100dvh - 45px)!important;
+    overflow-y:auto!important;overflow-x:hidden!important;
+    border-top:0;border-left:2px solid #444966;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-command-left{
+    grid-template-rows:repeat(2,minmax(44px,auto))!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-move-grid{
+    grid-template-rows:repeat(2,minmax(44px,auto))!important;
+  }
+  .battle-modal{padding:5px!important}
+  .battle-modal-card{width:min(100%,820px)!important;max-height:calc(100dvh - 10px)!important;overflow:auto!important;padding:12px!important}
+}
 </style></head><body><div id="udRotateDevice">Girá tu teléfono para jugar horizontalmente ↻</div><div class="wrap"><header class="top"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Universal Duels · Entrenamiento</h1><small>El mismo combate de las salas · sin recompensas ni Refuerzos</small></div></div><nav class="row"><a href="/catalog.html">Catálogo</a><a href="/tutorial.html">Tutorial</a><a href="/">Volver al juego</a></nav></header><p id="notice" role="status" class="notice"></p><section id="setup" class="panel"><h2>Crear un entrenamiento</h2><div class="practice-options"><label class="field">Modalidad<select id="mode"><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label><label class="field">Dificultad<select id="difficulty"><option value="easy">Fácil</option><option value="advanced">Avanzada</option></select></label><label class="field">Personajes rivales<select id="enemySize"></select></label></div><h3>Tu equipo (1 a 8 personajes)</h3><p id="selectionCount" class="muted"></p><div class="row" style="margin:9px 0"><label>Buscar <input id="practiceSearch" type="search" placeholder="Nombre o etiqueta"></label><label>Tipo <select id="practiceTypeFilter"><option value="">Todos los tipos</option></select></label><label>Ordenar <select id="practiceStatSort"><option value="name-asc">Nombre A–Z</option><option value="name-desc">Nombre Z–A</option><option value="hp-desc">PS ↑</option><option value="hp-asc">PS ↓</option><option value="attack-desc">Ataque ↑</option><option value="attack-asc">Ataque ↓</option><option value="defense-desc">Defensa ↑</option><option value="defense-asc">Defensa ↓</option><option value="specialAttack-desc">Ataque especial ↑</option><option value="specialAttack-asc">Ataque especial ↓</option><option value="specialDefense-desc">Defensa especial ↑</option><option value="specialDefense-asc">Defensa especial ↓</option><option value="speed-desc">Velocidad ↑</option><option value="speed-asc">Velocidad ↓</option></select></label></div><label class="field">Equipo guardado <select id="udPracticeSavedTeam"><option value="">Elegir equipo</option></select></label><label style="display:inline-flex;align-items:center;gap:9px;margin:12px 0"><input type="checkbox" id="udPracticeTimerEnabled"> Temporizador de batalla (60 s por personaje, 15 s por reemplazo)</label><div id="roster" class="roster"></div><div class="row" style="margin-top:14px"><button id="start" class="primary">Comenzar práctica</button><button id="random">Elegir 8 al azar</button><button id="resume" class="hidden">Reanudar práctica</button></div></section><section id="battleView" class="hidden"><div class="battle-shell"><div class="battle-toolbar"><strong id="battleModeLabel">Singles</strong><div class="battle-speed"><span>Velocidad:</span><button data-speed="normal" aria-pressed="true">Normal</button><button data-speed="fast" aria-pressed="false">Rápida</button><button data-speed="x2" aria-pressed="false">×2</button></div><span id="roundLabel" class="battle-round-label"></span><span class="spacer"></span><button data-battle-modal="player">Efectos jugador</button><button data-battle-modal="enemy">Efectos rival</button><button data-battle-modal="environment">Campo · Clima · Escenario</button><button data-battle-modal="types">Tabla de tipos</button><button data-battle-modal="log">Battle log</button></div><div class="battle-stage" id="battleStage"><div class="battle-message">Esperando el inicio.</div></div><div class="battle-command-panel" id="battleCommandPanel" aria-label="Acciones de Entrenamiento"></div></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button id="surrender" class="danger">Rendirse</button></div><div class="practice-footer"><span class="spacer"></span><button id="new" class="primary hidden">Nueva práctica</button></div></section></div><div class="battle-modal" id="battleModal" hidden><div class="battle-modal-card"><header><h3 id="battleModalTitle">Detalles</h3><button id="battleModalClose">Cerrar</button></header><div id="battleModalBody"></div></div></div><div id="udPracticeCatalogOverlay" class="ud-embedded-overlay" hidden><div class="ud-embedded-header"><strong>Catálogo</strong><button type="button" id="udPracticeCatalogClose">Cerrar</button></div><iframe id="udPracticeCatalogFrame" title="Catálogo" loading="lazy"></iframe></div><script src="/sprite-renderer.js"></script><script src="/type-icon-cleanup.js"></script><script type="module">
 import {createSoundDirector} from '/audio-director.js';
 const udSound=createSoundDirector();udSound.context('lobby');

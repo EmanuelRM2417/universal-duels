@@ -152,6 +152,65 @@
   body:has(#battleView:not(.hidden)) #battleView>.row{margin-top:4px!important}
   body:has(#battleView:not(.hidden)) #battleView>.row button{padding:5px 10px;font-size:11px}
 }
+
+/* Alpha 0.7: mobile landscape layout only. Never squeeze the 4:3 arena to a sliver. */
+@media (orientation:portrait) and (max-width:1024px){
+  body:not(:has(#battleView:not(.hidden))) #udRotateDevice{display:none!important}
+}
+@media (orientation:landscape) and (max-height:650px) and (pointer:coarse){
+  /* Let setup/catalog remain scrollable; give an embedded training page its real viewport. */
+  .ud-embedded-overlay{inset:2px!important;border-radius:9px!important}
+  .ud-embedded-header{min-height:36px!important;padding:3px 8px!important;gap:8px!important}
+  .ud-embedded-header button{padding:5px 10px!important;min-height:32px!important}
+  .ud-embedded-overlay iframe{display:block!important;flex:1 1 0!important;min-height:0!important;min-width:0!important;width:100%!important}
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell{
+    /* Width is based on actual height, with a usable floor. Small iframe viewports
+       scroll vertically instead of shrinking the arena down to a few pixels. */
+    width:min(100%,max(360px,calc((100dvh - 70px) * 4 / 3)))!important;
+    min-width:0!important;margin:0 auto!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-stage{
+    width:100%!important;aspect-ratio:4 / 3!important;height:auto!important;
+    min-height:0!important;max-height:none!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar{min-height:35px;flex-wrap:nowrap;overflow-x:auto;gap:4px;padding:3px 5px}
+  body:has(#battleView:not(.hidden)) #battleView .battle-toolbar button{flex-shrink:0;min-height:32px;padding:4px 8px;font-size:11px}
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel{
+    height:auto!important;min-height:116px!important;grid-template-columns:minmax(108px,1fr) minmax(0,2fr)!important;
+    overflow:visible!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-command-left button,
+  body:has(#battleView:not(.hidden)) #battleView .battle-command-panel .battle-move{min-height:44px!important}
+  /* During action selection use the spare horizontal room for controls instead
+     of pushing all commands below the arena. The arena alone stays 4:3. */
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)){
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+    grid-template-rows:auto auto!important;
+    width:min(100%,max(620px,calc((100dvh - 45px) * 8 / 3)))!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-toolbar{
+    grid-column:1 / -1;grid-row:1;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-stage{
+    grid-column:1;grid-row:2;align-self:start;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty))>.battle-command-panel{
+    grid-column:2;grid-row:2;display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto;
+    align-content:start;max-height:calc(100dvh - 45px)!important;
+    overflow-y:auto!important;overflow-x:hidden!important;
+    border-top:0;border-left:2px solid #444966;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-command-left{
+    grid-template-rows:repeat(2,minmax(44px,auto))!important;
+  }
+  body:has(#battleView:not(.hidden)) #battleView .battle-shell:has(>.battle-command-panel:not(:empty)) .battle-move-grid{
+    grid-template-rows:repeat(2,minmax(44px,auto))!important;
+  }
+  .battle-modal{padding:5px!important}
+  .battle-modal-card{width:min(100%,820px)!important;max-height:calc(100dvh - 10px)!important;overflow:auto!important;padding:12px!important}
+}
 </style></head><body><div class="wrap"><header class="top"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Universal Duels</h1><small>Combates por turnos · Alpha pública</small></div></div><nav><span class="badge">Alpha 0.7</span></nav></header>
 <section id="home" class="panel"><h2>Crear o entrar a una sala</h2><div class="ud-home-actions"><div class="ud-room-entry"><label class="field">Tu nombre<input id="name" maxlength="20" placeholder="Jugador"></label><button id="create" class="primary">Crear sala</button></div><div class="ud-room-entry"><label class="field">Código de sala<input id="joinCode" maxlength="6" placeholder="ABC234" style="text-transform:uppercase"></label><button id="join">Unirme a sala</button></div><button type="button" class="ud-menu-tile" id="udTutorialOpen">Tutorial</button><button type="button" class="ud-menu-tile" id="udHomePractice">Entrenamiento</button><button type="button" class="ud-menu-tile" id="udHomeCatalog">Catálogo</button><button type="button" class="ud-menu-tile" id="udHomeTeams">Team Builder</button></div><p id="homeStatus" class="status"></p></section>
 <section id="teamBuilder" class="panel hidden"><div class="row" style="justify-content:space-between"><h2>Team Builder</h2><button type="button" id="udBuilderBack">Volver al menú</button></div>

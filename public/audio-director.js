@@ -1,7 +1,82 @@
+// Music is intentionally mixed with Web Audio rather than an HTMLMediaElement.
+// This avoids Android's persistent media notification and stops on tab backgrounding.
+function createInternalMusicChannel(){
+  let context=null,output=null,source=null,buffer=null,loadPromise=null;
+  let sourceUrl='',position=0,startedAt=0,volume=1,loop=true,paused=true;
+  let generation=0,playEpoch=0;
+  const listeners=new Map();
+  const emit=name=>{for(const entry of [...(listeners.get(name)||[])]){entry.fn();if(entry.once)listeners.get(name).delete(entry);}};
+  const AudioContextType=()=>window.AudioContext||window.webkitAudioContext;
+  const ensureContext=()=>{
+    if(context)return context;
+    const Type=AudioContextType();if(!Type)throw new Error('Web Audio no disponible');
+    context=new Type();output=context.createGain();output.gain.value=volume;
+    output.connect(context.destination);return context;
+  };
+  const positionNow=()=>{
+    if(!context||paused||!buffer)return position;
+    const elapsed=Math.max(0,context.currentTime-startedAt);
+    return loop&&buffer.duration?((position+elapsed)%buffer.duration):Math.min(buffer.duration,position+elapsed);
+  };
+  const detach=()=>{if(!source)return;const node=source;source=null;node.onended=null;try{node.stop();}catch{}try{node.disconnect();}catch{}};
+  function pause(){
+    ++playEpoch;
+    if(!paused)position=positionNow();
+    paused=true;detach();
+  }
+  function setSource(next){
+    pause();++generation;sourceUrl=String(next||'');position=0;buffer=null;loadPromise=null;
+  }
+  async function play(){
+    if(!sourceUrl||!paused||document.hidden)return;
+    const epoch=++playEpoch,token=generation,requestedUrl=sourceUrl;
+    const ctx=ensureContext();
+    // Resume is initiated on the user gesture, before any network/decode awaits.
+    await ctx.resume();
+    if(!loadPromise){
+      loadPromise=(async()=>{
+        const response=await fetch(requestedUrl);
+        if(!response.ok)throw Error('Audio HTTP '+response.status);
+        return await ctx.decodeAudioData(await response.arrayBuffer());
+      })();
+    }
+    let decoded;
+    try{decoded=await loadPromise;}catch(error){if(token===generation)loadPromise=null;throw error;}
+    if(epoch!==playEpoch||token!==generation||!paused||document.hidden)return;
+    buffer=decoded;
+    emit('loadedmetadata');
+    if(epoch!==playEpoch||token!==generation||!paused||document.hidden)return;
+    const node=ctx.createBufferSource();node.buffer=decoded;node.loop=loop;
+    node.connect(output);source=node;
+    const offset=loop&&decoded.duration?position%decoded.duration:Math.min(position,Math.max(0,decoded.duration-.001));
+    position=offset;startedAt=ctx.currentTime;paused=false;
+    node.onended=()=>{
+      if(source!==node||paused)return;
+      source=null;paused=true;position=0;
+      if(!node.loop)emit('ended');
+    };
+    node.start(0,offset);
+  }
+  return {
+    get src(){return sourceUrl;},set src(value){setSource(value);},
+    get currentTime(){return positionNow();},set currentTime(value){
+      const n=Math.max(0,Number(value)||0),wasPlaying=!paused;
+      if(wasPlaying)pause();position=n;
+      if(wasPlaying)play().catch(()=>{});
+    },
+    get paused(){return paused;},get volume(){return volume;},
+    set volume(value){volume=Math.max(0,Math.min(1,Number(value)||0));if(output)output.gain.value=volume;},
+    get loop(){return loop;},set loop(value){loop=!!value;if(source)source.loop=loop;},
+    preload:'none',pause,play,load(){},
+    removeAttribute(name){if(name==='src')setSource('');},
+    addEventListener(name,fn,options){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add({fn,once:!!options?.once});}
+  };
+}
+
 // Universal Duels Alpha 0.5: event-driven sound, single music channel and independent SFX.
 // Browsers may require a user interaction before playing audio with sound.
 export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}/${id}?revision=${encodeURIComponent(revision||'')}`,playlistUrl=(mode,revision)=>'/api/music-playlists?revision='+encodeURIComponent(revision||''),musicFileUrl=(mode,id,revision)=>'/api/music-file/'+encodeURIComponent(mode)+'/'+encodeURIComponent(id)+'?revision='+encodeURIComponent(revision||'')}={}){
-  const music=new Audio();music.loop=true;music.preload='none';
+  const music=createInternalMusicChannel();music.loop=true;music.preload='none';
   const clamp=x=>Math.max(0,Math.min(1,Number(x)||0));
   const store=(key,value)=>{try{localStorage.setItem(key,String(value));}catch{}};
   const remember=(key,value)=>{try{sessionStorage.setItem(key,String(value));}catch{}};
@@ -47,6 +122,23 @@ export function createSoundDirector({url=(kind,id,revision)=>`/api/audio/${kind}
   const saveLobby=()=>{if(current.startsWith('global:lobby:')&&Number.isFinite(music.currentTime))remember('ud-lobby-position',music.currentTime);};
   const saveIfLeaving=()=>saveLobby();
   window.addEventListener('pagehide',saveIfLeaving);
+  // Suspend music and SFX when leaving the browser: no background playback.
+  let resumeOnReturn=false;
+  const stopForBackground=()=>{
+    resumeOnReturn=!music.paused;
+    music.pause();
+    if(audioCtx?.state==='running')audioCtx.suspend().catch(()=>{});
+  };
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){stopForBackground();return;}
+    if(audioCtx?.state==='suspended'&&unlocked)audioCtx.resume().catch(()=>{});
+    if(resumeOnReturn){resumeOnReturn=false;if(unlocked&&!muted)music.play().catch(()=>{});}
+  });
+  window.addEventListener('pagehide',stopForBackground);
+  window.addEventListener('pageshow',()=>{
+    if(!document.hidden&&audioCtx?.state==='suspended'&&unlocked)audioCtx.resume().catch(()=>{});
+    if(!document.hidden&&resumeOnReturn){resumeOnReturn=false;if(unlocked&&!muted)music.play().catch(()=>{});}
+  });
   function select(kind,id,vol=100){
     const key=kind+':'+id+':'+revision;
     if(current===key){soundVolume=vol;sync();return;}
