@@ -5,7 +5,7 @@
  window.udMandatoryTutorial=false;
  function setStatus(text){status.textContent=text;}
  function showGate(){gate.hidden=false;$('udAccountBar').hidden=true;}
- function accountBar(){gate.hidden=true;$('udAccountBar').hidden=false;name.textContent=account?'Google · '+account.name:'Invitado';}
+ function accountBar(){gate.hidden=true;$('udAccountBar').hidden=false;name.textContent=account?'@'+(account.nick||account.name)+' · '+account.id:'Invitado';if(account&&$('name')){$('name').value=account.nick||account.name;$('name').readOnly=true;}else if($('name'))$('name').readOnly=false;}
  function allowPlay(){accessGranted=true;window.udAuthAllowed=true;window.udMandatoryTutorial=false;accountBar();window.udRejoinRoom?.();}
  function tutorial(required){gate.hidden=true;mandatory=!!required;tutorialRunning=true;window.udMandatoryTutorial=mandatory;
    window.udOpenEmbed?.('tutorial');$('udEmbeddedClose').hidden=mandatory;
@@ -25,7 +25,7 @@
  $('udGuestButton').addEventListener('click',()=>{account=null;tutorial(true);});
  $('udAccountLogout').addEventListener('click',async()=>{if(account)try{await json('/api/auth/logout',{method:'POST'});}catch{}account=null;accessGranted=false;window.udAuthAllowed=false;showGate();});
  async function renderGoogle(clientId){
-   if(!clientId){setStatus('Inicio con Google pendiente de configurar. Podés continuar como invitado.');return;}
+   if(!clientId){setStatus('El Worker publicado no está recibiendo GOOGLE_CLIENT_ID. Revisá que la variable esté en Main (no Editor ni Preview), en el entorno de producción, y que los cambios se hayan desplegado.');return;}
    const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;
    script.onload=()=>{
      if(!window.google?.accounts?.id){setStatus('Google no está disponible en este navegador.');return;}
@@ -35,9 +35,46 @@
        }catch(e){showGate();setStatus(e.message);}
      }});
      google.accounts.id.renderButton($('udGoogleButton'),{theme:'filled_blue',size:'large',shape:'pill',text:'continue_with',width:250});
+     if(!$('udGoogleButton').children.length)setStatus('No apareció el botón de Google. Comprobá el origen autorizado https://universalduels.com y bloqueadores del navegador.');
    };
    script.onerror=()=>setStatus('No se pudo cargar Google. Podés jugar como invitado.');document.head.append(script);
  }
+ const statGroups=[['total','Total'],['casual','Casuales / entrenamiento'],['salas','Salas online'],['singles','Singles'],['doubles','Doubles'],['casualSingles','Casuales · Singles'],['casualDoubles','Casuales · Doubles'],['salasSingles','Salas · Singles'],['salasDoubles','Salas · Doubles']];
+ const statsPanel=$('udStatsPanel'),statsStatus=$('udStatsStatus');
+ function fillStatsTable(stats){
+   const host=$('udStatsContent');host.replaceChildren();
+   const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr');
+   for(const title of ['Categoría','Jugadas','Ganadas','Perdidas','Winrate','Daño infligido','Daño recibido','Derrotados']){
+     const th=document.createElement('th');th.textContent=title;header.append(th);
+   }
+   head.append(header);table.append(head);const body=document.createElement('tbody');
+   for(const [key,title] of statGroups){
+     const s=stats?.[key]||{},played=Number(s.played)||0,wins=Number(s.wins)||0;
+     const values=[title,played,wins,Number(s.losses)||0,(played?100*wins/played:0).toFixed(1)+'%',Number(s.damageDealt)||0,Number(s.damageReceived)||0,Number(s.defeated)||0];
+     const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}body.append(tr);
+   }
+   table.append(body);host.append(table);
+ }
+ $('udStatsOpen')?.addEventListener('click',async()=>{
+   statsPanel.hidden=false;statsStatus.textContent='';$('udStatsIdentity').textContent='';$('udStatsContent').replaceChildren();
+   $('udStatsNick').value=account?.nick||'';
+   $('udStatsNick').disabled=!account;$('udStatsSaveNick').disabled=!account;
+   if(!account){statsStatus.textContent='Iniciá sesión con Google para guardar estadísticas y asignar un ID único.';return;}
+   try{
+     const data=await json('/api/auth/stats');account=data.user;
+     $('udStatsIdentity').textContent='ID: '+account.id+' · Nick: '+account.nick;
+     $('udStatsNick').value=account.nick||'';fillStatsTable(data.stats);
+   }catch(e){statsStatus.textContent='No se pudieron cargar las estadísticas: '+e.message;}
+ });
+ $('udStatsClose')?.addEventListener('click',()=>{statsPanel.hidden=true;});
+ $('udStatsSaveNick')?.addEventListener('click',async()=>{
+   if(!account)return;
+   try{
+     const data=await json('/api/auth/nick',{method:'POST',body:JSON.stringify({nick:$('udStatsNick').value})});
+     account=data.user;accountBar();$('udStatsIdentity').textContent='ID: '+account.id+' · Nick: '+account.nick;
+     statsStatus.textContent='Nick actualizado.';
+   }catch(e){statsStatus.textContent='No se pudo guardar el nick: '+e.message;}
+ });
  async function init(){
    showGate();
    try{
