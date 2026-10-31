@@ -1,3 +1,4 @@
+import {authRoute} from "./auth.js";
 import { simulate, normalizeMoveTarget } from "./battle-engine.js";
 import {createPractice,advancePractice,publicPractice,PRACTICE_TTL} from "./practice-session.js";
 
@@ -62,7 +63,7 @@ async function allowCreation(request,env,kind){
   const response=await gate.fetch('https://room.internal/creation-gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind})});
   return response.ok;
 }
-export default{async fetch(request,env){const url=new URL(request.url);if(request.method==="OPTIONS")return new Response(null,{headers:cors});if(url.pathname==="/health"){try{const s=await loadPublishedContent(env);return json({ok:true,service:"Universal Duels",version:"0.4.0-alpha",revision:s.revision,source:"manual-public-patch"});}catch(e){return json({ok:false,service:"Universal Duels",version:"0.4.0-alpha",error:e.message},503);}}
+export default{async fetch(request,env){const url=new URL(request.url);if(request.method==="OPTIONS")return new Response(null,{headers:cors});const auth=await authRoute(request,env,url);if(auth)return auth;if(url.pathname==="/health"){try{const s=await loadPublishedContent(env);return json({ok:true,service:"Universal Duels",version:"0.4.0-alpha",revision:s.revision,source:"manual-public-patch"});}catch(e){return json({ok:false,service:"Universal Duels",version:"0.4.0-alpha",error:e.message},503);}}
   if(url.pathname==="/api/catalog"&&request.method==="GET"){try{return json(publicCatalog(await snapshot(env)));}catch(e){return json({error:e.message},503);}}
   const catMatch=url.pathname.match(/^\/api\/catalog\/([a-z0-9-]{1,80})$/i);if(catMatch&&request.method==="GET"){try{return fixedCatalogResponse(await snapshot(env,catMatch[1]));}catch(e){return json({error:e.message},404);}}
   const environmentMatch=url.pathname.match(/^\/api\/environment-visuals\/(scenarios|weathers)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);

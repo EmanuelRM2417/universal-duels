@@ -68,11 +68,17 @@ function battleLogName(a){return (a?._mirror?(a?.side==='left'?'@@L@@':a?.side==
 
 function effective(a,stat){ensureActorRuntime(a);return Math.max(1,Math.round((a.stats[stat]??100)*basicStageFactor(a.stages[stat],a.environmentStages[stat],a.statusStages?.[stat],a.passiveStages?.[stat])));}
 function meets(cond,user,target,state){
-  if(!cond||cond.type==='always')return true;const v=cond.value;const checked=cond.subject==='target'?target:user;if(!checked&&['hp_below','hp_above','hp_full','has_status','has_type','was_hit_by_type','stat_below'].includes(cond.type))return false;
+  if(!cond||cond.type==='always')return true;const v=cond.value;const checked=cond.subject==='target'?target:user;if(!checked&&['hp_below','hp_above','hp_full','has_status','has_type','was_hit_by_type','stat_below','streak_count'].includes(cond.type))return false;
   switch(cond.type){
     case'hp_below':return checked.hp/checked.maxHp*100<Number(v);case'hp_above':return checked.hp/checked.maxHp*100>Number(v);
     case'hp_full':return checked.hp===checked.maxHp;case'weather_is':return !!state.weather&&(!v||state.weather===v);case'field_is':return !!state.field&&(!v||state.field===v);case'scenario_is':return !!state.scenario&&(!v||state.scenario===v);case'has_status':return !!checked.status&&(!v||checked.status.id===v);case'enemy_defeated':return !!state.currentDefeatActor&&state.currentDefeatActor.side===user.side&&state.currentDefeatActor.teamIndex===user.teamIndex;
     case'has_type':return checked.types.includes(v);case'was_hit_by_type':return checked.lastHitType===v;case'stat_below':return effective(checked,'speed')<Number(v);
+    case'streak_count':{ // La condición cuenta la racha; el efecto se configura aparte.
+      const [mode='hit',min='1',max='']=String(v||'hit:1:').split(':');
+      if(!['hit','use','streakHits'].includes(mode))return false;
+      const count=Math.max(0,Number(checked.consecutiveCounters?.[mode]||0));
+      return count>=Math.max(0,Number(min)||0)&&(max===''||count<=Number(max));
+    }
     case'in_doubles':return state.mode==='doubles';default:return false;
   }
 }
@@ -146,7 +152,13 @@ function action(rule,user,contextTarget,state,depth){
   }
   if(['modify_move_power','modify_move_accuracy','modify_move_critical','final_damage'].includes(act.type)){
     const key={modify_move_power:'power',modify_move_accuracy:'accuracy',modify_move_critical:'critical',final_damage:'final'}[act.type];
-    if(state.attackModifiers&&Number.isFinite(Number(v)))state.attackModifiers[key].push({value:Number(v),mode:act.mode||'fixed',stacking:act.stacking||'additive',cap:act.cap??null});
+    if(state.attackModifiers&&Number.isFinite(Number(v))){
+      const streak=String(rule.condition?.type==='streak_count'?rule.condition.value:'hit:1:').split(':');
+      const counter=user.consecutiveCounters?.[streak[0]||'hit']||0;
+      const stacks=rule.condition?.type==='streak_count'?Math.max(0,counter-(Number(streak[1])||0)+1):0;
+      const value=Number(v)+(Number(act.perStack)||0)*stacks+(Number(act.perRound)||0)*Math.max(0,(state.round||1)-1);
+      state.attackModifiers[key].push({value,mode:act.mode||'fixed',stacking:act.stacking||'additive',cap:act.cap??null});
+    }
     return;
   }
   if(act.type==='survive'){
@@ -175,6 +187,19 @@ function action(rule,user,contextTarget,state,depth){
     if(act.type==='resurrect'){if(t.hp!==0)continue;const hp=act.fixedHp!==undefined?integer(act.fixedHp):Math.ceil(t.maxHp*percent(act.percent??v??25)/100);t.hp=Math.max(1,Math.min(t.maxHp,hp));state.log.push(`${battleLogName(t)} resucita con ${t.hp} PS.`);state.refreshPassives?.();}
     else if(act.type==='heal'){const before=t.hp,amount=Math.max(0,integer(t.maxHp*percent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0){state.log.push(`${battleLogName(t)} recupera ${actual} PS (${percent(v)} %).`);state.pushVisualUnit?.(t);state.refreshPassives?.();state.refreshStatus?.();}}
     else if(act.type==='damage'){const amount=percent(v)===0?0:Math.max(1,integer(t.maxHp*percent(v)/100));if(amount>0){inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${amount} de daño adicional (${percent(v)} %).`);state.pushVisualUnit?.(t);}}
+    else if(['damage_from_received_damage','heal_from_received_damage'].includes(act.type)){
+      const ld=state.lastDamage;
+      const received=ld?.defenderTeamIndex===user.teamIndex&&ld?.defenderSide===user.side?Math.max(0,Number(ld.amount)||0):0;
+      const amount=Math.max(0,integer(received*drainPercent(v)/100));
+      if(amount>0){
+        if(act.type==='heal_from_received_damage'){
+          const old=t.hp;t.hp=Math.min(t.maxHp,t.hp+amount);
+          if(t.hp>old){state.log.push(`${battleLogName(t)} recupera ${t.hp-old} PS por daño recibido.`);state.refreshPassives?.();state.refreshStatus?.();state.pushVisualUnit?.(t);}
+        }else{
+          const actual=inflictDamage(t,amount,state,'effect');if(actual>0){state.log.push(`${battleLogName(t)} recibe ${actual} PS adicionales por daño recibido.`);state.pushVisualUnit?.(t);}
+        }
+      }
+    }
     else if(act.type==='damage_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0;const amount=Math.max(0,integer(dealt*drainPercent(v)/100));if(amount>0){const actual=inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${actual} PS de daño por el daño infligido (${drainPercent(v)} %).`);state.pushVisualUnit?.(t);}}
     else if(act.type==='heal_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0,before=t.hp,amount=Math.max(0,integer(dealt*drainPercent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0){state.log.push(`${battleLogName(t)} recupera ${actual} PS (${drainPercent(v)} % del daño infligido).`);state.pushVisualUnit?.(t);}}
     else if(act.type==='stat_change'&&['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'].includes(act.stat)){const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(statChangeText(t,act.stat,delta));state.pushVisualUnit?.(t);}}
