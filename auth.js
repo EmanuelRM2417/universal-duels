@@ -24,7 +24,73 @@ export async function verifyGoogleCredential(jwt,clientId,keys=undefined){
  if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,base64url(bits[2]),new TextEncoder().encode(bits.slice(0,2).join('.'))))throw Error('Firma de Google inválida.');
  return {sub:String(body.sub),name:String(body.name||'Jugador').slice(0,80)};
 }
-const profile=u=>({id:u.id,name:u.name,tutorialComplete:!!u.tutorialComplete});
+const profile=u=>({id:u.publicId||null,nick:u.nick||u.name,name:u.name,tutorialComplete:!!u.tutorialComplete});
+const accountCategories=['total','casual','salas','singles','doubles','casualSingles','casualDoubles','salasSingles','salasDoubles'];
+const blankStats=()=>Object.fromEntries(accountCategories.map(k=>[k,{played:0,wins:0,losses:0,draws:0,damageDealt:0,damageReceived:0,defeated:0}]));
+function uniquePublicId(){
+ const chars='abcdefghijklmnopqrstuvwxyz',digits='0123456789',pick=pool=>pool[crypto.getRandomValues(new Uint32Array(1))[0]%pool.length];
+ const result=[...Array.from({length:4},()=>pick(chars)),...Array.from({length:4},()=>pick(digits))];
+ for(let i=result.length-1;i>0;i--){const j=crypto.getRandomValues(new Uint32Array(1))[0]%(i+1);[result[i],result[j]]=[result[j],result[i]];}
+ return result.join('');
+}
+async function allocatePublicId(env,owner){
+ for(let attempt=0;attempt<25;attempt++){
+  const id=uniquePublicId(),key='auth-v1:public-id:'+id;
+  if(await store(env).get(key))continue;
+  await store(env).put(key,owner);
+  return id;
+ }
+ throw Error('No fue posible asignar un ID libre.');
+}
+export async function authenticatedAccount(req,env){return (await current(req,env))?.account||null;}
+// Production statistics are serialized by an account-scoped instance of the
+// already configured ROOMS Durable Object. Legacy KV aggregates remain a
+// read-only migration baseline until the first account event is committed.
+export async function accountStats(env,sub){
+ const legacy=await store(env).get('auth-v1:stats:'+sub,'json')||blankStats();
+ if(!env.ROOMS)return legacy; // Minimal local tests without DO bindings.
+ const stub=env.ROOMS.get(env.ROOMS.idFromName('account-stats:'+sub));
+ const response=await stub.fetch('https://room.internal/account-stats/read');
+ if(!response.ok)throw Error('No se pudieron consultar las estadísticas.');
+ const value=await response.json();return value.stats||legacy;
+}
+export function addMatchStats(stats,entry){
+ const kind=entry.kind==='casual'?'casual':'salas',mode=entry.mode==='doubles'?'doubles':'singles';
+ const outcome=['win','loss','draw'].includes(entry.outcome)?entry.outcome:'draw';
+ const count=x=>Math.max(0,Math.min(1_000_000_000,Math.floor(Number(x)||0)));
+ const updated=structuredClone(stats||blankStats());
+ for(const group of ['total',kind,mode,kind+(mode==='doubles'?'Doubles':'Singles')]){
+  const value=updated[group]||(updated[group]=blankStats()[group]);
+  value.played++;if(outcome==='win')value.wins++;else if(outcome==='loss')value.losses++;else value.draws++;
+  value.damageDealt+=count(entry.damageDealt);value.damageReceived+=count(entry.damageReceived);
+  value.defeated+=count(entry.defeated);
+ }
+ return updated;
+}
+export async function recordAccountMatch(env,sub,matchKey,entry={}){
+ if(!sub||!store(env)||!/^[-a-z0-9:_]{1,120}$/i.test(matchKey))return false;
+ if(!await store(env).get('auth-v1:account:'+sub))return false;
+ if(env.ROOMS){
+  // Already-counted Alpha KV events remain idempotent during migration.
+  if(await store(env).get('auth-v1:match:'+sub+':'+matchKey))return false;
+  const stub=env.ROOMS.get(env.ROOMS.idFromName('account-stats:'+sub));
+  const legacy=await store(env).get('auth-v1:stats:'+sub,'json')||blankStats();
+  const response=await stub.fetch('https://room.internal/account-stats/record',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({matchKey,entry,legacy})
+  });
+  if(!response.ok)throw Error('No fue posible registrar el resultado de la partida.');
+  const data=await response.json();return !!data.recorded;
+ }
+ // Development-only fallback. Production requires the existing ROOMS binding
+ // for atomic, durable and idempotent per-account statistics.
+ const eventKey='auth-v1:match:'+sub+':'+matchKey;
+ if(await store(env).get(eventKey))return false;
+ const key='auth-v1:stats:'+sub,old=await store(env).get(key,'json')||blankStats();
+ await store(env).put(key,JSON.stringify(addMatchStats(old,entry)));
+ await store(env).put(eventKey,'1');return true;
+}
+
 const sessionCookie=(value,maxAge)=>`ud_session=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 const sameOrigin=(req,url)=>req.headers.get('Origin')===url.origin;
 const store=env=>env.PUBLIC_CONTENT;
@@ -32,6 +98,11 @@ async function current(req,env){const sid=readCookie(req);if(!/^[A-Za-z0-9_-]{32
 export async function authRoute(req,env,url){
  if(!url.pathname.startsWith('/api/auth/'))return null;
  if(req.method==='GET'&&url.pathname==='/api/auth/config')return j({ok:true,googleClientId:env.GOOGLE_CLIENT_ID||'',configured:!!env.GOOGLE_CLIENT_ID});
+ if(req.method==='GET'&&url.pathname==='/api/auth/stats'){
+  const data=await current(req,env);if(!data)return j({error:'Iniciá sesión con Google para consultar estadísticas.'},401);
+  const stats=await accountStats(env,data.account.id);
+  return j({ok:true,user:profile(data.account),stats});
+ }
  if(req.method==='GET'&&url.pathname==='/api/auth/me'){
   const data=await current(req,env);return j({ok:true,user:data?profile(data.account):null});
  }
@@ -42,10 +113,18 @@ export async function authRoute(req,env,url){
   let data;try{data=await req.json();}catch{return j({error:'JSON inválido.'},400);}
   let verified;try{verified=await verifyGoogleCredential(data?.credential,env.GOOGLE_CLIENT_ID);}catch(e){return j({error:e.message},401);}
   const key='auth-v1:account:'+verified.sub,prior=await store(env).get(key,'json');
-  const account={id:verified.sub,name:verified.name,createdAt:prior?.createdAt||new Date().toISOString(),tutorialComplete:!!prior?.tutorialComplete};
+  const account={id:verified.sub,publicId:prior?.publicId||await allocatePublicId(env,verified.sub),nick:prior?.nick||verified.name,
+    name:verified.name,createdAt:prior?.createdAt||new Date().toISOString(),tutorialComplete:!!prior?.tutorialComplete};
   await store(env).put(key,JSON.stringify(account));
   const sid=token();await store(env).put('auth-v1:session:'+sid,JSON.stringify({id:account.id}),{expirationTtl:60*60*24*30});
   return j({ok:true,user:profile(account)},200,{'Set-Cookie':sessionCookie(sid,60*60*24*30)});
+ }
+ if(url.pathname==='/api/auth/nick'){
+  const user=await current(req,env);if(!user)return j({error:'No hay sesión Google.'},401);
+  let payload;try{payload=await req.json();}catch{return j({error:'JSON inválido.'},400);}
+  const nick=String(payload?.nick||'').trim();
+  if(!/^[\p{L}\p{N} _-]{3,20}$/u.test(nick))return j({error:'El nick debe tener entre 3 y 20 caracteres; solo letras, números, espacios, guiones o guiones bajos.'},400);
+  const updated={...user.account,nick};await store(env).put('auth-v1:account:'+updated.id,JSON.stringify(updated));return j({ok:true,user:profile(updated)});
  }
  if(url.pathname==='/api/auth/logout'){
   const sid=readCookie(req);if(/^[A-Za-z0-9_-]{32}$/.test(sid)&&store(env))await store(env).delete('auth-v1:session:'+sid);

@@ -1,4 +1,4 @@
-import {authRoute} from "./auth.js";
+import {authRoute, authenticatedAccount,recordAccountMatch,addMatchStats} from "./auth.js";
 import { simulate, normalizeMoveTarget } from "./battle-engine.js";
 import {createPractice,advancePractice,publicPractice,PRACTICE_TTL} from "./practice-session.js";
 
@@ -50,7 +50,7 @@ async function readLimitedJson(request,maxBytes,{allowEmpty=false}={}){
 function cleanName(v){const n=String(v||"Jugador").trim().replace(/[<>\u0000-\u001f]/g,"").slice(0,20);return n||"Jugador";}
 function makeCode(){const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",bytes=new Uint8Array(6);crypto.getRandomValues(bytes);return[...bytes].map(x=>chars[x%chars.length]).join("");}
 function randomTeam(catalog){const ids=Object.keys(catalog.entities||{});if(ids.length<8)throw Error("Se necesitan al menos 8 personajes publicados para Random Team.");for(let i=ids.length-1;i>0;i--){const b=new Uint32Array(1);crypto.getRandomValues(b);const j=b[0]%(i+1);[ids[i],ids[j]]=[ids[j],ids[i]];}return ids.slice(0,8);}
-function compactResult(r){return{mode:r.mode,rounds:r.rounds,winner:r.winner,left:r.left,right:r.right,leftActive:r.leftActive,rightActive:r.rightActive,leftActiveIndexes:r.leftActiveIndexes,rightActiveIndexes:r.rightActiveIndexes,leftTeam:r.leftTeam,rightTeam:r.rightTeam,needsReplacement:r.needsReplacement,forcedSwitches:r.forcedSwitches,weather:r.weather,field:r.field,scenario:r.scenario,weatherTurns:r.weatherTurns,fieldTurns:r.fieldTurns,scenarioTurns:r.scenarioTurns};}
+function compactResult(r){return{mode:r.mode,rounds:r.rounds,winner:r.winner,left:r.left,right:r.right,leftActive:r.leftActive,rightActive:r.rightActive,leftActiveIndexes:r.leftActiveIndexes,rightActiveIndexes:r.rightActiveIndexes,leftTeam:r.leftTeam,rightTeam:r.rightTeam,needsReplacement:r.needsReplacement,forcedSwitches:r.forcedSwitches,matchStats:r.matchStats,weather:r.weather,field:r.field,scenario:r.scenario,weatherTurns:r.weatherTurns,fieldTurns:r.fieldTurns,scenarioTurns:r.scenarioTurns};}
 
 async function allowCreation(request,env,kind){
   // Enforce an abuse ceiling, not a gameplay limit. Normal players only have one
@@ -113,7 +113,7 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
       const token=typeof input.token==='string'&&/^[0-9a-f-]{64,80}$/i.test(input.token)
         ?input.token:crypto.randomUUID()+crypto.randomUUID();
       const stub=env.ROOMS.get(env.ROOMS.idFromName('practice:'+token));
-      const response=await stub.fetch('https://room.internal/practice/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,revision:snap.revision})});
+      const response=await stub.fetch('https://room.internal/practice/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,revision:snap.revision,accountId:(await authenticatedAccount(request,env))?.id||null})});
       const data=await response.json();
       return json({...data,...(response.ok?{token}:{})},response.status);
     }catch(e){return json({error:String(e.message||e)},e.status||400);}
@@ -147,6 +147,26 @@ export class Room{
   }
   fetch(request){return this.withRoomLock(()=>this._fetch(request));}
   async _fetch(request){const url=new URL(request.url);
+    // A single Durable Object is responsible for one account's counters.
+    // A storage transaction writes the match marker and cumulative totals
+    // together, so concurrent matches and retry after failure are safe.
+    if(url.pathname==='/account-stats/read'&&request.method==='GET'){
+      return json({ok:true,stats:await this.storage.get('account-stats-v1')||null});
+    }
+    if(url.pathname==='/account-stats/record'&&request.method==='POST'){
+      const data=await readLimitedJson(request,4096);
+      if(!/^[-a-z0-9:_]{1,120}$/i.test(data.matchKey||'')||!data.entry||typeof data.entry!=='object')return json({error:'Resultado inválido.'},400);
+      const recorded=await this.storage.transaction(async tx=>{
+        const marker='account-match-v1:'+data.matchKey;
+        if(await tx.get(marker))return false;
+        const old=await tx.get('account-stats-v1')||data.legacy;
+        const updated=addMatchStats(old,data.entry);
+        await tx.put('account-stats-v1',updated);
+        await tx.put(marker,true);
+        return true;
+      });
+      return json({ok:true,recorded});
+    }
     if(url.pathname==='/creation-gate'&&request.method==='POST'){
       const {kind}=await request.json(),now=Date.now(),key='creation-gate-v1';
       if(!['practice','room'].includes(kind))return json({error:'Solicitud inválida.'},400);
@@ -167,6 +187,7 @@ export class Room{
             return json({ok:true,practice:publicPractice(existing),resumed:true});
           const body=await readLimitedJson(request,4096),snap=await this.getSnapshot(body.revision);
           const practice=createPractice({catalog:snap.catalog,chart:snap.chart,revision:snap.revision,mode:body.mode,difficulty:body.difficulty,leftTeam:body.leftTeam,rightTeam:body.rightTeam});
+          practice.accountId=body.accountId||null;practice.matchKey=crypto.randomUUID();
           await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
           return json({ok:true,practice:publicPractice(practice)});
         }
@@ -178,25 +199,32 @@ export class Room{
         if(request.method!=='POST')return json({error:'Método inválido.'},405);
         const input=await readLimitedJson(request,8192),snap=await this.getSnapshot(practice.revision);
         const state=advancePractice(practice,input.operation,input,{catalog:snap.catalog,chart:snap.chart});
+        if(practice.status==='finished'&&practice.accountId&&!practice.statsCommitted){
+          const r=practice.lastState?.matchStats?.[0]||{};
+          await recordAccountMatch(this.env,practice.accountId,'practice:'+practice.matchKey,{kind:'casual',mode:practice.mode,outcome:practice.outcome==='victory'?'win':practice.outcome==='draw'?'draw':'loss',damageDealt:r.damageDealt,damageReceived:r.damageReceived,defeated:r.defeated});
+          practice.statsCommitted=true;
+        }
         await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
         return json({ok:true,practice:state});
       }catch(e){return json({error:String(e.message||e)},e.status||400);}
     }
 if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json(),cur=await this.storage.get("room");if(!cur){await this.storage.put("room",{code:b.code,createdAt:b.createdAt,battleMode:b.battleMode==="doubles"?"doubles":"singles",teamMode:b.teamMode==="random"?"random":"picked",players:[],battle:null});await this.storage.setAlarm(Number(b.createdAt||Date.now())+6*60*60*1000);}return new Response("ok");}if(url.pathname!=="/connect")return new Response("Not found",{status:404});if(request.headers.get("Upgrade")!=="websocket")return new Response("Se requiere WebSocket",{status:426});const room=await this.getRoom();if(!room.code)return new Response(JSON.stringify({error:"La sala no existe o expiró."}),{status:404,headers:{"Content-Type":"application/json"}});const sockets=this.state.getWebSockets();
+    const connectedAccount=await authenticatedAccount(request,this.env);
     const credential=url.searchParams.get("session")||"";
     const existing=(room.players||[]).find(p=>p.session&&p.session===credential);
     // Never infer identity from an available socket: a disconnect must not free a player's seat.
     if(credential&&!existing)return json({error:"Credencial de sesión inválida."},403);
     const role=existing?.role||(!room.players.some(p=>p.role==="host")?"host":(!room.players.some(p=>p.role==="guest")?"guest":null));
     if(!role)return json({error:"La sala ya tiene dos participantes. Necesitás tu sesión para volver."},409);
-    const name=existing?.name||cleanName(url.searchParams.get("name"));
+    const name=existing?.name||cleanName(connectedAccount?.nick||url.searchParams.get("name"));
     const session=existing?.session||crypto.randomUUID()+"-"+crypto.randomUUID();
     const connectionId=crypto.randomUUID();
+    if(existing?.accountId&&connectedAccount?.id!==existing.accountId)return json({error:'Esta plaza pertenece a otra cuenta.'},403);
     const pair=new WebSocketPair(),client=pair[0],server=pair[1];
     this.state.acceptWebSocket(server);
     server.serializeAttachment({role,name,connectionId});
     let player=existing;
-    if(!player){player={role,name,session,ready:false,team:[],runtimeTeam:[],connected:true};room.players.push(player);}
+    if(!player){player={role,name,session,accountId:connectedAccount?.id||null,ready:false,team:[],runtimeTeam:[],connected:true};room.players.push(player);}
     player.connectionId=connectionId;
     player.connected=true;
     await this.storage.put("room",room);
@@ -253,12 +281,12 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     }
     else if(data.type==="order"){await this.handleOrder(socket,room,role,data.order);return;}
     else if(data.type==="replacement"){await this.handleReplacement(socket,room,role,data.choices);return;}
-    else if(data.type==="surrender"){if(room.battle?.status!=="playing")return;room.battle.status="finished";room.battle.winner=role==="host"?"guest":"host";room.battle.finishReason="surrender";await this.storage.put("room",room);this.broadcastBattle(room,"battle_result",{reason:"surrender"});return;}
+    else if(data.type==="surrender"){if(room.battle?.status!=="playing")return;room.battle.status="finished";room.battle.winner=role==="host"?"guest":"host";room.battle.finishReason="surrender";await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result",{reason:"surrender"});return;}
     else if(data.type==="return_lobby"){if(room.battle?.status!=="finished")return;await this.resetAfterBattle(room);return;}
     else{this.send(socket,{type:"error",message:"Mensaje no reconocido por el servidor."});return;}
     await this.storage.put("room",room);this.broadcastRoom(room);await this.maybeStartBattle(room);
   }
-  async maybeStartBattle(room){if(room.battle?.status==="playing")return;const host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");if(!host||!guest||!host.ready||!guest.ready)return;let s;try{s=await this.getSnapshot();}catch(e){this.broadcast({type:"error",message:e.message});return;}try{if(room.teamMode==="random"){host.runtimeTeam=randomTeam(s.catalog);guest.runtimeTeam=randomTeam(s.catalog);}else{if(host.team.length!==8||guest.team.length!==8)return;host.runtimeTeam=[...host.team];guest.runtimeTeam=[...guest.team];}await freezeSnapshot(this.env,s);const result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:0,mode:room.battleMode,randomTape:[],includeCheckpoint:true});room.battle={status:"playing",phase:"action",mode:room.battleMode,teamMode:room.teamMode,revision:s.revision,round:1,leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],pending:{host:null,guest:null},selection:{host:null,guest:null},replacementPending:{host:null,guest:null},selectionDeadline:Date.now()+actionLimit(room.battleMode),replacementDeadline:null,randomTape:[],checkpoint:result.checkpoint,logLength:result.log.length,lastState:compactResult(result),recentLog:result.log.slice(-120),winner:null,finishReason:null};await this.storage.put("room",room);await this.storage.setAlarm(room.battle.selectionDeadline);this.broadcastBattle(room,"battle_start",{logs:result.log,visualEvents:result.visualEvents});}catch(e){this.broadcast({type:"error",message:"No se pudo iniciar: "+String(e.message||e)});}}
+  async maybeStartBattle(room){if(room.battle?.status==="playing")return;const host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");if(!host||!guest||!host.ready||!guest.ready)return;let s;try{s=await this.getSnapshot();}catch(e){this.broadcast({type:"error",message:e.message});return;}try{if(room.teamMode==="random"){host.runtimeTeam=randomTeam(s.catalog);guest.runtimeTeam=randomTeam(s.catalog);}else{if(host.team.length!==8||guest.team.length!==8)return;host.runtimeTeam=[...host.team];guest.runtimeTeam=[...guest.team];}await freezeSnapshot(this.env,s);const result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:0,mode:room.battleMode,randomTape:[],includeCheckpoint:true});room.battle={matchKey:crypto.randomUUID(),statsCommitted:false,status:"playing",phase:"action",mode:room.battleMode,teamMode:room.teamMode,revision:s.revision,round:1,leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],pending:{host:null,guest:null},selection:{host:null,guest:null},replacementPending:{host:null,guest:null},selectionDeadline:Date.now()+actionLimit(room.battleMode),replacementDeadline:null,randomTape:[],checkpoint:result.checkpoint,logLength:result.log.length,lastState:compactResult(result),recentLog:result.log.slice(-120),winner:null,finishReason:null};await this.storage.put("room",room);await this.storage.setAlarm(room.battle.selectionDeadline);this.broadcastBattle(room,"battle_start",{logs:result.log,visualEvents:result.visualEvents});}catch(e){this.broadcast({type:"error",message:"No se pudo iniciar: "+String(e.message||e)});}}
   sideForRole(role){return role==="host"?"left":"right";}
   async normalizeOrder(room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action")throw Error("La batalla no está esperando acciones.");if(!order||typeof order!=="object"||!Array.isArray(order.actions))throw Error("Acciones inválidas.");const side=this.sideForRole(role),active=side==="left"?b.lastState.leftActive:b.lastState.rightActive,team=side==="left"?b.lastState.leftTeam:b.lastState.rightTeam,needed=b.mode==="doubles"?2:1,s=await this.getSnapshot(b.revision),out=[],destinations=new Set();for(let slot=0;slot<needed;slot++){const unit=active.find(u=>Number(u.activeSlot)===slot);if(!unit||unit.hp<=0)continue;const raw=order.actions.find(a=>Number(a.slot)===slot);if(!raw)throw Error(`Falta la acción del personaje ${slot+1}.`);if(raw.switch!==undefined){const i=Number(raw.switch);if(!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i)||destinations.has(i))throw Error("Cambio inválido.");destinations.add(i);out.push({slot,switch:i});continue;}if(typeof raw.move!=="string"||!ID.test(raw.move))throw Error("Movimiento inválido.");const ent=s.catalog.entities[unit.id],allowed=[...(ent?.definition?.moveIds||[]),ent?.definition?.uniqueMoveId].filter(Boolean);if(!allowed.includes(raw.move))throw Error("Ese movimiento no pertenece al personaje activo.");if((unit.cooldowns?.[raw.move]||0)>0)throw Error("Ese movimiento todavía está en cooldown.");const m=s.catalog.moves[raw.move],targeting=normalizeMoveTarget(m?.definition||{}),act={slot,move:raw.move};if(b.mode==="doubles"&&targeting==="single"){const t=raw.target;if(!t||!["left","right"].includes(t.side)||![0,1].includes(Number(t.slot)))throw Error("Elegí un objetivo válido.");const targetActive=t.side==="left"?b.lastState.leftActive:b.lastState.rightActive,target=targetActive.find(x=>Number(x.activeSlot)===Number(t.slot));if(!target||target.hp<=0||(t.side===side&&Number(t.slot)===slot))throw Error("Ese personaje no puede ser objetivo.");act.target={side:t.side,slot:Number(t.slot)};}if(raw.switchChoice){const c=raw.switchChoice,i=Number(c.teamIndex);if(c.side!==side||Number(c.slot)!==slot||!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i))throw Error("Relevo del efecto inválido.");act.switchChoice={side,slot,teamIndex:i};}out.push(act);}return{actions:out};}
   async handleOrder(socket,room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action"){this.send(socket,{type:"error",message:"La batalla no está esperando acciones."});return;}if(b.selectionDeadline&&Date.now()>=b.selectionDeadline){await this.finishOnTimeout(room,role);return;}if(b.pending[role]){this.send(socket,{type:"order_accepted",round:b.round});return;}const selected=b.selection[role];if(!selected){this.send(socket,{type:"error",message:"Primero seleccioná tus acciones."});return;}if(JSON.stringify(selected)!==JSON.stringify(order)){this.send(socket,{type:"error",message:"La selección cambió. Elegí las acciones nuevamente."});return;}b.pending[role]=selected;await this.storage.put("room",room);this.send(socket,{type:"order_accepted",round:b.round});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}
@@ -275,7 +303,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     try{const s=await this.getSnapshot(b.revision),leftOrders=[...b.leftOrders,b.pending.host],rightOrders=[...b.rightOrders,b.pending.guest],result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders,rightOrders,leftReplacements:b.leftReplacements,rightReplacements:b.rightReplacements,randomTape:b.checkpoint?[]:b.randomTape,
   resume:b.checkpoint||null,includeCheckpoint:true}),start=b.logLength||0,
   newLogs=b.checkpoint?result.log:result.log.slice(start),
-  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftOrders=leftOrders;b.rightOrders=rightOrders;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.pending={host:null,guest:null};b.selection={host:null,guest:null};b.selectionDeadline=null;b.resolveRetries=0;b.lastResolveError=null;const outcome=completedOutcome(result);if(outcome.finished){b.status="finished";b.phase="finished";b.winner=outcome.winner;b.finishReason=outcome.reason;}else if(["left","right"].some(side=>(result.needsReplacement[side]?.length||0)>0&&result[side+"Team"].some((unit,i)=>unit.hp>0&&!result[side+"ActiveIndexes"].includes(i)))){b.phase="replacement";b.replacementPending={host:null,guest:null};b.replacementDeadline=Date.now()+replacementLimit(b.mode, Math.max(b.lastState?.needsReplacement?.left?.length||0,b.lastState?.needsReplacement?.right?.length||0));}else{b.round++;b.phase="action";b.selectionDeadline=Date.now()+actionLimit(b.mode);}await this.storage.put("room",room);await this.storage.setAlarm(b.replacementDeadline||b.selectionDeadline||Number(room.createdAt||Date.now())+6*60*60*1000);this.broadcastBattle(room,outcome.finished?"battle_result":"battle_round",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){
+  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftOrders=leftOrders;b.rightOrders=rightOrders;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.pending={host:null,guest:null};b.selection={host:null,guest:null};b.selectionDeadline=null;b.resolveRetries=0;b.lastResolveError=null;const outcome=completedOutcome(result);if(outcome.finished){b.status="finished";b.phase="finished";b.winner=outcome.winner;b.finishReason=outcome.reason;}else if(["left","right"].some(side=>(result.needsReplacement[side]?.length||0)>0&&result[side+"Team"].some((unit,i)=>unit.hp>0&&!result[side+"ActiveIndexes"].includes(i)))){b.phase="replacement";b.replacementPending={host:null,guest:null};b.replacementDeadline=Date.now()+replacementLimit(b.mode, Math.max(b.lastState?.needsReplacement?.left?.length||0,b.lastState?.needsReplacement?.right?.length||0));}else{b.round++;b.phase="action";b.selectionDeadline=Date.now()+actionLimit(b.mode);}await this.storage.put("room",room);await this.storage.setAlarm(b.replacementDeadline||b.selectionDeadline||Number(room.createdAt||Date.now())+6*60*60*1000);if(outcome.finished)await this.finalizeAccountStats(room);this.broadcastBattle(room,outcome.finished?"battle_result":"battle_round",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){
       b.phase="resolving";b.selectionDeadline=null;b.resolveRetries=Number(b.resolveRetries||0)+1;
       b.lastResolveError=String(e?.message||e).slice(0,300);
       console.error("[Universal Duels] Error temporal resolviendo turno",{room:room.code,round:b.round,attempt:b.resolveRetries,error:b.lastResolveError});
@@ -308,9 +336,20 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     while(required.length&&available.length){const slot=required.splice(pick(required.length),1)[0],teamIndex=available.splice(pick(available.length),1)[0];choices.push({slot,teamIndex});}
     return choices;
   }
+  async finalizeAccountStats(room){
+    const b=room.battle;if(!b||b.status!=='finished'||b.statsCommitted)return;
+    for(const player of room.players||[]){
+      if(!player.accountId)continue;
+      const side=player.role==='host'?0:1,metrics=b.lastState?.matchStats?.[side]||{};
+      await recordAccountMatch(this.env,player.accountId,'room:'+(b.matchKey||room.code+':'+room.createdAt),{
+        kind:'salas',mode:b.mode,outcome:!b.winner?'draw':b.winner===player.role?'win':'loss',
+        damageDealt:metrics.damageDealt,damageReceived:metrics.damageReceived,defeated:metrics.defeated});
+    }
+    b.statsCommitted=true;await this.storage.put('room',room);
+  }
   async finishOnTimeout(room,loser){
     const b=room.battle;b.status="finished";b.phase="finished";b.winner=loser==="host"?"guest":"host";b.finishReason="timeout";b.selectionDeadline=null;b.replacementDeadline=null;
-    await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");
+    await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");
   }
   async handleReplacement(socket,room,role,choices){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="replacement"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo reemplazos."});return;}if(b.replacementDeadline&&Date.now()>=b.replacementDeadline){this.send(socket,{type:"error",message:"Terminó el tiempo de sustitución."});return;}let normalized;try{normalized=this.normalizeReplacement(room,role,choices);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});return;}b.replacementPending[role]=normalized;await this.storage.put("room",room);const hostNeeds=(b.lastState.needsReplacement.left||[]).length>0,guestNeeds=(b.lastState.needsReplacement.right||[]).length>0;if((!hostNeeds||b.replacementPending.host)&&(!guestNeeds||b.replacementPending.guest))await this.applyReplacements(room);else this.broadcastBattle(room,"battle_replacement_waiting");}
   async applyReplacements(room){const b=room.battle,host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest"),left=[...b.leftReplacements],right=[...b.rightReplacements];left[b.round-1]={choices:b.replacementPending.host||[]};right[b.round-1]={choices:b.replacementPending.guest||[]};try{const s=await this.getSnapshot(b.revision),result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders:b.leftOrders,rightOrders:b.rightOrders,leftReplacements:left,rightReplacements:right,randomTape:b.checkpoint?[]:b.randomTape,
@@ -341,7 +380,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
         // for players who did not make a valid selection.
         for(const role of ['host','guest'])if(!b.pending?.[role]&&b.selection?.[role])b.pending[role]=b.selection[role];
         const missing=["host","guest"].filter(role=>!b.pending?.[role]);
-        if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);this.broadcastBattle(room,"battle_result");}
+        if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");}
         else if(missing.length===1)await this.finishOnTimeout(room,missing[0]);
         else await this.resolveRound(room);
         return;

@@ -44,7 +44,7 @@ try{
  r=await authRoute(makeLoginReq(),env,new URL(origin+'/api/auth/google'));
  assert.equal(r.status,200);
  const login=await r.json();assert.equal(login.user.tutorialComplete,false);
- assert.equal(db.size,2,'Account and session stored separately');
+ assert.equal(db.size,3,'Account, public ID and session stored separately');assert.match(login.user.id,/^(?=(?:.*[a-z]){4})(?=(?:.*[0-9]){4})[a-z0-9]{8}$/);
  const cookie=r.headers.get('Set-Cookie');assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);assert.match(cookie,/SameSite=Lax/);
  const session=cookie.split(';')[0];
  let meReq=new Request(origin+'/api/auth/me',{headers:{Cookie:session}});
@@ -53,7 +53,7 @@ try{
  r=await authRoute(completeReq,env,new URL(completeReq.url));assert.equal((await r.json()).user.tutorialComplete,true);
  // Login again; the completed tutorial flag must persist across sessions.
  r=await authRoute(makeLoginReq(),env,new URL(origin+'/api/auth/google'));assert.equal((await r.json()).user.tutorialComplete,true);
- assert.equal(db.size,3);
+ assert.equal(db.size,4);
  const logoutReq=new Request(origin+'/api/auth/logout',{method:'POST',headers:{Origin:origin,Cookie:session}});
  r=await authRoute(logoutReq,env,new URL(logoutReq.url));assert.equal(r.status,200);
  meReq=new Request(origin+'/api/auth/me',{headers:{Cookie:session}});

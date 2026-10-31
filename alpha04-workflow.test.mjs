@@ -11,5 +11,5 @@ test('Se conserva el workflow original: push a main o ejecucion manual, npm inst
   assert.match(workflow, /- run: npm install/);
   assert.match(workflow, /- run: npx wrangler deploy/);
   assert.doesNotMatch(workflow, /CONFIGURE_ISOLATED|PUBLICAR_ALPHA04|wrangler\.test\.toml/);
-  assert.equal(fs.existsSync(new URL('./wrangler.test.toml', import.meta.url)), false);
+  assert.equal(fs.existsSync(new URL('./wrangler.test.toml', import.meta.url)), true,'Test configuration is present but is not selected by the production workflow');
 });

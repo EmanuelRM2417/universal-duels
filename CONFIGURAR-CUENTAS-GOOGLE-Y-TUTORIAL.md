@@ -42,3 +42,20 @@ Documentación: https://developers.cloudflare.com/workers/configuration/environm
 - Conservar los workflows y bindings actuales; **no se ha realizado ningún despliegue**.
 - Publicar primero los cambios del Editor, configurar los mensajes/rachas, publicar el catálogo manualmente y luego actualizar Main para compatibilidad de condiciones/acciones.
 - Antes de producción, probar específicamente: racha con mínimo y máximo; incremento negativo y positivo; daño recibido si hay golpe y si falla; narrador y Battle log con plantilla; tutorial de invitado y Google; sesión expirada; entrenamientos Singles y Doubles; reconexión de sala.
+
+## 6. Estadísticas de cuenta incorporadas en este parche
+
+- Cada cuenta Google recibe un **ID público** persistente de ocho caracteres (`4 letras minúsculas + 4 números`, entremezclados). El nick se guarda en el perfil asociado a ese ID.
+- Nuevo botón **Estadísticas** en Main. Se muestran totales y desgloses por **casuales (Entrenamiento)**, **salas**, **Singles**, **Doubles** y cruces; cada categoría muestra jugadas, ganadas, perdidas, winrate, daño infligido y recibido y personajes derrotados. Rendición equivale a derrota.
+- Las estadísticas se generan en el servidor al terminar combates; no se acepta una petición del cliente para alterar contadores. Cada resultado lleva una clave de deduplicación para evitar incrementos repetidos al reintentarlo.
+- Los invitados pueden jugar pero no guardan estas estadísticas. Las cuentas anteriores al parche reciben ID al volver a iniciar sesión Google.
+- **Precaución de escala:** esta Alpha usa KV para persistir cuentas y contadores. KV no garantiza transacciones entre escrituras simultáneas ni lectura inmediata global; antes de un gran lanzamiento trasladar estas estadísticas a D1/almacenamiento transaccional o un Durable Object por cuenta. No se añadieron nuevos bindings.
+- Si aparece “Google pendiente de configurar” aunque pusiste la variable, comprobar `https://universalduels.com/api/auth/config`. `configured:false` significa que la instancia de Worker que responde al dominio público **no está recibiendo** `GOOGLE_CLIENT_ID`. Verificar nombre exacto, entorno Production y ruta de dominio; aplicar el despliegue. `configured:true` con botón ausente requiere revisar origen autorizado en Google Cloud y bloqueo del script `accounts.google.com/gsi/client`.
+
+## 7. Migración de Carga, Sobrevivir e inmunidad
+
+- El Editor ya no muestra bloques independientes **Configurar Carga** / **Configurar Sobrevivir**. Al abrir una habilidad antigua, sus parámetros se convierten en reglas generales editables; la migración se guarda al guardar esa habilidad. No duplica reglas al volver a abrirla.
+- **Carga**: condición **Racha**, con contador y mínimo/máximo, efecto elegido aparte y modo **Normal** o **Por turno**. Las mejoras pasivas se recalculan y desaparecen al perder la condición. Los efectos instantáneos (daño o curación ya realizados) no pueden revertirse físicamente; no deben utilizarse para acumular una bonificación persistente.
+- **Sobrevivir**: siempre deja **exactamente 1 PS** con actualización visual en ese instante. El Editor conserva probabilidad, límite, reinicio por entrada/batalla, prioridad y fuentes de daño desde las configuraciones antiguas, ahora dentro de la regla.
+- **Inmunidad a efectos**: nueva acción `effect_immunity` que impide aplicar efectos nuevos mientras permanece activa, a diferencia de `remove_effect` que elimina efectos ya presentes. No sustituye inmunidad a daño ni elimina estados existentes.
+- Para contenido antiguo, el motor conserva lectura de las definiciones heredadas hasta que se editen y publiquen.

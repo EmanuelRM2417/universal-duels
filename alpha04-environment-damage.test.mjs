@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {simulate} from './battle-engine.js';
-const entity=(id)=>({id,name:id,definition:{types:['agua'],hp:750,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:id==='left'?120:50,moveIds:['flame','water','wait'],uniqueMoveId:'wait',globalAbilityId:'blank',uniqueAbilityId:'blank'}});
+const entity=(id)=>({id,name:id,definition:{types:['agua'],hp:500,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:id==='left'?120:50,moveIds:['flame','water','wait'],uniqueMoveId:'wait',globalAbilityId:'blank',uniqueAbilityId:'blank'}});
 const move=(id,type)=>({id,name:id,definition:{category:id==='wait'?'status':'special',type,power:id==='wait'?0:80,accuracy:100,criticalChance:0,priority:0,rules:[]}});
 const cat={entities:{left:entity('left'),right:entity('right')},moves:{flame:move('flame','fuego'),water:move('water','agua'),wait:move('wait','agua')},abilities:{blank:{id:'blank',definition:{rules:[]}}},weathers:{sun:{id:'sun',name:'Sol',definition:{fieldEffects:[{type:'final_damage',timing:'continuous',filter:'all',types:[],attackTypes:['fuego'],value:20,mode:'percent',stacking:'additive',chance:100}]}}},fields:{},scenarios:{},statuses:{}};
 const run=(m,w='')=>simulate({catalog:cat,left:'left',right:'right',turns:1,leftMove:m,rightMove:'wait',weather:w,randomSource:()=>0.9});
