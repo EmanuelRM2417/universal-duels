@@ -73,7 +73,7 @@ const run=(catalog,extra={})=>simulate({catalog,left:'a',right:'b',turns:1,leftM
  cat.abilities.survival.definition.survive.chance=100;
  cat.entities.b.definition.uniqueAbilityId='higherSurvival';
  cat.abilities.higherSurvival={id:'higherSurvival',definition:{survive:{chance:100,fixedHp:11,limit:1,priority:5},rules:[]}};
- assert.equal(run(cat,{leftMove:'strike'}).right.hp,11,'highest-priority protection activates first');
+ assert.equal(run(cat,{leftMove:'strike'}).right.hp,1,'Survival always leaves exactly 1 HP even when an old config requests 11');
 }
 // Enemy stat changes emit a unit_state event at the exact narration index.
 {

@@ -2,7 +2,7 @@
 export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status','on_condition','on_status_applied'];
 export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','stat_below','streak_count','in_doubles'];
 export const TARGETS = ['self','target','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
@@ -44,6 +44,7 @@ export function validateRules(definition,category){
   }
   if(!TARGETS.includes(r.target)) fail(at+': objetivo no implementado.');
   if(!r.action || !ACTIONS.includes(r.action.type)) fail(at+': acción no implementada.');
+  if(r.streakEffectMode!==undefined&&!['normal','per_turn'].includes(r.streakEffectMode))fail(at+': modo de racha no válido.');
   if(!within(r.chance,0,100)) fail(at+': probabilidad obligatoria de 0 a 100 %.');
   if(!Number.isInteger(r.duration)||r.duration<0||r.duration>9999) fail(at+': duración entera obligatoria de 0 a 9999.');
   if(!Number.isInteger(r.limit)||r.limit<0||r.limit>9999) fail(at+': límite entero obligatorio de 0 a 9999.');
