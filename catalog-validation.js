@@ -1,8 +1,8 @@
 // Validación de configuración, no balance automático. No muta el contenido.
 export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status','on_condition','on_status_applied'];
-export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','stat_below','in_doubles'];
+export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','stat_below','streak_count','in_doubles'];
 export const TARGETS = ['self','target','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
@@ -16,6 +16,10 @@ function condition(c, prefix){
  if(!c || !CONDITIONS.includes(c.type)) fail(prefix+': condición desconocida o sin seleccionar.');
  if(c.type==='always') {if(c.value!==''&&c.value!==null&&c.value!==undefined) fail(prefix+': «Siempre» no lleva valor.');return;}
  if(['hp_below','hp_above'].includes(c.type) && !(c.value!=='' && within(Number(c.value),0,100))) fail(prefix+': el porcentaje de PS debe ser 0–100.');
+ if(c.type==='streak_count'){
+  if(!/^(hit|use|streakHits):\d{1,5}:(\d{1,5})?$/.test(String(c.value||'')))fail(prefix+': racha necesita modo:mínimo:máximo (máximo opcional).');
+  const [mode,min,max]=c.value.split(':');if(Number(min)>9999||(max!==''&&(Number(max)>9999||Number(max)<Number(min))))fail(prefix+': rango mínimo/máximo de racha inválido.');
+ }
  if(c.type==='stat_below' && !(c.value!=='' && within(Number(c.value),0,10000))) fail(prefix+': la Velocidad límite debe ser un número válido.');
  if(['weather_is','field_is','scenario_is','has_status'].includes(c.type) && c.value!=='' && c.value!==null && c.value!==undefined && !slug(c.value)) fail(prefix+': se necesita un ID válido.');
  if(['has_type','was_hit_by_type'].includes(c.type) && !TYPES.includes(c.value)) fail(prefix+': tipo desconocido.');
@@ -45,8 +49,9 @@ export function validateRules(definition,category){
   if(!Number.isInteger(r.limit)||r.limit<0||r.limit>9999) fail(at+': límite entero obligatorio de 0 a 9999.');
   const a=r.action, v=a.value;
   if(['damage','heal','resurrect'].includes(a.type) && !(v!==''&&within(Number(v),0,100))) fail(at+': el porcentaje debe estar entre 0 y 100.');
-  if(['heal_from_damage','damage_from_damage'].includes(a.type) && !(v!==''&&within(Number(v),0,1000))) fail(at+': el porcentaje del daño infligido debe estar entre 0 y 1000.');
-  if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
+  if(['heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage'].includes(a.type) && !(v!==''&&within(Number(v),0,1000))) fail(at+': el porcentaje del daño infligido debe estar entre 0 y 1000.');
+  if(a.type==='modify_move_power'&&['perStack','perRound'].some(k=>a[k]!==undefined&&(!Number.isFinite(Number(a[k]))||Math.abs(Number(a[k]))>5000)))fail(at+': incremento de racha por acumulación o ronda debe estar entre -5000 y 5000.');
+ if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
   if(a.type==='restrict_moves'){for(const [values,allowed,label] of [[a.categories,['physical','special','status'],'clases'],[a.types,TYPES,'tipos']])if(values!==undefined&&(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x))))fail(at+': restricción de '+label+' inválida.');}
   if(a.type==='switch_character' && !['manual','random'].includes(a.switchMode)) fail(at+': Cambio de personaje requiere modo manual o aleatorio.');
   if(a.type==='stat_change' && (!STATS.includes(a.stat)||!(v!==''&&Number.isInteger(Number(v))&&Number(v)>=-10&&Number(v)<=10))) fail(at+': elegí estadística y cambio entero entre −10 y +10 niveles.');
