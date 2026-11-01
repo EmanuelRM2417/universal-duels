@@ -133,6 +133,20 @@ export default {
         }, 500);
       }
 
+      // El panel de monitoreo sólo es accesible tras verificar Cloudflare Access.
+      if(url.pathname.startsWith('/editor-api/monitor/')){
+        const suffix=url.pathname.slice('/editor-api/monitor/'.length);
+        if(request.method!=='GET'||(!['summary','ws','profiles'].includes(suffix)&&!/^(?:profile\/[a-z0-9]{8})$/.test(suffix)))return privateJson({error:'Ruta o método inválido.'},405);
+        if(!env.MAIN_MONITOR||!env.UD_MONITOR_SECRET||String(env.UD_MONITOR_SECRET).length<32)return privateJson({error:'Monitoreo no configurado: servicio MAIN_MONITOR y secreto UD_MONITOR_SECRET requeridos.'},503);
+        if(suffix==='ws'&&request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return privateJson({error:'Se requiere WebSocket.'},426);
+        const target=new URL('https://main.internal/api/internal-monitor/'+suffix);
+        if(suffix==='profiles'){for(const key of ['cursor','q'])if(url.searchParams.has(key))target.searchParams.set(key,url.searchParams.get(key));}
+        const headers=new Headers({'X-UD-Monitor-Secret':env.UD_MONITOR_SECRET});
+        if(suffix==='ws'){headers.set('Upgrade','websocket');headers.set('Connection','Upgrade');}
+        try{return await env.MAIN_MONITOR.fetch(new Request(target,{method:'GET',headers}));}
+        catch(e){return privateJson({error:'No se pudo contactar con el Worker Main: '+String(e.message||e)},502);}
+      }
+
       // Comprobar conexión del editor.
       if (url.pathname === "/editor-api/status") {
         if (request.method !== "GET") {

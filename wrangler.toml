@@ -2,6 +2,12 @@ name = "universal-duels-editor-privado"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
+# Acceso Worker-to-Worker al Main para el monitoreo privado.
+# Requiere configurar el secreto UD_MONITOR_SECRET (mismo valor fuerte en ambos Workers).
+[[services]]
+binding = "MAIN_MONITOR"
+service = "universalduels"
+
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"

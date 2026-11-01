@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const workerSource=readFileSync(new URL('./worker.js',import.meta.url),'utf8');
+const config=readFileSync(new URL('./wrangler.toml',import.meta.url),'utf8');
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+const monitor=readFileSync(new URL('./public/monitor.html',import.meta.url),'utf8');
+assert.match(config,/binding\s*=\s*"MAIN_MONITOR"/);
+assert.match(config,/service\s*=\s*"universalduels"/);
+assert.match(html,/href="\/monitor\.html"/);
+assert.match(monitor,/new WebSocket\(/);
+assert.match(monitor,/setInterval\(/);
+assert.match(monitor,/id\.toLowerCase\(\)/);
+assert.match(workerSource,/const identity = await verifyEditorAccess\(request, env\)/);
+assert.match(workerSource,/if \(!identity\)/);
+assert.match(workerSource,/url\.pathname\.startsWith\('\/editor-api\/monitor\/'\)/);
+assert.match(workerSource,/env\.MAIN_MONITOR\.fetch/);
+assert.match(workerSource,/env\.UD_MONITOR_SECRET/);
+console.log('PASS: private monitoring binding, UI, automatic updates, Access gate and server-only credentials.');
