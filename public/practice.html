@@ -708,4 +708,4 @@ function udUpdateCoach(){
 
 (async()=>{try{const d=await api('/api/catalog');catalog=d.catalog;chart=d.chart||{};revision=d.revision;window.udNarratorRules=d.uiLayout?.narratorRules||[];udPracticeLoadTeams();for(const [id,label] of Object.entries(TYPE_NAMES))$('practiceTypeFilter').add(new Option(label,id));for(let i=1;i<=8;i++)$('enemySize').insertAdjacentHTML('beforeend',`<option value="${i}" ${i===8?'selected':''}>${i} personajes</option>`);renderPracticeRoster();await refresh();if(udGuided){const candidates=Object.values(catalog.entities||{}).sort((a,b)=>{const score=e=>['hp','attack','specialAttack','defense','specialDefense','speed'].reduce((n,k)=>n+(Number(e.definition?.[k])||0),0);return score(b)-score(a)});selected=candidates.slice(0,2).map(x=>x.id);renderPracticeRoster();$('enemySize').value='1';$('mode').value='singles';$('difficulty').value='easy';$('start').click();}}catch(e){notice('No se pudo cargar Práctica: '+e.message)}})();
 
-</script></body></html>
+</script><script defer src="/monitor-client.js"></script></body></html>

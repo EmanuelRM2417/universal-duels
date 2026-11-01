@@ -5,8 +5,8 @@
  window.udMandatoryTutorial=false;
  function setStatus(text){status.textContent=text;}
  function showGate(){gate.hidden=false;$('udAccountBar').hidden=true;}
- function accountBar(){gate.hidden=true;$('udAccountBar').hidden=false;name.textContent=account?'@'+(account.nick||account.name)+' · '+account.id:'Invitado';if(account&&$('name')){$('name').value=account.nick||account.name;$('name').readOnly=true;}else if($('name'))$('name').readOnly=false;}
- function allowPlay(){accessGranted=true;window.udAuthAllowed=true;window.udMandatoryTutorial=false;accountBar();window.udRejoinRoom?.();}
+ function accountBar(){gate.hidden=true;$('udAccountBar').hidden=false;$('udAccountEditNick').hidden=!account;name.textContent=account?'@'+(account.nick||account.name)+' · '+account.id:'Invitado';if(account&&$('name')){$('name').value=account.nick||account.name;$('name').readOnly=true;}else if($('name'))$('name').readOnly=false;}
+ function allowPlay(){window.udAccountReady?.(account);accessGranted=true;window.udAuthAllowed=true;window.udMandatoryTutorial=false;accountBar();window.udRejoinRoom?.();}
  function tutorial(required){gate.hidden=true;mandatory=!!required;tutorialRunning=true;window.udMandatoryTutorial=mandatory;
    window.udOpenEmbed?.('tutorial');$('udEmbeddedClose').hidden=mandatory;
  }
@@ -23,7 +23,7 @@
  }
  window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('udEmbeddedFrame').contentWindow&&e.data?.type==='ud-tutorial-complete')finalize();});
  $('udGuestButton').addEventListener('click',()=>{account=null;tutorial(true);});
- $('udAccountLogout').addEventListener('click',async()=>{if(account)try{await json('/api/auth/logout',{method:'POST'});}catch{}account=null;accessGranted=false;window.udAuthAllowed=false;showGate();});
+ $('udAccountLogout').addEventListener('click',async()=>{if(account)try{await json('/api/auth/logout',{method:'POST'});}catch{}account=null;window.udAccountReady?.(null);accessGranted=false;window.udAuthAllowed=false;showGate();});
  async function renderGoogle(clientId){
    if(!clientId){setStatus('El Worker publicado no está recibiendo GOOGLE_CLIENT_ID. Revisá que la variable esté en Main (no Editor ni Preview), en el entorno de producción, y que los cambios se hayan desplegado.');return;}
    const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;
@@ -55,6 +55,7 @@
    }
    table.append(body);host.append(table);
  }
+ $('udAccountEditNick')?.addEventListener('click',()=>$('udStatsOpen')?.click());
  $('udStatsOpen')?.addEventListener('click',async()=>{
    statsPanel.hidden=false;statsStatus.textContent='';$('udStatsIdentity').textContent='';$('udStatsContent').replaceChildren();
    $('udStatsNick').value=account?.nick||'';
