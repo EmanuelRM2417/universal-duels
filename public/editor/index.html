@@ -381,6 +381,7 @@
   <button class="studio-nav" data-view="labels">▤ &nbsp; Etiquetas</button>
   <button class="studio-nav" data-view="tutorial">☷ &nbsp; Tutorial</button>
   <button class="studio-nav" data-view="narrator">✎ &nbsp; Narrador</button>
+  <p class="nav-caption">ADMINISTRACIÓN</p><a class="studio-nav" href="/monitor.html" style="display:block;text-decoration:none">◉ &nbsp; Monitoreo en vivo</a>
   <p class="nav-caption">PRUEBAS</p><button class="studio-nav" data-view="sim">⚡ &nbsp; Laboratorio</button>
   <p class="nav-footer">El contenido privado no se publica automáticamente.<br><a href="/lab/" style="color:#b8b0ec;font-size:12px">Laboratorio clásico</a><br><small id="editorBuildId" data-editor-build="UD-EDITOR-ALPHA04-ETIQUETAS-20261017">Versión del editor: 2026-10-17 · Etiquetas</small></p></aside>
   <main class="studio-main"><div class="view-heading"><span id="viewEyebrow">ESTUDIO / INICIO</span><h1 id="viewTitle">Tu espacio de creación</h1><p id="viewDescription">Organizá tus recursos y mecánicas desde un solo lugar.</p></div>
@@ -1882,7 +1883,7 @@ function moveInfoHTML(m,unit){const d=m?.definition||{};return `${escapeHtml(m?.
       history.replaceState(null,'',location.pathname+'#'+(view==='catalog'?'catalog-'+catalogCategory.value:view));
       window.scrollTo({top:0,behavior:'instant'});
     }
-    document.querySelectorAll('.studio-nav').forEach(b=>b.addEventListener('click',()=>showStudioView(b.dataset.view,b.dataset.category)));
+    document.querySelectorAll('.studio-nav[data-view]').forEach(b=>b.addEventListener('click',()=>showStudioView(b.dataset.view,b.dataset.category)));
     catalogCategory.addEventListener('change',()=>{if(!document.querySelector('[data-studio-view="catalog"]').hidden)showStudioView('catalog',catalogCategory.value);});
     const iconType=document.getElementById('iconType'),iconFile=document.getElementById('iconFile'),iconPreview=document.getElementById('iconPreview'),iconPreviewEmpty=document.getElementById('iconPreviewEmpty'),iconStatus=document.getElementById('iconStatus'),iconGrid=document.getElementById('typeIconGrid');
     chartTypes.forEach(([id,name])=>{const o=document.createElement('option');o.value=id;o.textContent=name;iconType.append(o)});
