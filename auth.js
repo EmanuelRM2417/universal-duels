@@ -1,6 +1,7 @@
 /* Google Identity Services authentication. Uses published-content KV with isolated
  * auth-v1: prefixes during Alpha; migrate to D1/account-specific storage before scaling.
  * No OAuth secrets, ID tokens or session IDs are exposed through public responses. */
+import {notifyMonitor} from './monitoring.js';
 const j=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}});
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>alphabet[v%alphabet.length]).join('');
@@ -80,7 +81,7 @@ export async function recordAccountMatch(env,sub,matchKey,entry={}){
    body:JSON.stringify({matchKey,entry,legacy})
   });
   if(!response.ok)throw Error('No fue posible registrar el resultado de la partida.');
-  const data=await response.json();return !!data.recorded;
+  const data=await response.json();if(data.recorded){const a=await store(env).get('auth-v1:account:'+sub,'json');await profileChanged(env,a?.publicId);}return !!data.recorded;
  }
  // Development-only fallback. Production requires the existing ROOMS binding
  // for atomic, durable and idempotent per-account statistics.
@@ -88,12 +89,14 @@ export async function recordAccountMatch(env,sub,matchKey,entry={}){
  if(await store(env).get(eventKey))return false;
  const key='auth-v1:stats:'+sub,old=await store(env).get(key,'json')||blankStats();
  await store(env).put(key,JSON.stringify(addMatchStats(old,entry)));
- await store(env).put(eventKey,'1');return true;
+ await store(env).put(eventKey,'1');const a=await store(env).get('auth-v1:account:'+sub,'json');await profileChanged(env,a?.publicId);return true;
 }
 
 const sessionCookie=(value,maxAge)=>`ud_session=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 const sameOrigin=(req,url)=>req.headers.get('Origin')===url.origin;
 const store=env=>env.PUBLIC_CONTENT;
+async function profileChanged(env,publicId){if(publicId)try{await notifyMonitor(env,{type:'profile',publicId});}catch{/* monitoring must not block accounts */}}
+export function normalizeTeams(input){if(!Array.isArray(input)||input.length>30)throw Error('Máximo 30 equipos por cuenta.');const used=new Set();return input.map(item=>{const name=String(item?.name||'').trim();if(!name||name.length>36||/[<>\x00-\x1f]/.test(name)||used.has(name.toLowerCase()))throw Error('Nombre de equipo inválido o repetido.');used.add(name.toLowerCase());const ids=item?.ids;if(!Array.isArray(ids)||ids.length!==8||new Set(ids).size!==8||ids.some(x=>typeof x!=='string'||!/^[-a-z0-9]{1,70}$/.test(x)))throw Error('Cada equipo necesita ocho personajes distintos.');return{name,ids};});}
 async function current(req,env){const sid=readCookie(req);if(!/^[A-Za-z0-9_-]{32}$/.test(sid)||!store(env))return null;const session=await store(env).get('auth-v1:session:'+sid,'json');if(!session?.id)return null;const account=await store(env).get('auth-v1:account:'+session.id,'json');return account?{account,sid}:null;}
 export async function authRoute(req,env,url){
  if(!url.pathname.startsWith('/api/auth/'))return null;
@@ -102,6 +105,10 @@ export async function authRoute(req,env,url){
   const data=await current(req,env);if(!data)return j({error:'Iniciá sesión con Google para consultar estadísticas.'},401);
   const stats=await accountStats(env,data.account.id);
   return j({ok:true,user:profile(data.account),stats});
+ }
+ if(req.method==='GET'&&url.pathname==='/api/auth/teams'){
+  const data=await current(req,env);if(!data)return j({error:'No hay sesión Google.'},401);
+  return j({ok:true,teams:await store(env).get('auth-v1:teams:'+data.account.id,'json')||[]});
  }
  if(req.method==='GET'&&url.pathname==='/api/auth/me'){
   const data=await current(req,env);return j({ok:true,user:data?profile(data.account):null});
@@ -115,7 +122,7 @@ export async function authRoute(req,env,url){
   const key='auth-v1:account:'+verified.sub,prior=await store(env).get(key,'json');
   const account={id:verified.sub,publicId:prior?.publicId||await allocatePublicId(env,verified.sub),nick:prior?.nick||verified.name,
     name:verified.name,createdAt:prior?.createdAt||new Date().toISOString(),tutorialComplete:!!prior?.tutorialComplete};
-  await store(env).put(key,JSON.stringify(account));
+  await store(env).put(key,JSON.stringify(account));await profileChanged(env,account.publicId);
   const sid=token();await store(env).put('auth-v1:session:'+sid,JSON.stringify({id:account.id}),{expirationTtl:60*60*24*30});
   return j({ok:true,user:profile(account)},200,{'Set-Cookie':sessionCookie(sid,60*60*24*30)});
  }
@@ -124,7 +131,15 @@ export async function authRoute(req,env,url){
   let payload;try{payload=await req.json();}catch{return j({error:'JSON inválido.'},400);}
   const nick=String(payload?.nick||'').trim();
   if(!/^[\p{L}\p{N} _-]{3,20}$/u.test(nick))return j({error:'El nick debe tener entre 3 y 20 caracteres; solo letras, números, espacios, guiones o guiones bajos.'},400);
-  const updated={...user.account,nick};await store(env).put('auth-v1:account:'+updated.id,JSON.stringify(updated));return j({ok:true,user:profile(updated)});
+  const updated={...user.account,nick};await store(env).put('auth-v1:account:'+updated.id,JSON.stringify(updated));await profileChanged(env,updated.publicId);return j({ok:true,user:profile(updated)});
+ }
+ if(url.pathname==='/api/auth/teams'){
+  const user=await current(req,env);if(!user)return j({error:'No hay sesión Google.'},401);
+  if(Number(req.headers.get('Content-Length')||0)>16000)return j({error:'Equipos demasiado grandes.'},413);
+  let data;try{data=await req.json();}catch{return j({error:'JSON inválido.'},400);}
+  let teams;try{teams=normalizeTeams(data?.teams);}catch(e){return j({error:e.message},400);}
+  await store(env).put('auth-v1:teams:'+user.account.id,JSON.stringify(teams));await profileChanged(env,user.account.publicId);
+  return j({ok:true,teams});
  }
  if(url.pathname==='/api/auth/logout'){
   const sid=readCookie(req);if(/^[A-Za-z0-9_-]{32}$/.test(sid)&&store(env))await store(env).delete('auth-v1:session:'+sid);

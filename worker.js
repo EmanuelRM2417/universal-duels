@@ -1,6 +1,8 @@
 import {authRoute, authenticatedAccount,recordAccountMatch,addMatchStats} from "./auth.js";
 import { simulate, normalizeMoveTarget } from "./battle-engine.js";
 import {createPractice,advancePractice,publicPractice,PRACTICE_TTL} from "./practice-session.js";
+import {notifyMonitor,reportMatch,handleMonitorDO,monitorSnapshot} from "./monitoring.js";
+import {accountStats} from "./auth.js";
 
 // Time is per acting character; Singles 60/15s, Doubles 120/30s.
 export const ACTION_MS=60_000, REPLACEMENT_MS=15_000;
@@ -64,6 +66,48 @@ async function allowCreation(request,env,kind){
   return response.ok;
 }
 export default{async fetch(request,env){const url=new URL(request.url);if(request.method==="OPTIONS")return new Response(null,{headers:cors});const auth=await authRoute(request,env,url);if(auth)return auth;if(url.pathname==="/health"){try{const s=await loadPublishedContent(env);return json({ok:true,service:"Universal Duels",version:"0.4.0-alpha",revision:s.revision,source:"manual-public-patch"});}catch(e){return json({ok:false,service:"Universal Duels",version:"0.4.0-alpha",error:e.message},503);}}
+  // Monitoring admin API is disabled unless a strong secret is set on both Workers.
+  if(url.pathname.startsWith('/api/internal-monitor/')){
+    const secret=env.UD_MONITOR_SECRET;
+    if(typeof secret!=='string'||secret.length<32||request.headers.get('X-UD-Monitor-Secret')!==secret)return json({error:'No autorizado.'},403);
+    if(!env.ROOMS||!env.PUBLIC_CONTENT)return json({error:'Monitoreo no configurado.'},503);
+    const sub=url.pathname.slice('/api/internal-monitor/'.length),hub=env.ROOMS.get(env.ROOMS.idFromName('ud-monitor:v1'));
+    if(sub==='ws'&&request.method==='GET')return hub.fetch(new Request('https://room.internal/monitor/ws',request));
+    if(sub==='summary'&&request.method==='GET')return hub.fetch('https://room.internal/monitor/snapshot');
+    if(sub==='profiles'&&request.method==='GET'){
+      const cursor=url.searchParams.get('cursor')||undefined,q=String(url.searchParams.get('q')||'').trim().toLocaleLowerCase('es').slice(0,70);
+      if(cursor&&cursor.length>1024)return json({error:'Cursor inválido.'},400);
+      const profiles=[];let next=cursor||undefined,complete=false;
+      // Search is across server-side account records, not just previously loaded rows.
+      // Batch calls and paginate to bound KV read costs for larger populations.
+      for(let pageNumber=0;pageNumber<5&&!complete&&profiles.length<50;pageNumber++){
+        const page=await env.PUBLIC_CONTENT.list({prefix:'auth-v1:account:',limit:100,...(next?{cursor:next}:{})});
+        const accounts=await Promise.all(page.keys.map(async k=>await env.PUBLIC_CONTENT.get(k.name,'json')));
+        for(const a of accounts){if(a?.publicId&&(!q||a.publicId.includes(q)||String(a.nick||a.name||'').toLocaleLowerCase('es').includes(q))){profiles.push({id:a.publicId,nick:a.nick||a.name,createdAt:a.createdAt||null});}}
+        complete=page.list_complete;next=complete?undefined:page.cursor;
+      }
+      return json({ok:true,profiles,nextCursor:complete?null:next||null});
+    }
+    const detail=sub.match(/^profile\/([a-z0-9]{8})$/);
+    if(detail&&request.method==='GET'){
+      const id=detail[1],subId=await env.PUBLIC_CONTENT.get('auth-v1:public-id:'+id);
+      if(!subId)return json({error:'Perfil no encontrado.'},404);
+      const a=await env.PUBLIC_CONTENT.get('auth-v1:account:'+subId,'json');
+      if(!a||a.publicId!==id)return json({error:'Perfil no encontrado.'},404);
+      const [stats,teams,published]=await Promise.all([accountStats(env,subId),env.PUBLIC_CONTENT.get('auth-v1:teams:'+subId,'json'),env.PUBLIC_CONTENT.get('public-v1:current','json')]);
+      const savedTeams=Array.isArray(teams)?teams.map(t=>({name:t.name,ids:t.ids,members:(t.ids||[]).map(id=>({id,name:published?.catalog?.entities?.[id]?.name||id}))})):[];
+      return json({ok:true,profile:{id:a.publicId,nick:a.nick||a.name,createdAt:a.createdAt||null,tutorialComplete:!!a.tutorialComplete,stats,teams:savedTeams}});
+    }
+    return json({error:'Ruta no encontrada.'},404);
+  }
+  if(url.pathname==='/api/monitor/ping'&&request.method==='POST'){
+    try{
+      const body=await readLimitedJson(request,512);
+      const account=await authenticatedAccount(request,env);
+      await notifyMonitor(env,{type:'presence',tabId:body.tabId,page:body.page,pageview:body.pageview,account:account?.publicId||null});
+      return json({ok:true});
+    }catch(e){return json({error:String(e.message||e)},400);}
+  }
   if(url.pathname==="/api/catalog"&&request.method==="GET"){try{return json(publicCatalog(await snapshot(env)));}catch(e){return json({error:e.message},503);}}
   const catMatch=url.pathname.match(/^\/api\/catalog\/([a-z0-9-]{1,80})$/i);if(catMatch&&request.method==="GET"){try{return fixedCatalogResponse(await snapshot(env,catMatch[1]));}catch(e){return json({error:e.message},404);}}
   const environmentMatch=url.pathname.match(/^\/api\/environment-visuals\/(scenarios|weathers)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
@@ -113,7 +157,7 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
       const token=typeof input.token==='string'&&/^[0-9a-f-]{64,80}$/i.test(input.token)
         ?input.token:crypto.randomUUID()+crypto.randomUUID();
       const stub=env.ROOMS.get(env.ROOMS.idFromName('practice:'+token));
-      const response=await stub.fetch('https://room.internal/practice/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,revision:snap.revision,accountId:(await authenticatedAccount(request,env))?.id||null})});
+      const response=await stub.fetch('https://room.internal/practice/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,token,revision:snap.revision,accountId:(await authenticatedAccount(request,env))?.id||null})});
       const data=await response.json();
       return json({...data,...(response.ok?{token}:{})},response.status);
     }catch(e){return json({error:String(e.message||e)},e.status||400);}
@@ -147,6 +191,7 @@ export class Room{
   }
   fetch(request){return this.withRoomLock(()=>this._fetch(request));}
   async _fetch(request){const url=new URL(request.url);
+    if(url.pathname.startsWith('/monitor/'))return handleMonitorDO(this,request);
     // A single Durable Object is responsible for one account's counters.
     // A storage transaction writes the match marker and cumulative totals
     // together, so concurrent matches and retry after failure are safe.
@@ -187,8 +232,9 @@ export class Room{
             return json({ok:true,practice:publicPractice(existing),resumed:true});
           const body=await readLimitedJson(request,4096),snap=await this.getSnapshot(body.revision);
           const practice=createPractice({catalog:snap.catalog,chart:snap.chart,revision:snap.revision,mode:body.mode,difficulty:body.difficulty,leftTeam:body.leftTeam,rightTeam:body.rightTeam});
-          practice.accountId=body.accountId||null;practice.matchKey=crypto.randomUUID();
+          practice.accountId=body.accountId||null;practice.matchKey=crypto.randomUUID();practice.monitorToken=body.token||null;
           await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
+          try{await reportMatch(this.env,{id:'practice:'+body.token,kind:'practice',mode:practice.mode,status:'playing'});}catch(e){console.warn('Monitor:',String(e));}
           return json({ok:true,practice:publicPractice(practice)});
         }
         if(url.pathname!=='/practice/session')return json({error:'Ruta no encontrada.'},404);
@@ -205,6 +251,7 @@ export class Room{
           practice.statsCommitted=true;
         }
         await this.storage.put('practice',practice);await this.storage.setAlarm(practice.expiresAt);
+        try{await reportMatch(this.env,{id:'practice:'+practice.monitorToken,kind:'practice',mode:practice.mode,status:practice.status});}catch(e){console.warn('Monitor:',String(e));}
         return json({ok:true,practice:state});
       }catch(e){return json({error:String(e.message||e)},e.status||400);}
     }
@@ -227,7 +274,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     if(!player){player={role,name,session,accountId:connectedAccount?.id||null,ready:false,team:[],runtimeTeam:[],connected:true};room.players.push(player);}
     player.connectionId=connectionId;
     player.connected=true;
-    await this.storage.put("room",room);
+    await this.storage.put("room",room);await this.reportRoom(room);
     // Older devices remain subscribed, but are read-only. Their actions are rejected server-side.
     for(const old of sockets){if(old===server)continue;const a=old.deserializeAttachment()||{};if(a.role===role)this.send(old,{type:"session_observer",message:"Esta sesión se controla desde un dispositivo más reciente."});}
     this.send(server,{type:"welcome",role,code:room.code,session,controller:true});
@@ -235,7 +282,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     if(room.battle)this.send(server,{type:"battle_sync",battle:this.publicBattle(room,role)});
     this.broadcastRoom(room);
     return new Response(null,{status:101,webSocket:client});}
-  webSocketMessage(socket,message){return this.withRoomLock(()=>this._webSocketMessage(socket,message));}
+  webSocketMessage(socket,message){if((this.state.getTags?.(socket)||[]).includes('admin-monitor'))return this.withRoomLock(async()=>{this.send(socket,{type:'snapshot',data:await monitorSnapshot(this)});});return this.withRoomLock(()=>this._webSocketMessage(socket,message));}
   async _webSocketMessage(socket,message){
     if((typeof message==='string'?message.length:message?.byteLength||0)>8192){this.send(socket,{type:'error',message:'Mensaje demasiado grande.'});return;}
     let data;try{data=JSON.parse(typeof message==="string"?message:new TextDecoder().decode(message));}catch{return;}const role=socket.deserializeAttachment()?.role;if(!role)return;const room=await this.getRoom(),player=room.players.find(p=>p.role===role);if(!player)return;const attachment=socket.deserializeAttachment()||{};if(attachment.connectionId!==player.connectionId){this.send(socket,{type:"session_observer",message:"Solo el dispositivo más reciente puede realizar acciones."});return;}
@@ -250,7 +297,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
         previousBattle.finishReason="opponent_left";
       }
       room.battle=null;
-      await this.storage.put("room",room);
+      await this.storage.put("room",room);await this.reportRoom(room);
       this.send(socket,{type:"left_room"});
       this.broadcast({type:"battle_return_lobby"});
       this.broadcast({type:"notice",message:"El otro jugador salió de la sala."});
@@ -259,14 +306,14 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
       return;
     }
 
-    if(data.type==="settings"){if(role!=="host"){this.send(socket,{type:"error",message:"Solo el creador puede cambiar la modalidad."});return;}if(room.battle?.status==="playing"){this.send(socket,{type:"error",message:"No se puede cambiar la modalidad durante una batalla."});return;}room.battleMode=data.battleMode==="doubles"?"doubles":"singles";room.teamMode=data.teamMode==="random"?"random":"picked";for(const p of room.players)p.ready=false;await this.storage.put("room",room);this.broadcastRoom(room);return;}
+    if(data.type==="settings"){if(role!=="host"){this.send(socket,{type:"error",message:"Solo el creador puede cambiar la modalidad."});return;}if(room.battle?.status==="playing"){this.send(socket,{type:"error",message:"No se puede cambiar la modalidad durante una batalla."});return;}room.battleMode=data.battleMode==="doubles"?"doubles":"singles";room.teamMode=data.teamMode==="random"?"random":"picked";for(const p of room.players)p.ready=false;await this.storage.put("room",room);await this.reportRoom(room);this.broadcastRoom(room);return;}
     if(data.type==="team"){if(room.battle?.status==="playing"){this.send(socket,{type:"error",message:"No podés cambiar el equipo durante una batalla."});return;}let s;try{s=await this.getSnapshot();}catch(e){this.send(socket,{type:"error",message:e.message});return;}if(!Array.isArray(data.team)||data.team.length!==8||new Set(data.team).size!==8||data.team.some(id=>!ID.test(id||"")||!s.catalog.entities[id])){this.send(socket,{type:"error",message:"El equipo debe contener 8 personajes publicados distintos."});return;}player.team=[...data.team];player.ready=false;}
     else if(data.type==="ready"){if(room.teamMode==="picked"&&player.team.length!==8){this.send(socket,{type:"error",message:"Guardá un equipo de 8 antes de marcarte listo."});return;}player.ready=!!data.ready;}
     else if(data.type==="select_order"){const b=room.battle;if(b?.status!=="playing"||b.phase!=="action"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo acciones."});return;}if(Number.isInteger(data.round)&&data.round!==b.round){this.send(socket,{type:"error",message:"Esa selección pertenece a otra ronda. Volvé a sincronizar."});this.send(socket,{type:"battle_sync",battle:this.publicBattle(room,role)});return;}if(b.selectionDeadline&&Date.now()>=b.selectionDeadline){
       // Deadline is authoritative, but a previously committed order must not
       // suddenly count as an unanswered turn.
       if(!b.pending?.[role])await this.finishOnTimeout(room,role);return;
-    }if(b.pending?.[role]){this.send(socket,{type:"order_accepted",round:b.round});return;}try{const normalized=await this.normalizeOrder(room,role,data.order);b.selection[role]=normalized;b.pending[role]=normalized;await this.storage.put("room",room);this.send(socket,{type:"order_accepted",round:b.round});this.broadcast({type:"battle_selection",round:b.round,host:!!b.pending.host,guest:!!b.pending.guest});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});}return;}
+    }if(b.pending?.[role]){this.send(socket,{type:"order_accepted",round:b.round});return;}try{const normalized=await this.normalizeOrder(room,role,data.order);b.selection[role]=normalized;b.pending[role]=normalized;await this.storage.put("room",room);await this.reportRoom(room);this.send(socket,{type:"order_accepted",round:b.round});this.broadcast({type:"battle_selection",round:b.round,host:!!b.pending.host,guest:!!b.pending.guest});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});}return;}
     else if(data.type==="cancel_selection"){
       const b=room.battle;
       if(b?.status!=="playing"||b.phase!=="action")return;
@@ -275,21 +322,21 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
         this.send(socket,{type:"error",message:"La ronda ya está resolviéndose."});return;
       }
       b.selection[role]=null;b.pending[role]=null;
-      await this.storage.put("room",room);
+      await this.storage.put("room",room);await this.reportRoom(room);
       this.send(socket,{type:"selection_cancelled",round:b.round});
       this.broadcast({type:"battle_selection",round:b.round,host:!!b.pending.host,guest:!!b.pending.guest});return;
     }
     else if(data.type==="order"){await this.handleOrder(socket,room,role,data.order);return;}
     else if(data.type==="replacement"){await this.handleReplacement(socket,room,role,data.choices);return;}
-    else if(data.type==="surrender"){if(room.battle?.status!=="playing")return;room.battle.status="finished";room.battle.winner=role==="host"?"guest":"host";room.battle.finishReason="surrender";await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result",{reason:"surrender"});return;}
+    else if(data.type==="surrender"){if(room.battle?.status!=="playing")return;room.battle.status="finished";room.battle.winner=role==="host"?"guest":"host";room.battle.finishReason="surrender";await this.storage.put("room",room);await this.reportRoom(room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result",{reason:"surrender"});return;}
     else if(data.type==="return_lobby"){if(room.battle?.status!=="finished")return;await this.resetAfterBattle(room);return;}
     else{this.send(socket,{type:"error",message:"Mensaje no reconocido por el servidor."});return;}
-    await this.storage.put("room",room);this.broadcastRoom(room);await this.maybeStartBattle(room);
+    await this.storage.put("room",room);await this.reportRoom(room);this.broadcastRoom(room);await this.maybeStartBattle(room);
   }
-  async maybeStartBattle(room){if(room.battle?.status==="playing")return;const host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");if(!host||!guest||!host.ready||!guest.ready)return;let s;try{s=await this.getSnapshot();}catch(e){this.broadcast({type:"error",message:e.message});return;}try{if(room.teamMode==="random"){host.runtimeTeam=randomTeam(s.catalog);guest.runtimeTeam=randomTeam(s.catalog);}else{if(host.team.length!==8||guest.team.length!==8)return;host.runtimeTeam=[...host.team];guest.runtimeTeam=[...guest.team];}await freezeSnapshot(this.env,s);const result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:0,mode:room.battleMode,randomTape:[],includeCheckpoint:true});room.battle={matchKey:crypto.randomUUID(),statsCommitted:false,status:"playing",phase:"action",mode:room.battleMode,teamMode:room.teamMode,revision:s.revision,round:1,leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],pending:{host:null,guest:null},selection:{host:null,guest:null},replacementPending:{host:null,guest:null},selectionDeadline:Date.now()+actionLimit(room.battleMode),replacementDeadline:null,randomTape:[],checkpoint:result.checkpoint,logLength:result.log.length,lastState:compactResult(result),recentLog:result.log.slice(-120),winner:null,finishReason:null};await this.storage.put("room",room);await this.storage.setAlarm(room.battle.selectionDeadline);this.broadcastBattle(room,"battle_start",{logs:result.log,visualEvents:result.visualEvents});}catch(e){this.broadcast({type:"error",message:"No se pudo iniciar: "+String(e.message||e)});}}
+  async maybeStartBattle(room){if(room.battle?.status==="playing")return;const host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest");if(!host||!guest||!host.ready||!guest.ready)return;let s;try{s=await this.getSnapshot();}catch(e){this.broadcast({type:"error",message:e.message});return;}try{if(room.teamMode==="random"){host.runtimeTeam=randomTeam(s.catalog);guest.runtimeTeam=randomTeam(s.catalog);}else{if(host.team.length!==8||guest.team.length!==8)return;host.runtimeTeam=[...host.team];guest.runtimeTeam=[...guest.team];}await freezeSnapshot(this.env,s);const result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:0,mode:room.battleMode,randomTape:[],includeCheckpoint:true});room.battle={matchKey:crypto.randomUUID(),statsCommitted:false,status:"playing",phase:"action",mode:room.battleMode,teamMode:room.teamMode,revision:s.revision,round:1,leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],pending:{host:null,guest:null},selection:{host:null,guest:null},replacementPending:{host:null,guest:null},selectionDeadline:Date.now()+actionLimit(room.battleMode),replacementDeadline:null,randomTape:[],checkpoint:result.checkpoint,logLength:result.log.length,lastState:compactResult(result),recentLog:result.log.slice(-120),winner:null,finishReason:null};await this.storage.put("room",room);await this.reportRoom(room);await this.storage.setAlarm(room.battle.selectionDeadline);this.broadcastBattle(room,"battle_start",{logs:result.log,visualEvents:result.visualEvents});}catch(e){this.broadcast({type:"error",message:"No se pudo iniciar: "+String(e.message||e)});}}
   sideForRole(role){return role==="host"?"left":"right";}
   async normalizeOrder(room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action")throw Error("La batalla no está esperando acciones.");if(!order||typeof order!=="object"||!Array.isArray(order.actions))throw Error("Acciones inválidas.");const side=this.sideForRole(role),active=side==="left"?b.lastState.leftActive:b.lastState.rightActive,team=side==="left"?b.lastState.leftTeam:b.lastState.rightTeam,needed=b.mode==="doubles"?2:1,s=await this.getSnapshot(b.revision),out=[],destinations=new Set();for(let slot=0;slot<needed;slot++){const unit=active.find(u=>Number(u.activeSlot)===slot);if(!unit||unit.hp<=0)continue;const raw=order.actions.find(a=>Number(a.slot)===slot);if(!raw)throw Error(`Falta la acción del personaje ${slot+1}.`);if(raw.switch!==undefined){const i=Number(raw.switch);if(!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i)||destinations.has(i))throw Error("Cambio inválido.");destinations.add(i);out.push({slot,switch:i});continue;}if(typeof raw.move!=="string"||!ID.test(raw.move))throw Error("Movimiento inválido.");const ent=s.catalog.entities[unit.id],allowed=[...(ent?.definition?.moveIds||[]),ent?.definition?.uniqueMoveId].filter(Boolean);if(!allowed.includes(raw.move))throw Error("Ese movimiento no pertenece al personaje activo.");if((unit.cooldowns?.[raw.move]||0)>0)throw Error("Ese movimiento todavía está en cooldown.");const m=s.catalog.moves[raw.move],targeting=normalizeMoveTarget(m?.definition||{}),act={slot,move:raw.move};if(b.mode==="doubles"&&targeting==="single"){const t=raw.target;if(!t||!["left","right"].includes(t.side)||![0,1].includes(Number(t.slot)))throw Error("Elegí un objetivo válido.");const targetActive=t.side==="left"?b.lastState.leftActive:b.lastState.rightActive,target=targetActive.find(x=>Number(x.activeSlot)===Number(t.slot));if(!target||target.hp<=0||(t.side===side&&Number(t.slot)===slot))throw Error("Ese personaje no puede ser objetivo.");act.target={side:t.side,slot:Number(t.slot)};}if(raw.switchChoice){const c=raw.switchChoice,i=Number(c.teamIndex);if(c.side!==side||Number(c.slot)!==slot||!Number.isInteger(i)||i<0||i>=team.length||team[i].hp<=0||b.lastState[side+"ActiveIndexes"].includes(i))throw Error("Relevo del efecto inválido.");act.switchChoice={side,slot,teamIndex:i};}out.push(act);}return{actions:out};}
-  async handleOrder(socket,room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action"){this.send(socket,{type:"error",message:"La batalla no está esperando acciones."});return;}if(b.selectionDeadline&&Date.now()>=b.selectionDeadline){await this.finishOnTimeout(room,role);return;}if(b.pending[role]){this.send(socket,{type:"order_accepted",round:b.round});return;}const selected=b.selection[role];if(!selected){this.send(socket,{type:"error",message:"Primero seleccioná tus acciones."});return;}if(JSON.stringify(selected)!==JSON.stringify(order)){this.send(socket,{type:"error",message:"La selección cambió. Elegí las acciones nuevamente."});return;}b.pending[role]=selected;await this.storage.put("room",room);this.send(socket,{type:"order_accepted",round:b.round});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}
+  async handleOrder(socket,room,role,order){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="action"){this.send(socket,{type:"error",message:"La batalla no está esperando acciones."});return;}if(b.selectionDeadline&&Date.now()>=b.selectionDeadline){await this.finishOnTimeout(room,role);return;}if(b.pending[role]){this.send(socket,{type:"order_accepted",round:b.round});return;}const selected=b.selection[role];if(!selected){this.send(socket,{type:"error",message:"Primero seleccioná tus acciones."});return;}if(JSON.stringify(selected)!==JSON.stringify(order)){this.send(socket,{type:"error",message:"La selección cambió. Elegí las acciones nuevamente."});return;}b.pending[role]=selected;await this.storage.put("room",room);await this.reportRoom(room);this.send(socket,{type:"order_accepted",round:b.round});if(b.pending.host&&b.pending.guest)await this.resolveRound(room);}
   async resolveRound(room){
     const b=room.battle;
     if(!b||b.status!=="playing"||!b.pending?.host||!b.pending?.guest||!["action","resolving"].includes(b.phase))return;
@@ -298,17 +345,17 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     // Persist this state before external reads or game simulation. If that work
     // fails, an alarm retries the SAME accepted actions rather than discarding them.
     b.phase="resolving";b.selectionDeadline=null;b.resolveRetries=Number(b.resolveRetries||0);
-    await this.storage.put("room",room);
+    await this.storage.put("room",room);await this.reportRoom(room);
     await this.storage.setAlarm(Date.now()+30_000);
     try{const s=await this.getSnapshot(b.revision),leftOrders=[...b.leftOrders,b.pending.host],rightOrders=[...b.rightOrders,b.pending.guest],result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders,rightOrders,leftReplacements:b.leftReplacements,rightReplacements:b.rightReplacements,randomTape:b.checkpoint?[]:b.randomTape,
   resume:b.checkpoint||null,includeCheckpoint:true}),start=b.logLength||0,
   newLogs=b.checkpoint?result.log:result.log.slice(start),
-  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftOrders=leftOrders;b.rightOrders=rightOrders;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.pending={host:null,guest:null};b.selection={host:null,guest:null};b.selectionDeadline=null;b.resolveRetries=0;b.lastResolveError=null;const outcome=completedOutcome(result);if(outcome.finished){b.status="finished";b.phase="finished";b.winner=outcome.winner;b.finishReason=outcome.reason;}else if(["left","right"].some(side=>(result.needsReplacement[side]?.length||0)>0&&result[side+"Team"].some((unit,i)=>unit.hp>0&&!result[side+"ActiveIndexes"].includes(i)))){b.phase="replacement";b.replacementPending={host:null,guest:null};b.replacementDeadline=Date.now()+replacementLimit(b.mode, Math.max(b.lastState?.needsReplacement?.left?.length||0,b.lastState?.needsReplacement?.right?.length||0));}else{b.round++;b.phase="action";b.selectionDeadline=Date.now()+actionLimit(b.mode);}await this.storage.put("room",room);await this.storage.setAlarm(b.replacementDeadline||b.selectionDeadline||Number(room.createdAt||Date.now())+6*60*60*1000);if(outcome.finished)await this.finalizeAccountStats(room);this.broadcastBattle(room,outcome.finished?"battle_result":"battle_round",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){
+  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftOrders=leftOrders;b.rightOrders=rightOrders;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.pending={host:null,guest:null};b.selection={host:null,guest:null};b.selectionDeadline=null;b.resolveRetries=0;b.lastResolveError=null;const outcome=completedOutcome(result);if(outcome.finished){b.status="finished";b.phase="finished";b.winner=outcome.winner;b.finishReason=outcome.reason;}else if(["left","right"].some(side=>(result.needsReplacement[side]?.length||0)>0&&result[side+"Team"].some((unit,i)=>unit.hp>0&&!result[side+"ActiveIndexes"].includes(i)))){b.phase="replacement";b.replacementPending={host:null,guest:null};b.replacementDeadline=Date.now()+replacementLimit(b.mode, Math.max(b.lastState?.needsReplacement?.left?.length||0,b.lastState?.needsReplacement?.right?.length||0));}else{b.round++;b.phase="action";b.selectionDeadline=Date.now()+actionLimit(b.mode);}await this.storage.put("room",room);await this.reportRoom(room);await this.storage.setAlarm(b.replacementDeadline||b.selectionDeadline||Number(room.createdAt||Date.now())+6*60*60*1000);if(outcome.finished)await this.finalizeAccountStats(room);this.broadcastBattle(room,outcome.finished?"battle_result":"battle_round",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){
       b.phase="resolving";b.selectionDeadline=null;b.resolveRetries=Number(b.resolveRetries||0)+1;
       b.lastResolveError=String(e?.message||e).slice(0,300);
       console.error("[Universal Duels] Error temporal resolviendo turno",{room:room.code,round:b.round,attempt:b.resolveRetries,error:b.lastResolveError});
       const backoffMs=Math.min(30_000,2_000*2**Math.min(4,b.resolveRetries-1));
-      await this.storage.put("room",room);
+      await this.storage.put("room",room);await this.reportRoom(room);
       await this.storage.setAlarm(Date.now()+backoffMs);
       this.broadcastBattle(room,"battle_retry",{message:"El servidor está reintentando resolver la ronda. Tus acciones siguen guardadas.",retryInMs:backoffMs});
     }
@@ -349,27 +396,29 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
   }
   async finishOnTimeout(room,loser){
     const b=room.battle;b.status="finished";b.phase="finished";b.winner=loser==="host"?"guest":"host";b.finishReason="timeout";b.selectionDeadline=null;b.replacementDeadline=null;
-    await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");
+    await this.storage.put("room",room);await this.reportRoom(room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");
   }
-  async handleReplacement(socket,room,role,choices){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="replacement"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo reemplazos."});return;}if(b.replacementDeadline&&Date.now()>=b.replacementDeadline){this.send(socket,{type:"error",message:"Terminó el tiempo de sustitución."});return;}let normalized;try{normalized=this.normalizeReplacement(room,role,choices);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});return;}b.replacementPending[role]=normalized;await this.storage.put("room",room);const hostNeeds=(b.lastState.needsReplacement.left||[]).length>0,guestNeeds=(b.lastState.needsReplacement.right||[]).length>0;if((!hostNeeds||b.replacementPending.host)&&(!guestNeeds||b.replacementPending.guest))await this.applyReplacements(room);else this.broadcastBattle(room,"battle_replacement_waiting");}
+  async handleReplacement(socket,room,role,choices){const b=room.battle;if(!b||b.status!=="playing"||b.phase!=="replacement"){this.send(socket,{type:"error",message:"Ahora no se están eligiendo reemplazos."});return;}if(b.replacementDeadline&&Date.now()>=b.replacementDeadline){this.send(socket,{type:"error",message:"Terminó el tiempo de sustitución."});return;}let normalized;try{normalized=this.normalizeReplacement(room,role,choices);}catch(e){this.send(socket,{type:"error",message:String(e.message||e)});return;}b.replacementPending[role]=normalized;await this.storage.put("room",room);await this.reportRoom(room);const hostNeeds=(b.lastState.needsReplacement.left||[]).length>0,guestNeeds=(b.lastState.needsReplacement.right||[]).length>0;if((!hostNeeds||b.replacementPending.host)&&(!guestNeeds||b.replacementPending.guest))await this.applyReplacements(room);else this.broadcastBattle(room,"battle_replacement_waiting");}
   async applyReplacements(room){const b=room.battle,host=room.players.find(p=>p.role==="host"),guest=room.players.find(p=>p.role==="guest"),left=[...b.leftReplacements],right=[...b.rightReplacements];left[b.round-1]={choices:b.replacementPending.host||[]};right[b.round-1]={choices:b.replacementPending.guest||[]};try{const s=await this.getSnapshot(b.revision),result=simulate({leftTeam:host.runtimeTeam,rightTeam:guest.runtimeTeam,catalog:s.catalog,chart:s.chart,turns:b.round,mode:b.mode,leftOrders:b.leftOrders,rightOrders:b.rightOrders,leftReplacements:left,rightReplacements:right,randomTape:b.checkpoint?[]:b.randomTape,
   resume:b.checkpoint||null,replacementsOnly:!!b.checkpoint,includeCheckpoint:true}),start=b.logLength,
   newLogs=b.checkpoint?result.log:result.log.slice(start),
-  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftReplacements=left;b.rightReplacements=right;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.replacementPending={host:null,guest:null};b.round++;b.phase="action";b.replacementDeadline=null;b.selectionDeadline=Date.now()+actionLimit(b.mode);await this.storage.put("room",room);await this.storage.setAlarm(b.selectionDeadline);this.broadcastBattle(room,"battle_replacement",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){this.broadcast({type:"error",message:"No se pudo aplicar el reemplazo: "+String(e.message||e)});}}
-  async resetAfterBattle(room){for(const p of room.players){p.ready=false;p.runtimeTeam=[];}room.battle=null;await this.storage.put("room",room);this.broadcast({type:"battle_return_lobby"});this.broadcastRoom(room);}
+  newVisual=b.checkpoint?result.visualEvents.map(e=>({...e,logIndex:e.logIndex+start})):result.visualEvents.filter(e=>e.logIndex>=start);b.leftReplacements=left;b.rightReplacements=right;b.randomTape=b.checkpoint?[]:result.randomTape;b.checkpoint=result.checkpoint;b.logLength=start+newLogs.length;b.lastState=compactResult(result);b.recentLog=[...b.recentLog,...newLogs].slice(-160);b.replacementPending={host:null,guest:null};b.round++;b.phase="action";b.replacementDeadline=null;b.selectionDeadline=Date.now()+actionLimit(b.mode);await this.storage.put("room",room);await this.reportRoom(room);await this.storage.setAlarm(b.selectionDeadline);this.broadcastBattle(room,"battle_replacement",{logs:newLogs,visualEvents:newVisual,logStart:start});}catch(e){this.broadcast({type:"error",message:"No se pudo aplicar el reemplazo: "+String(e.message||e)});}}
+  async resetAfterBattle(room){for(const p of room.players){p.ready=false;p.runtimeTeam=[];}room.battle=null;await this.storage.put("room",room);await this.reportRoom(room);this.broadcast({type:"battle_return_lobby"});this.broadcastRoom(room);}
   publicBattle(room,role){const b=room.battle;if(!b)return null;return{status:b.status,phase:b.phase,mode:b.mode,teamMode:b.teamMode,revision:b.revision,round:b.round,state:b.lastState,recentLog:b.recentLog||[],winner:b.winner||null,finishReason:b.finishReason||null,submitted:!!b.pending?.[role],opponentSubmitted:!!b.pending?.[role==="host"?"guest":"host"],selected:!!b.selection?.[role],opponentSelected:!!b.selection?.[role==="host"?"guest":"host"],replacementSubmitted:!!b.replacementPending?.[role],resolving:b.phase==="resolving",selectionDeadline:b.selectionDeadline||null,replacementDeadline:b.replacementDeadline||null};}
   broadcastBattle(room,type,extra={}){for(const s of this.state.getWebSockets()){let role;try{role=s.deserializeAttachment()?.role}catch{}if(role)this.send(s,{type,battle:this.publicBattle(room,role),...extra});}}
   broadcastRoom(room){this.broadcast({type:"room",room:this.publicRoom(room)});}publicRoom(room){return{code:room.code,battleMode:room.battleMode||"singles",teamMode:room.teamMode||"picked",players:(room.players||[]).map(p=>({role:p.role,name:p.name,ready:!!p.ready,teamCount:(p.team||[]).length,connected:!!p.connected})),capacity:2,battleStatus:room.battle?.status||null};}
-  async webSocketClose(socket){await this.removeSocket(socket);}async webSocketError(socket){await this.removeSocket(socket);}  removeSocket(socket){return this.withRoomLock(()=>this._removeSocket(socket));}
-  async _removeSocket(socket){let a={};try{a=socket.deserializeAttachment()||{}}catch{}const room=await this.getRoom(),p=room.players.find(x=>x.role===a.role);if(!p||p.connectionId!==a.connectionId)return;p.connected=false;await this.storage.put("room",room);this.broadcastRoom(room);this.broadcast({type:"notice",message:"Un jugador se desconectó. Su partida continuará y podrá reconectarse."});}
+  async webSocketClose(socket){if(!(this.state.getTags?.(socket)||[]).includes('admin-monitor'))await this.removeSocket(socket);}async webSocketError(socket){if(!(this.state.getTags?.(socket)||[]).includes('admin-monitor'))await this.removeSocket(socket);}  removeSocket(socket){return this.withRoomLock(()=>this._removeSocket(socket));}
+  async _removeSocket(socket){let a={};try{a=socket.deserializeAttachment()||{}}catch{}const room=await this.getRoom(),p=room.players.find(x=>x.role===a.role);if(!p||p.connectionId!==a.connectionId)return;p.connected=false;await this.storage.put("room",room);await this.reportRoom(room);this.broadcastRoom(room);this.broadcast({type:"notice",message:"Un jugador se desconectó. Su partida continuará y podrá reconectarse."});}
   alarm(){return this.withRoomLock(()=>this._alarm());}
   async _alarm(){
+    // Monitoring DO uses expiry alarms; ordinary room/practice alarms remain unchanged.
+    if(await this.storage.get('monitor:totals')){const data=await monitorSnapshot(this);for(const ws of this.state.getWebSockets('admin-monitor'))this.send(ws,{type:'snapshot',data});if(data.connected||data.roomBattles||data.practiceBattles||this.state.getWebSockets('admin-monitor').length)await this.storage.setAlarm(Date.now()+65_000);return;}
     const room=await this.getRoom(),now=Date.now(),b=room.battle;
     if(b?.status==="playing"&&b.phase==="resolving"){
       if(b.pending?.host&&b.pending?.guest){await this.resolveRound(room);return;}
       // Recover from an interrupted intermediate write, without inventing a result.
       b.phase="action";b.selectionDeadline=Date.now()+actionLimit(b.mode);
-      await this.storage.put("room",room);await this.storage.setAlarm(b.selectionDeadline);
+      await this.storage.put("room",room);await this.reportRoom(room);await this.storage.setAlarm(b.selectionDeadline);
       this.broadcastBattle(room,"battle_sync");return;
     }
     if(b?.status==="playing"&&b.phase==="action"&&b.selectionDeadline){
@@ -380,7 +429,7 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
         // for players who did not make a valid selection.
         for(const role of ['host','guest'])if(!b.pending?.[role]&&b.selection?.[role])b.pending[role]=b.selection[role];
         const missing=["host","guest"].filter(role=>!b.pending?.[role]);
-        if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");}
+        if(missing.length===2){b.status="finished";b.phase="finished";b.winner=null;b.finishReason="both_timeout";b.selectionDeadline=null;await this.storage.put("room",room);await this.reportRoom(room);await this.finalizeAccountStats(room);this.broadcastBattle(room,"battle_result");}
         else if(missing.length===1)await this.finishOnTimeout(room,missing[0]);
         else await this.resolveRound(room);
         return;
@@ -400,6 +449,10 @@ if(url.pathname==="/init"&&request.method==="POST"){const b=await request.json()
     if(now<expires){await this.storage.setAlarm(expires);return;}
     for(const socket of this.state.getWebSockets()){try{socket.close(1000,"Sala expirada")}catch{}}
     await this.storage.delete("room");
+  }
+  async reportRoom(room){
+    if(!room?.code)return;
+    try{await reportMatch(this.env,{id:'room:'+room.code,kind:'room',code:room.code,mode:room.battleMode,status:room.battle?.status||'waiting',players:(room.players||[]).filter(p=>p.connected).length});}catch(e){console.warn('Monitor no disponible:',String(e));}
   }
   async getRoom(){return(await this.storage.get("room"))||{code:"",players:[],battle:null};}send(socket,data){try{socket.send(JSON.stringify(data))}catch{}}broadcast(data){for(const socket of this.state.getWebSockets())this.send(socket,data);}
 }
