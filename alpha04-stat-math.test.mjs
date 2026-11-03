@@ -17,9 +17,9 @@ const run=(leftStages=[],rightStages=[],accuracy=80,crit=0,random=0.7,mode='sing
   return simulate({catalog,left:'left',right:'right',leftTeam:mode==='doubles'?['left','left2']:undefined,rightTeam:mode==='doubles'?['right','right2']:undefined,turns:1,mode,randomSource:()=>random,leftMove:'strike',rightMove:'wait',leftOrders:mode==='doubles'?[{actions:[{slot:0,move:'strike',target:{side:'right',slot:0}},{slot:1,move:'wait',target:{side:'left',slot:1}}]}]:[{move:'strike'}],rightOrders:mode==='doubles'?[{actions:[{slot:0,move:'wait'},{slot:1,move:'wait'}]}]:[{move:'wait'}]});
 };
 // Asymmetric, additive stages, including opposing sources and saturation.
-for(const [n,want] of [[0,1],[1,1.10],[4,1.40],[10,2],[-1,.95],[-4,.80],[-10,.50]])near(basicStageFactor(n),want,`basic level ${n}`);
-near(basicStageFactor(4,-2),1.2,'opposing positive and negative stages net together');
-near(basicStageFactor(10,5,-3),2,'net stages clamp after summing');
+for(const [n,want] of [[0,1],[1,1.15],[4,1.60],[10,2.5],[-1,.95],[-4,.80],[-10,.50]])near(basicStageFactor(n),want,`basic level ${n}`);
+near(basicStageFactor(4,-2),1.3,'opposing positive and negative stages net together');
+near(basicStageFactor(10,5,-3),2.5,'net stages clamp after summing');
 assert.equal(netStages(8,-10),-2);
 // Relative, additive percentage per level; other independent effects use the base as their reference.
 near(scaledChance(20,4),24,'20% evasion +4 = 24%');
@@ -28,31 +28,31 @@ near(scaledChance(80,-2),72,'80% accuracy -2 = 72%');
 near(scaledChance(0,1),6,'0% with +1 awakens at 6%');
 near(scaledChance(0,4),9,'0% with +4 uses zero-baseline special case');
 near(scaledChance(0,-1),0,'negative stage does not create probability');
-near(hitChance(80,{}, {stages:{evasion:4}}),76,'80% base accuracy and evasion +4');
+near(hitChance(80,{}, {stages:{evasion:4}}),64,'80% base accuracy and evasion +4');
 // La evasión inicial es propia de CADA movimiento; 20% no es un valor universal.
-for(const [accuracy,expectedHit] of [[90,88],[80,76],[70,64],[50,40]]){
+for(const [accuracy,expectedHit] of [[90,72],[80,64],[70,56],[50,40]]){
   near(hitChance(accuracy,{}, {stages:{evasion:4}}),expectedHit,`evasion +4 for move ${accuracy}%`);
 }
-near(hitChance(100,{}, {stages:{evasion:4}}),91,'zero miss baseline awakens to 9% with evasion +4');
-near(hitChance(100,{}, {stages:{evasion:1}}),94,'100% base accuracy and evasion +1');
-near(hitChance(80,{stages:{accuracy:4}}, {stages:{evasion:4}}),91.2,'independent accuracy and evasion factors multiply');
+near(hitChance(100,{}, {stages:{evasion:4}}),80,'100% base accuracy with evasion +4');
+near(hitChance(100,{}, {stages:{evasion:1}}),95,'100% base accuracy and evasion +1');
+near(hitChance(80,{stages:{accuracy:4}}, {stages:{evasion:4}}),80,'accuracy and evasion stages cancel');
 near(hitChance(0,{stages:{accuracy:-10}},{stages:{evasion:10}}),100,'accuracy=0 never fails');
 near(criticalChance(0,{stages:{criticalChance:1}}),6,'0% crit gets 6% from +1');
 near(criticalChance(10,{stages:{criticalChance:4}}),12,'10% crit grows relatively, not by 20 points');
 near(criticalChance(20,{stages:{criticalChance:4},environmentCrit:2}),26,'environmental crit stacks as stages');
 
 const up=run([stages('attack',1),stages('speed',3)]);
-assert.equal(up.left.currentStats.attack,110);
-assert.equal(up.left.currentStats.speed,130);
+assert.equal(up.left.currentStats.attack,115);
+assert.equal(up.left.currentStats.speed,145);
 const down=run([stages('defense',-1),stages('speed',-3)]);
 assert.equal(down.left.currentStats.defense,95);
 assert.equal(down.left.currentStats.speed,85);
-const hit=run([],[stages('evasion',4)],80,0,0.75);
-assert.ok(!hit.log.some(x=>x.includes('falló contra')),'RNG 75% must hit when hit chance is 76%');
-const miss=run([],[stages('evasion',4)],80,0,0.78);
-assert.ok(miss.log.some(x=>x.includes('falló contra')),'RNG 78% must miss when hit chance is 76%');
-const zeroEvade=run([],[stages('evasion',1)],100,0,0.95);
-assert.ok(zeroEvade.log.some(x=>x.includes('falló contra')),'100% move is reduced to 94% after evasion +1');
+const hit=run([],[stages('evasion',4)],80,0,0.63);
+assert.ok(!hit.log.some(x=>x.includes('falló contra')),'RNG 63% must hit when hit chance is 64%');
+const miss=run([],[stages('evasion',4)],80,0,0.65);
+assert.ok(miss.log.some(x=>x.includes('falló contra')),'RNG 65% must miss when hit chance is 64%');
+const zeroEvade=run([],[stages('evasion',1)],100,0,0.96);
+assert.ok(zeroEvade.log.some(x=>x.includes('falló contra')),'100% move is reduced to 95% after evasion +1');
 const neverMiss=run([stages('accuracy',-10)],[stages('evasion',10)],0,0,0.999);
 assert.ok(!neverMiss.log.some(x=>x.includes('falló contra')),'accuracy 0 ignores any stage/effect');
 const zeroCritical=run([stages('criticalChance',1)],[],0,0,0.055);
@@ -73,10 +73,10 @@ fieldCatalog.fields.azar={id:'azar',name:'Azar',definition:{duration:5,fieldEffe
  {type:'stat_change',timing:'continuous',filter:'all',types:[],chance:100,stat:'evasion',value:4},
  {type:'critical_change',timing:'continuous',filter:'all',types:[],chance:100,value:1}
 ]}};
-const fieldMiss=simulate({catalog:fieldCatalog,left:'left',right:'right',field:'azar',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>.78});
-assert.ok(fieldMiss.log.some(x=>x.includes('falló contra')),'continuous field +4 evasion uses 24% (not +20 points)');
+const fieldMiss=simulate({catalog:fieldCatalog,left:'left',right:'right',field:'azar',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>.65});
+assert.ok(fieldMiss.log.some(x=>x.includes('falló contra')),'continuous field +4 evasion reduces 80% accuracy to 64%');
 assert.equal(fieldMiss.left.environmentStages.evasion,4,'environment stage not permanent stage');
 assert.equal(fieldMiss.right.environmentCrit,1,'continuous critical stage is a level, not five percentage points');
 const fieldCrit=simulate({catalog:fieldCatalog,left:'left',right:'right',field:'azar',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>.055});
 assert.ok(fieldCrit.log.some(x=>x.includes('golpe crítico')),'continuous field +1 crit awakens zero-base 6%');
-console.log('Alpha 0.4: additive +/- stages, relative precision/crit/evasion, zero fallback, no-miss, Singles/Doubles OK');
+console.log('Alpha 0.7: basic +15%/-5% stages, net accuracy/evasion, crit zero seed, no-miss, Singles/Doubles OK');

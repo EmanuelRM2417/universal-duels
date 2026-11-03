@@ -110,6 +110,16 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
   }
   if(url.pathname==="/api/catalog"&&request.method==="GET"){try{return json(publicCatalog(await snapshot(env)));}catch(e){return json({error:e.message},503);}}
   const catMatch=url.pathname.match(/^\/api\/catalog\/([a-z0-9-]{1,80})$/i);if(catMatch&&request.method==="GET"){try{return fixedCatalogResponse(await snapshot(env,catMatch[1]));}catch(e){return json({error:e.message},404);}}
+  const tutorialImage=url.pathname.match(/^\/api\/tutorial-images\/([a-z0-9-]{1,60})$/);
+  if(tutorialImage&&request.method==='GET'){
+    if(!env.PUBLIC_SPRITES)return json({error:'R2 no conectado.'},503);
+    try{const snap=await snapshot(env,url.searchParams.get('revision')||undefined),id=tutorialImage[1];
+      if(!Object.values(snap.catalog?.tutorial||{}).some(e=>e?.definition?.imageId===id))return json({error:'Imagen no publicada.'},404);
+      const path=snap.assets?.tutorialImages?.[id];if(!path)return json({error:'Imagen no publicada.'},404);
+      const object=await env.PUBLIC_SPRITES.get(path);
+      return object?new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Imagen no encontrada.'},404);
+    }catch(e){return json({error:String(e.message||e)},404);}
+  }
   const environmentMatch=url.pathname.match(/^\/api\/environment-visuals\/(scenarios|weathers)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
   if(environmentMatch&&request.method==='GET'){
     if(!env.PUBLIC_SPRITES)return json({error:'R2 no conectado.'},503);

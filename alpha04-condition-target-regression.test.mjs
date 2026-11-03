@@ -9,5 +9,5 @@ const passive={event:'on_condition',condition:{type:'hp_full',subject:'self'},ta
 catalog.abilities.guard={id:'guard',definition:{rules:[passive]}};
 catalog.entities.a=entity('a','guard');
 const r2=simulate({catalog,left:'a',right:'b',turns:1,leftMove:'idle',rightMove:'idle',randomSource:()=>.8});
-assert.equal(r2.left.currentStats.speed,130,'full HP passive stat bonus');
+assert.equal(r2.left.currentStats.speed,145,'full HP passive stat bonus');
 console.log('condiciones hp_full y sujeto objetivo OK');

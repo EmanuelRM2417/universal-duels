@@ -155,6 +155,8 @@ function action(rule,user,contextTarget,state,depth){
     if(state.allActive().some(a=>a.effects.some(e=>e.id==='prevent_environment'&&(e.kind==='all'||e.kind===kind)))){state.log.push('Activación de entorno bloqueada.');return;}
     state[key]=safe(v);state[key+'Turns']=5;state.log.push(environmentText(kind,entry,true));state.pushVisualEnvironment?.(key);state.refreshEnvironment?.();return;
   }
+  if(act.type==='force_miss'){state.forceMiss=true;return;}
+  if(act.type==='do_nothing'){state.preventAction=true;return;}
   if(act.type==='apply_effect'){
     const effect=state.catalog.effects?.[v];if(effect&&depth<6)for(const sub of effect.definition.rules||[])if(sub.event==='manual'&&conditionsPass(sub,user,contextTarget,state)&&chance(sub,state))action(sub,user,contextTarget,state,depth+1);return;
   }
@@ -272,11 +274,18 @@ function rulesFor(entry,event,user,contextTarget,state){
     }
   }
 }
-function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false){
-  for(const rule of move?.definition?.rules||[]){if((onlySwitch&&rule.action?.type!=='switch_character')||(!onlySwitch&&event==='manual'&&rule.action?.type==='switch_character'))continue;if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
+function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false,chainPhase=null){
+  for(const rule of move?.definition?.rules||[]){
+    if(chainPhase&&event==='on_hit'){
+      // Compatibilidad: los movimientos históricos conservan el modo anterior
+      // hasta que cada regla sea modificada individualmente en el Editor.
+      const timing=rule.chainTiming||move.definition?.multihit?.effects||'each';
+      if(timing!==chainPhase)continue;
+    }
+    if((onlySwitch&&rule.action?.type!=='switch_character')||(!onlySwitch&&event==='manual'&&rule.action?.type==='switch_character'))continue;if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
 }
 function applyMoveCooldown(attacker,move,state){const d=move.definition;let cd=Math.max(0,integer(d.cooldown||0));for(const e of attacker.effects.filter(e=>e.id==='cooldown_on_use'))cd=Math.max(0,cd+integer(e.value));for(const e of attacker.environmentCooldownOnUse||[])if(chance(e,state))cd=Math.max(0,cd+integer(e.value));if(cd>0){attacker.cooldowns[move.id]=cd;attacker.cooldownSetRound[move.id]=state.round;state.log.push(`${battleLogName(attacker)} tiene ${cd} ${cd===1?'turno restante':'turnos restantes'} para poder volver a usar ${move.name}.`);}}
-function relationBonus(moveType,defender,state){let bonus=0,immune=false;for(const t of defender.types){const rel=state.chart?.[moveType]?.[t]||'neutral';if(rel==='inmune')immune=true;else if(rel==='eficaz')bonus+=.2;else if(rel==='ineficaz')bonus-=.2;}return{bonus,immune};}
+function relationBonus(moveType,defender,state){let bonus=0,immune=false;for(const t of defender.types){const rel=state.chart?.[moveType]?.[t]||'neutral';if(rel==='inmune')immune=true;else if(rel==='eficaz')bonus+=.3;else if(rel==='ineficaz')bonus-=.2;}return{bonus,immune};}
 function resolvePosition(state,ref){if(!ref||!['left','right'].includes(ref.side)||!Number.isInteger(Number(ref.slot)))return null;const s=sideIndex(ref.side),slot=Number(ref.slot),idx=state.active[s]?.[slot];return idx===undefined?null:state.teams[s][idx]||null;}
 function moveTargets(user,move,orderTarget,state){
   const kind=normalizeMoveTarget(move.definition),own=actorSide(user),partner=partnerOf(state,user),enemy=activeActors(state,1-own);
@@ -299,7 +308,13 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   let targets=moveTargets(attacker,move,orderTarget,state),context=targets[0]||firstOpponent(state,attacker);state.damageBonus=0;
   const counter=attacker.consecutiveCounters.attack||0;state.attackModifiers={power:[],accuracy:[],critical:[],final:[]};const charge=attacker.effects.some(e=>e.id==='suppressed')?null:(attacker.abilities||[]).find(a=>a.definition?.consecutiveAttack)?.definition.consecutiveAttack;
   let successfulHit=false;state.currentSwitchChoice=switchChoice;
-  rulesFor(null,'on_attack',attacker,context,state);runMoveRules(move,'on_attack',attacker,context,state);
+  state.forceMiss=false;state.preventAction=false;
+  // El narrador anuncia el movimiento ANTES de cualquier efecto suyo o habilidad.
+  state.log.push(`${battleLogName(attacker)} usó ${move.name}.`);
+  state.visualEvents.push({logIndex:state.log.length-1,type:'move_targets',side:attacker.side,slot:state.active[actorSide(attacker)].findIndex(i=>i===attacker.teamIndex),targets:targets.map(t=>({side:t.side,slot:state.active[actorSide(t)].findIndex(i=>i===t.teamIndex)}))});
+  rulesFor(null,'on_attack',attacker,context,state);
+  runMoveRules(move,'on_attack',attacker,context,state);
+  if(state.preventAction){state.log.push(`${battleLogName(attacker)} no puede actuar.`);applyMoveCooldown(attacker,move,state);return;}
   // A switch at on_attack happens before the hit: never attack from the bench
   // or continue aiming at an enemy who just left the field.
   const own=actorSide(attacker),ownSlot=state.active[own].findIndex(i=>i===attacker.teamIndex);
@@ -308,7 +323,8 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   for(const key of ['weather','field','scenario']){const category={weather:'weathers',field:'fields',scenario:'scenarios'}[key],id=state[key],environment=state.catalog[category]?.[id];if(!environment)continue;
     for(const e of environment.definition.fieldEffects||[]){if(e.type!=='final_damage'||e.timing!=='continuous'||!matchesEnvironmentAttack(attacker,move,e)||!chance(e,state))continue;state.attackModifiers.final.push(e);}}
   if(attacker.status){const entry=state.catalog.statuses?.[attacker.status.id];for(const rule of entry?.definition?.rules||[]){if(rule.action?.type!=='final_damage'||rule.event!=='on_status'||!conditionsPass(rule,attacker,context,state)||!chance(rule,state))continue;const a=rule.action;state.attackModifiers.final.push({value:a.value,mode:a.mode||'percent',stacking:a.stacking||'additive',cap:a.cap??null});}}
-  state.log.push(`${battleLogName(attacker)} usó ${move.name}.`);state.visualEvents.push({logIndex:state.log.length-1,type:'move_targets',side:attacker.side,slot:state.active[actorSide(attacker)].findIndex(i=>i===attacker.teamIndex),targets:targets.map(t=>({side:t.side,slot:state.active[actorSide(t)].findIndex(i=>i===t.teamIndex)}))});runMoveRules(move,'manual',attacker,context,state);if(state.mode==='doubles')runMoveRules(move,'manual_doubles',attacker,context,state);
+  runMoveRules(move,'manual',attacker,context,state);if(state.mode==='doubles')runMoveRules(move,'manual_doubles',attacker,context,state);
+  if(state.preventAction){state.log.push(`${battleLogName(attacker)} no puede actuar.`);applyMoveCooldown(attacker,move,state);return;}
   if(!targets.length){if(charge)attacker.consecutiveCounters.attack=0;state.log.push(`${battleLogName(attacker)} falló: no hay un objetivo válido.`);applyMoveCooldown(attacker,move,state);return;}
   // Una sola comprobación de precisión por objetivo/cadena; cada impacto calcula su propio crítico.
   const multi=d.multihit&&typeof d.multihit==='object'?d.multihit:null;
@@ -318,9 +334,10 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   let manualSwitchApplied=false;
   for(const defender of targets){
     if(!defender||defender.hp<=0||attacker.hp<=0)continue;ensureActorRuntime(defender);
-    if(d.accuracy!==null&&d.accuracy!==undefined&&Number(d.accuracy)!==0&&state.random()*100>=hitChance(modifiedValue(Number(d.accuracy),state.attackModifiers.accuracy,[0,100]),attacker,defender)){state.log.push(`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);continue;}
+    if(state.forceMiss||(d.accuracy!==null&&d.accuracy!==undefined&&Number(d.accuracy)!==0&&state.random()*100>=hitChance(Math.max(.00001,modifiedValue(Number(d.accuracy),state.attackModifiers.accuracy,[0,100])),attacker,defender))){state.log.push(`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);runMoveRules(move,'on_miss',attacker,defender,state);rulesFor(null,'on_miss',attacker,defender,state);continue;}
     // El cambio en «manual» se aplica tras acertar, no antes del daño.
     const hits=minHits===maxHits?minHits:minHits+Math.floor(state.random()*(maxHits-minHits+1));
+    let chainDamage=0,landedHits=0;
     for(let hit=1;hit<=hits;hit++){
       if(defender.hp<=0||attacker.hp<=0||!state.active[actorSide(defender)].includes(defender.teamIndex)||!state.active[actorSide(attacker)].includes(attacker.teamIndex))break;
       // El índice de golpe acompaña exclusivamente al mensaje de daño.
@@ -332,17 +349,25 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
         let bonus=(attacker.types.includes(d.type)?.2:0)+rel.bonus;
         if(charge)bonus+=counter*Number(charge.damagePerStack??10)/100;
         if(state.random()*100<criticalChance(modifiedValue(Number(d.criticalChance??0),state.attackModifiers.critical,[0,100]),attacker)){bonus+=.5;state.log.push(`${battleLogName(attacker)} hizo un golpe crítico contra ${battleLogName(defender)}.`);}
-        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));state.damageCauserSide=actorSide(attacker);const actualDamage=inflictDamage(defender,damage,state,'move');state.damageCauserSide=null;state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage,moveId:move.id};defender.lastHitType=d.type;state.log.push(multi?`${battleLogName(defender)} recibió ${damage} de daño (golpe ${hit}).`:`${battleLogName(defender)} recibe ${damage} de daño.`);state.pushVisualUnit?.(defender);
+        damage=Math.max(1,integer(modifiedValue(raw*(1+bonus+state.damageBonus),state.attackModifiers.final,[0,999999])));state.damageCauserSide=actorSide(attacker);const actualDamage=inflictDamage(defender,damage,state,'move');state.damageCauserSide=null;state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actualDamage,moveId:move.id};chainDamage+=actualDamage;defender.lastHitType=d.type;state.log.push(multi?`${battleLogName(defender)} recibió ${damage} de daño (golpe ${hit}).`:`${battleLogName(defender)} recibe ${damage} de daño.`);state.pushVisualUnit?.(defender);
         successfulHit=true;attacker.consecutiveCounters.streakHits=(attacker.consecutiveCounters.streakHits||0)+1;
       }
       // Habilidades de acierto/daño y muertes se resuelven por impacto,
       // incluso si el efecto propio del movimiento se difiere al fin de la cadena.
       // De lo contrario, un multigolpe 'chain' pierde activaciones intermedias.
-      if(!(multi?.effects==='chain'&&hit<hits&&defender.hp>0))runMoveRules(move,'on_hit',attacker,defender,state);
+      landedHits++;
+      runMoveRules(move,'on_hit',attacker,defender,state,false,multi?'each':null);
       rulesFor(null,'on_hit',attacker,defender,state);
       if(damage>0)rulesFor(null,'on_damage_taken',defender,attacker,state);
       state.resolveDeaths();
       if(!manualSwitchApplied){manualSwitchApplied=true;runMoveRules(move,'manual',attacker,defender,state,true);}
+    }
+    if(multi&&landedHits>0){
+      // La última acción `on_hit` por cadena usa el daño REAL agregado de
+      // todos los impactos (incluidos impactos letales y Sobrevivir).
+      state.lastDamage={attackerSide:attacker.side,attackerTeamIndex:attacker.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:chainDamage,moveId:move.id};
+      runMoveRules(move,'on_hit',attacker,defender,state,false,'chain');
+      state.resolveDeaths();
     }
   }
   if(d.category!=='status'&&Number(d.power)>0){

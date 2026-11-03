@@ -7,12 +7,12 @@ const block={event:'on_condition',condition:{type:'always'},target:'self',action
 const catalog={entities:{snake:e('snake','sssprint'),enemy:e('enemy','blank'),axolotl:e('axolotl','neotenia')},abilities:{sssprint:{id:'sssprint',name:'Sssprint',definition:{rules:[spr]}},neotenia:{id:'neotenia',name:'Neotenia',definition:{rules:[block]}},blank:{id:'blank',definition:{rules:[]}}},moves:{strike:m('strike',105),heal:m('heal',0,[{event:'manual',condition:{type:'always'},target:'self',action:{type:'heal',value:'40'},chance:100}]),idle:m('idle',0)},statuses:{}};
 let r=simulate({catalog,left:'snake',right:'enemy',turns:1,leftMove:'idle',rightMove:'strike',randomSource:()=>.8});
 console.log('first',r.left.hp,r.left.currentStats.speed,r.log.slice(-10));
-assert.ok(r.left.hp<50,'snake crossed below 50%');assert.equal(r.left.currentStats.speed,140);
+assert.ok(r.left.hp<50,'snake crossed below 50%');assert.equal(r.left.currentStats.speed,160);
 r=simulate({catalog,left:'snake',right:'enemy',turns:2,leftOrders:[{move:'idle'},{move:'heal'}],rightOrders:[{move:'strike'},{move:'idle'}],randomSource:()=>.8});
 console.log('second',r.left.hp,r.left.currentStats.speed);
 assert.ok(r.left.hp>=50);assert.equal(r.left.currentStats.speed,100);
 r=simulate({catalog,left:'snake',right:'enemy',turns:3,leftOrders:[{move:'idle'},{move:'heal'},{move:'idle'}],rightOrders:[{move:'strike'},{move:'idle'},{move:'strike'}],randomSource:()=>.8});
-assert.ok(r.left.hp<50);assert.equal(r.left.currentStats.speed,140);
+assert.ok(r.left.hp<50);assert.equal(r.left.currentStats.speed,160);
 console.log('pasiva reactiva OK');
 const inflict={event:'manual',condition:{type:'always'},target:'target',action:{type:'apply_status',value:'veneno'},duration:3,chance:100};
 const withPoison={...catalog,moves:{...catalog.moves,poison:m('poison',0,[inflict])},statuses:{veneno:{id:'veneno',name:'Veneno',definition:{rules:[]}}}};
