@@ -3,7 +3,7 @@
 // object path, so small content patches don't re-upload the whole art collection.
 export async function releaseResources(env,catalog,revision,previous={},types=[],playlists={}){
   if(!env.EDITOR_SPRITES)throw Error('Almacenamiento de sprites sin conectar.');
-  const r2=env.EDITOR_SPRITES,assets={sprites:{},environment:{},typeIcons:{},audio:{}},pending=[];
+  const r2=env.EDITOR_SPRITES,assets={sprites:{},environment:{},typeIcons:{},audio:{},tutorialImages:{}},pending=[];
   const choose=async(src,dest,oldPath,required)=>{
     const draft=await r2.head(src),old=oldPath?await r2.head(oldPath):null;
     if(draft&&old&&draft.etag&&old.etag&&draft.etag===old.etag)return oldPath;
@@ -20,6 +20,11 @@ export async function releaseResources(env,catalog,revision,previous={},types=[]
     const id=entry?.definition?.imageId;if(!id)continue;
     const key=`${category}/${id}`,oldPath=previous.assets?.environment?.[key]||(previous.revision?`published/${previous.revision}/environment/${key}.png`:null);
     assets.environment[key]=await choose(`environment/${key}.png`,`published/${revision}/environment/${key}.png`,oldPath,true);
+  }
+  for(const entry of Object.values(catalog.tutorial||{})){
+    const id=entry?.definition?.imageId;if(!id)continue;
+    const oldPath=previous.assets?.tutorialImages?.[id]||null;
+    assets.tutorialImages[id]=await choose(`tutorial/${id}.png`,`published/${revision}/tutorial/${id}.png`,oldPath,true);
   }
   // Audio publicado por revisión. Los borradores nunca se sirven al juego público.
   for(const [category,entries] of [['scenarios',Object.values(catalog.scenarios||{})]])for(const entry of entries){
@@ -48,5 +53,5 @@ export async function releaseResources(env,catalog,revision,previous={},types=[]
     if(!obj)throw Error('El recurso desapareció antes de publicar: '+src);
     await r2.put(dst,obj.body,{httpMetadata:obj.httpMetadata,customMetadata:obj.customMetadata});
   }
-  return {assets,copied:pending.length,reused:Object.keys(assets.sprites).length+Object.keys(assets.environment).length+Object.keys(assets.typeIcons).length+Object.keys(assets.audio).length-pending.length};
+  return {assets,copied:pending.length,reused:Object.keys(assets.sprites).length+Object.keys(assets.environment).length+Object.keys(assets.typeIcons).length+Object.keys(assets.tutorialImages).length+Object.keys(assets.audio).length-pending.length};
 }

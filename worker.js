@@ -193,6 +193,24 @@ export default {
         return privateJson({error:"Método no permitido."},405);
       }
 
+      // Imágenes de guía: borradores privados en R2, jamás se publican solas.
+      const tutorialImage=url.pathname.match(/^\/editor-api\/tutorial-images\/([a-z0-9-]{1,60})$/);
+      if(tutorialImage){
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 no conectado.'},503);
+        const id=tutorialImage[1],key=`tutorial/${id}.png`;
+        if(request.method==='GET'){
+          const object=await env.EDITOR_SPRITES.get(key);
+          return object?new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}}):privateJson({error:'Imagen no encontrada.'},404);
+        }
+        if(request.method!=='PUT')return privateJson({error:'Método no permitido.'},405);
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('image/png'))return privateJson({error:'Solo imágenes PNG.'},415);
+        const raw=await request.arrayBuffer();const sig=new Uint8Array(raw).slice(0,8);
+        if(!raw.byteLength||raw.byteLength>2*1024*1024||![137,80,78,71,13,10,26,10].every((x,i)=>sig[i]===x))return privateJson({error:'PNG inválido o mayor a 2 MB.'},413);
+        await env.EDITOR_SPRITES.put(key,raw,{httpMetadata:{contentType:'image/png'}});
+        return privateJson({ok:true,imageId:id});
+      }
+
       // Estudio de interfaz: borrador privado, textos y orden de paneles seguros.
       if(url.pathname==='/editor-api/ui-layout'&&['GET','PUT'].includes(request.method)){
         if(!env.EDITOR_DRAFTS)return privateJson({error:'KV privado no conectado.'},503);

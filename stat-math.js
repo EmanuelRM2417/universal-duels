@@ -3,7 +3,7 @@
 // asymmetric percentages; probability attributes modify their own base chance.
 const clamp=(x,lo,hi)=>Math.max(lo,Math.min(hi,Number(x)||0));
 export function netStages(...values){return clamp(values.reduce((sum,value)=>sum+(Number(value)||0),0),-10,10);}
-export function basicStageFactor(...values){const n=netStages(...values);return 1+(n>0?n*.10:n*.05);}
+export function basicStageFactor(...values){const n=netStages(...values);return 1+(n>0?n*.15:n*.05);}
 export function probabilityStageFactor(...values){return Math.max(0,1+netStages(...values)*.05);}
 /**
  * Stages on a nonzero probability are summed and applied RELATIVE to the base.
@@ -24,13 +24,14 @@ export function actorStages(actor,stat){
  * Accuracy scales its HIT chance, evasion scales the move's MISS chance.
  * The two effects compose multiplicatively, preserving the original base.
  */
+/** Precisión y evasión se cancelan por niveles netos. El 0 configurado
+ * representa infalibilidad frente a modificadores de precisión/evasión;
+ * una regla explícita `force_miss` sigue pudiendo obligar a fallar. */
 export function hitChance(accuracy,attacker,defender){
   const base=clamp(accuracy??100,0,100);
   if(base===0)return 100;
-  const adjustedAccuracy=scaledChance(base,actorStages(attacker,'accuracy'));
-  const baseEvasion=100-base;
-  const adjustedEvasion=scaledChance(baseEvasion,actorStages(defender,'evasion'));
-  return clamp(adjustedAccuracy*(100-adjustedEvasion)/Math.max(0.00001,100-baseEvasion),0,100);
+  const evade=actorStages(defender,'evasion'),prec=actorStages(attacker,'accuracy');
+  return clamp(base*(1-.05*(evade-prec)),10,100);
 }
 export function criticalChance(base,attacker){
   return scaledChance(base??0,actorStages(attacker,'criticalChance'));

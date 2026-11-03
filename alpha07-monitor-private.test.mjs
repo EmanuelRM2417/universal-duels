@@ -6,7 +6,9 @@ const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'u
 const monitor=readFileSync(new URL('./public/monitor.html',import.meta.url),'utf8');
 assert.match(config,/binding\s*=\s*"MAIN_MONITOR"/);
 assert.match(config,/service\s*=\s*"universalduels"/);
-assert.match(html,/href="\/monitor\.html"/);
+assert.match(html,/data-src="\/monitor\.html"/);
+assert.match(html,/data-view="monitor"/);
+assert.match(html,/if\(view==='monitor'\)/);
 assert.match(monitor,/new WebSocket\(/);
 assert.match(monitor,/setInterval\(/);
 assert.match(monitor,/id\.toLowerCase\(\)/);

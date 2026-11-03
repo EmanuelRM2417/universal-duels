@@ -67,7 +67,7 @@ export function validateRules(definition,category){
 }
 export function validateDefinition(category,d){
  if(!d || typeof d!=='object'||Array.isArray(d)) fail('Definición inválida.');
- if(category==='tutorial'){if(typeof d.text!=='string'||d.text.length>12000)fail('Tutorial: se requiere un texto de máximo 12000 caracteres.');return;}
+ if(category==='tutorial'){if(typeof d.text!=='string'||d.text.length>12000)fail('Tutorial: se requiere un texto de máximo 12000 caracteres.');if(d.imageId!==undefined&&d.imageId!==''&&!slug(d.imageId))fail('Tutorial: ID de imagen inválido.');return;}
  if(category==='tags'){if(!Array.isArray(d.entityIds)||d.entityIds.length>1000||new Set(d.entityIds).size!==d.entityIds.length||d.entityIds.some(id=>!slug(id)))fail('Etiquetas: personajes inválidos o repetidos.');return;}
  if(category==='moves'){
   if(!TYPES.includes(d.type)||!['physical','special','status'].includes(d.category)||!['global','unique'].includes(d.kind)) fail('Ataque: elegí clase, tipo y categoría.');
