@@ -28,7 +28,7 @@ export function completedOutcome(result){
   if(!rightAlive)return {finished:true,winner:'host',reason:'ko'};
   return {finished:false,winner:null,reason:null};
 }
-function publicCatalog(s){return{ok:true,version:s.version,revision:s.revision,publishedAt:s.publishedAt,types:s.types,chart:s.chart,catalog:s.catalog,uiLayout:s.uiLayout||{}};}
+function publicCatalog(s){return{ok:true,version:s.version,revision:s.revision,publishedAt:s.publishedAt,types:s.types,chart:s.chart,catalog:s.catalog,uiLayout:s.uiLayout||{},neutralSceneImageId:s.assets?.environment?.['scenarios/ud-neutral-default']?'ud-neutral-default':null};}
 function fixedCatalogResponse(s){const res=json(publicCatalog(s));res.headers.set('Cache-Control','public, max-age=31536000, immutable');return res;}
 // Stop reading oversized bodies before JSON parsing; Content-Length is optional
 // and may be absent or inaccurate for streamed requests.
@@ -126,7 +126,7 @@ export default{async fetch(request,env){const url=new URL(request.url);if(reques
     try{
       const requestedRevision=url.searchParams.get('revision')||'',snap=await snapshot(env,requestedRevision||undefined);
       const [,category,id]=environmentMatch;
-      if(!Object.values(snap.catalog?.[category]||{}).some(x=>x?.definition?.imageId===id))return json({error:'Recurso no publicado.'},404);
+      if(!(category==='scenarios'&&id==='ud-neutral-default'&&snap.assets?.environment?.['scenarios/ud-neutral-default'])&&!Object.values(snap.catalog?.[category]||{}).some(x=>x?.definition?.imageId===id))return json({error:'Recurso no publicado.'},404);
       const key=`${category}/${id}`,path=snap.assets?.environment?.[key]||`published/${snap.revision}/environment/${key}.png`;
       const obj=await env.PUBLIC_SPRITES.get(path);
       return obj?new Response(obj.body,{headers:{'Content-Type':'image/png','Cache-Control':requestedRevision?'public, max-age=31536000, immutable':'public, max-age=300','X-Content-Type-Options':'nosniff'}}):json({error:'Recurso no encontrado.'},404);

@@ -1,0 +1,21 @@
+UNIVERSAL DUELS ALPHA 0.8 — VARIABLES Y SECRETOS SEGUROS (MAIN)
+
+1. Se mantiene keep_vars = true para conservar variables de texto creadas en Cloudflare.
+2. Se ha declarado [secrets] required = ["UD_MONITOR_SECRET"]. Esto declara
+   SOLO el nombre, nunca el valor del secreto. Un despliegue debe fallar si falta.
+3. Antes de desplegar, comprueba que UD_MONITOR_SECRET exista como Secret
+   cifrado en Cloudflare, en Main Y Editor, con el MISMO valor.
+4. El Editor requiere el Service Binding MAIN_MONITOR hacia universalduels.
+5. GOOGLE_CLIENT_ID puede administrarse como texto en [vars] en el Main,
+   pero el valor real NO estaba disponible al preparar este ZIP. Para fijarlo,
+   edita la seccion COMENTADA al final del wrangler.toml del Main y sustituye
+   por tu Client ID de Google Cloud que termina en .apps.googleusercontent.com.
+   Sin hacer esto, keep_vars conserva el valor existente en Dashboard.
+6. Nunca pongas UD_MONITOR_SECRET, el Client Secret de Google o tokens
+   privados en [vars], ni en GitHub.
+7. No se han modificado workflows, bindings, motor, codigo del juego,
+   ni proceso de publicacion manual.
+
+Nota: marcar secrets.required verifica la presencia del secreto al desplegar,
+pero NO restaura su valor si fue eliminado del Worker. En tal caso hay que
+reponerlo de forma segura antes de desplegar.

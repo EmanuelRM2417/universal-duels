@@ -2,6 +2,9 @@ name = "universalduels"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
+# Conservar variables de texto creadas desde Cloudflare Dashboard tras nuevos despliegues.
+keep_vars = true
+
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"
@@ -24,3 +27,16 @@ bucket_name = "universal-duels-sprites-test"
 directory = "./public"
 binding = "ASSETS"
 run_worker_first = ["/api/*", "/health"]
+
+# El valor secreto NO debe guardarse en este archivo ni en GitHub.
+# Se requiere que ya exista en Cloudflare para permitir desplegar.
+[secrets]
+required = ["UD_MONITOR_SECRET"]
+
+# GOOGLE_CLIENT_ID es un identificador publico (NO el Client Secret).
+# Para administrarlo en el repositorio, agrega el valor REAL obtenido en Google Cloud:
+#
+# [vars]
+# GOOGLE_CLIENT_ID = "TU_CLIENT_ID_REAL.apps.googleusercontent.com"
+#
+# Si no lo fijas ahi, keep_vars = true mantiene el configurado en el Dashboard.
