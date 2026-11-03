@@ -2,6 +2,9 @@ name = "universal-duels-editor-privado"
 main = "worker.js"
 compatibility_date = "2026-09-29"
 
+# Conservar variables de texto creadas desde Cloudflare Dashboard tras nuevos despliegues.
+keep_vars = true
+
 # Acceso Worker-to-Worker al Main para el monitoreo privado.
 # Requiere configurar el secreto UD_MONITOR_SECRET (mismo valor fuerte en ambos Workers).
 [[services]]
@@ -39,3 +42,8 @@ run_worker_first = ["/api/*", "/health", "/editor-api/*"]
 ACCESS_TEAM_DOMAIN = "nameless-water-b29a.cloudflareaccess.com"
 ACCESS_AUD = "99bc017b30ecadb6150e289655d2c2fcdf043e1d65c3fa644d7df00f2350e346"
 EDITOR_EMAIL = "2417erm@gmail.com"
+
+# El valor secreto NO debe guardarse en este archivo ni en GitHub.
+# Se requiere que ya exista en Cloudflare para permitir desplegar.
+[secrets]
+required = ["UD_MONITOR_SECRET"]

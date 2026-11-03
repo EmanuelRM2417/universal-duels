@@ -21,6 +21,11 @@ export async function releaseResources(env,catalog,revision,previous={},types=[]
     const key=`${category}/${id}`,oldPath=previous.assets?.environment?.[key]||(previous.revision?`published/${previous.revision}/environment/${key}.png`:null);
     assets.environment[key]=await choose(`environment/${key}.png`,`published/${revision}/environment/${key}.png`,oldPath,true);
   }
+  // Optional neutral stage sprite, outside the combat-scenario catalog.
+  // Fallback remains the original grey when no neutral PNG has ever been published.
+  const neutralKey='scenarios/ud-neutral-default',neutralOldPath=previous.assets?.environment?.[neutralKey]||null;
+  const neutralPath=await choose('environment/'+neutralKey+'.png','published/'+revision+'/environment/'+neutralKey+'.png',neutralOldPath,false);
+  if(neutralPath)assets.environment[neutralKey]=neutralPath;
   for(const entry of Object.values(catalog.tutorial||{})){
     const id=entry?.definition?.imageId;if(!id)continue;
     const oldPath=previous.assets?.tutorialImages?.[id]||null;
