@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+assert.doesNotMatch(html,/\['Daño','\[PERSONAJE\] ahora tiene \[DAÑO\] de daño\.'/,'Invalid phantom source removed');
+assert.match(html,/\['Daño','\[PERSONAJE\] recibe \[DAÑO\] de daño\.'/,'Real damage log message remains editable');
+assert.match(html,/normalizeLegacyReplacement\(r\.replacement\)/,'Legacy custom message repaired in editor');
+assert.match(html,/const entries=\[\.\.\.templates,\.\.\.\[\.\.\.changes\.keys\(\)\]/,'Non-catalog custom templates remain visible');
+assert.match(html,/return \[group,pattern,current,\.\.\.tokens\(pattern\)\]/,'Search includes saved and original phrases');
+assert.match(html,/input\.dataset\.narratorPattern=pattern/,'Original source key remains immutable');
+console.log('Alpha 0.8: incorrect damage template removed, saved overrides migrated, actual text searchable');

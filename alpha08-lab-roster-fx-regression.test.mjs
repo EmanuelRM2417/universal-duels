@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+const css=readFileSync(new URL('./public/battle-visuals.css',import.meta.url),'utf8');
+const script=readFileSync(new URL('./public/battle-visuals.js',import.meta.url),'utf8');
+for(const part of ['labSwitchCards(team,active,[],act.slot)','labSwitchCards(team,active,battleActionDraft[side]','labSwitchCards(team,active,used,slot)'])assert.ok(html.includes(part),`Lab debe usar tarjetas para ${part}`);
+assert.match(html,/if\(!choices\.some\(x=>x\.i===selected\)\)return;/,'las selecciones no válidas no avanzan');
+assert.match(html,/\?\' ud-choosing-action\':\'\'/,'solo se ilumina el actor que decide');
+assert.ok(!html.includes('<small>Acción de ${escapeHtml(unit?.name'), 'no aparece el texto antiguo');
+assert.match(html,/UDBattleVisuals\.travel\(actor,targets,targets\[0\],speedFactor\(\)\)/,'ataque físico hacia objetivos');
+assert.match(html,/UDBattleVisuals\.circles\(actor,speedFactor\(\)\*\.53\)/,'ataque especial inicia círculo atacante');
+assert.match(html,/UDBattleVisuals\.circles\(t,speedFactor\(\)\*\.53\)/,'círculo del defensor después');
+assert.ok(html.includes('n+=30')&&html.includes('n-=20'));
+assert.ok(!html.includes('Solo representa tipos; ignora todos los demás modificadores.'));
+assert.match(css,/repeat\(4,minmax\(0,1fr\)\)/);
+assert.match(css,/\.lab-type-mark img/);
+assert.match(script,/g\.UDBattleVisuals=\{roster,mount,travel,circles\}/);
+console.log('Lab Alpha 0.8: tarjetas ordenadas, selección segura, animación de combate y afinidades OK');
