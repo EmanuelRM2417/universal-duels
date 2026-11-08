@@ -13,12 +13,14 @@ assert.match(index,/backgroundId=data\.scenario\?sc\.imageId:udNeutralSceneId/);
 assert.match(practice,/!data\?\.scenario\?udNeutralSceneId:''/);
 assert.match(index,/const playbackLimit=battle\?\.phase==='replacement'\?8000:12500;/,'longer online playback but capped to preserve timed decisions');
 assert.match(index,/serverDeadline\?serverDeadline-Date\.now\(\)-8500/,'must reserve time for online actions');
-assert.match(index,/await wait\(650\);continue/,'movement headline visible before next narration event');
-assert.match(practice,/await wait\(720\); \/\/ Tiempo mínimo/,'practice movement headline readable');
+assert.match(index,/if\(cat==='physical'\)await wait\(360\)/,'physical headline remains readable before travel');
+assert.match(practice,/if\(cat==='physical'\)await wait\(370\)/,'practice headline remains readable before travel');
 assert.match(practice,/await wait\(udReadImpact\(line\)\?700:1250\)/,'practice damage text has dwell time');
 assert.match(practice,/const sleep=ms=>new Promise\(r=>setTimeout\(r,Math\.round\(ms\*speedFactor\(\)\)\)\)/,'one common speed factor');
 assert.match(practice,/wait=ms=>sleep\(ms\)/,'no double application of speed factor');
 for(const html of [index,practice]){
+ assert.match(html,/\/battle-visuals\.js/,'shared smooth actor and target effects');
+ assert.match(html,/window\.UDBattleVisuals\.travel/,'physical attacks approach their target');
  assert.match(html,/:root\{--ud-speed-multiplier:1\.2\}/,'CSS animations match JS default speed');
  assert.match(html,/document\.documentElement\.style\.setProperty\('--ud-speed-multiplier',String\(speedFactor\(\)\)\)/,'speed selection updates CSS animations');
 }

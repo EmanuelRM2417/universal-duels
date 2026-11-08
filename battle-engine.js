@@ -348,6 +348,19 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   // El narrador anuncia el movimiento ANTES de cualquier efecto suyo o habilidad.
   state.log.push(`${battleLogName(attacker)} usó ${move.name}.`);
   state.visualEvents.push({logIndex:state.log.length-1,type:'move_targets',side:attacker.side,slot:state.active[actorSide(attacker)].findIndex(i=>i===attacker.teamIndex),targets:targets.map(t=>({side:t.side,slot:state.active[actorSide(t)].findIndex(i=>i===t.teamIndex)}))});
+  // Narración de afinidad ANTES de los efectos. No cambia fórmulas ni daño.
+  const announcedTypeImmunity=new Set();
+  if(d.category!=='status'&&Number(d.power)>0){
+    for(const defender of targets.filter(t=>t?.hp>0)){
+      const rel=relationBonus(d.type,defender,state);
+      const suffix=targets.filter(t=>t?.hp>0).length>1?' contra '+battleLogName(defender):'';
+      if(rel.immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);announcedTypeImmunity.add(defender);continue;}
+      const n=rel.bonus>0?Math.max(1,Math.round(rel.bonus/.3)):rel.bonus<0?Math.max(1,Math.round(Math.abs(rel.bonus)/.2)):0;
+      if(!n)continue;
+      const intensity=n===1?'':n===2?'muy ':'extremadamente ';
+      state.log.push(`Es ${intensity}${rel.bonus>0?'fuerte':'débil'}${suffix}.`);
+    }
+  }
   rulesFor(null,'on_attack',attacker,context,state);
   runMoveRules(move,'on_attack',attacker,context,state);
   if(state.preventAction){state.log.push(`${battleLogName(attacker)} no puede actuar.`);applyMoveCooldown(attacker,move,state);return;}
@@ -382,7 +395,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
       let damage=0;
       if(d.category!=='status'&&Number(d.power)>0){
         const effectImmune=[...(defender.effects||[]),...(defender.environmentDamageImmunity||[]),...(defender.passiveDamageImmunity||[])].some(e=>e.id==='immunity'&&!ownerSuppressed(e,state,defender)&&(e.damageClass==='all'||e.damageClass===d.category)&&(()=>{const f=e.filter||{mode:'all',types:[]},matched=(f.types||[]).includes(d.type);return f.mode==='all'||f.mode==='include'&&matched||f.mode==='exclude'&&!matched})());
-        const rel=relationBonus(d.type,defender,state);if(effectImmune||rel.immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);break;}
+        const rel=relationBonus(d.type,defender,state);if(effectImmune||rel.immune){if(!announcedTypeImmunity.has(defender))state.log.push(`${battleLogName(defender)} es inmune al ataque.`);break;}
         const attack=effective(attacker,d.category==='special'?'specialAttack':'attack'),defense=effective(defender,d.category==='special'?'specialDefense':'defense'),raw=Math.max(1,Math.floor((2*50/5+2)*modifiedValue(Number(d.power),[...state.attackModifiers.power,...(streakModifier(move,attacker)?[streakModifier(move,attacker)]:[])],[0,5000])*attack/defense/50+2));
         let bonus=(attacker.types.includes(d.type)?.2:0)+rel.bonus;
         if(charge)bonus+=counter*Number(charge.damagePerStack??10)/100;

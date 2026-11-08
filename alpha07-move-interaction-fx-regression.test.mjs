@@ -16,6 +16,10 @@ for(const file of files){
    $:id=>elements[id],battleLastData:{leftActiveIndexes:[0]},playerSide:()=> 'left',
    pUnits:()=>({playerTeam:[{name:'A',hp:100,maxHp:100},{name:'Reserva',hp:90,maxHp:100}]}),
    esc:s=>s,commitAction:action=>chosen.push(action),
+   udRosterCards:(p,active,selected,slot)=>p.playerTeam.map((u,i)=>active.includes(i)||selected.includes(i)||u.hp<=0?'':`<button data-i="${i}" data-slot="${slot}">${u.name}</button>`).join(''),
+   udMountRoster:()=>{},
+   window:{UDBattleVisuals:{roster:(team,active,selected,slot)=>team.map((u,i)=>active.includes(i)||selected.includes(i)||u.hp<=0?'':`<button data-i="${i}" data-slot="${slot}">${u.name}</button>`).join(''),mount:()=>{}}},
+   wireTypeMarks:()=>{},typeMark:()=>'',spriteUrl:()=>'',battle:{revision:'test'},
    moveHasManualSelfSwitch:()=>true,Number,
  };
  vm.runInNewContext(selectSource,ctx);

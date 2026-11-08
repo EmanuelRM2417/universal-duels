@@ -15,7 +15,7 @@ for(const [section,s] of [['catálogo',catalog],['tutorial',tutorial]]){
  assert.match(s,/Volver al menú principal/,'botón de '+section+' con texto correcto');
 }
 for(const s of [home,practice]){
- assert.match(s,/\.battle-stage::after\{left:var\(--ud-oval-x/,'posición de óvalo configurada');
+ assert.match(s,/body:has\(#battleView:not\(\.hidden\)\) #battleView \.battle-stage::after\s*\{\s*left:var\(--ud-oval-x/,'la posición publicada supera estilos específicos anteriores');
  assert.match(s,/--ud-oval-y/);
  assert.match(s,/--ud-oval-width/);
  assert.match(s,/--ud-oval-height/);
