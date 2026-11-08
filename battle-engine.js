@@ -72,7 +72,7 @@ function meets(cond,user,target,state){
   switch(cond.type){
     case'hp_below':return checked.hp/checked.maxHp*100<Number(v);case'hp_above':return checked.hp/checked.maxHp*100>Number(v);
     case'hp_full':return checked.hp===checked.maxHp;case'weather_is':return !!state.weather&&(!v||state.weather===v);case'field_is':return !!state.field&&(!v||state.field===v);case'scenario_is':return !!state.scenario&&(!v||state.scenario===v);case'has_status':return !!checked.status&&(!v||checked.status.id===v);case'enemy_defeated':return !!state.currentDefeatActor&&state.currentDefeatActor.side===user.side&&state.currentDefeatActor.teamIndex===user.teamIndex;
-    case'has_type':return checked.types.includes(v);case'was_hit_by_type':return checked.lastHitType===v;case'stat_below':return effective(checked,'speed')<Number(v);
+    case'has_type':return checked.types.includes(v);case'was_hit_by_type':return checked.lastHitType===v;case'received_move_type':return !!state.currentReceivedMove&&(!v||state.currentReceivedMove.type===v);case'received_move_category':return !!state.currentReceivedMove&&(!v||state.currentReceivedMove.category===v);case'stat_below':return effective(checked,'speed')<Number(v);
     case'streak_count':{ // La condición cuenta la racha; el efecto se configura aparte.
       const [mode='hit',min='1',max='']=String(v||'hit:1:').split(':');
       if(!['hit','use','streakHits'].includes(mode))return false;
@@ -88,8 +88,24 @@ function conditionsPass(rule,user,target,state){
   return rule.negate?!result:result;
 }
 function chance(rule,state){return percent(rule.chance??100)>=100||state.random()*100<percent(rule.chance??100);}
-function sourceMeta(state){return {sourceKind:state.currentSourceKind||'efecto',sourceId:state.currentSourceId||'',sourceName:state.currentSourceName||'Efecto',sourceActor:state.currentSourceActor||''};}
+function sourceMeta(state){return {sourceKind:state.currentSourceKind||'efecto',sourceId:state.currentSourceId||'',sourceName:state.currentSourceName||'Efecto',sourceActor:state.currentSourceActor||'',sourceOwnerSide:state.currentSourceOwnerSide,sourceOwnerIndex:state.currentSourceOwnerIndex};}
 function clearStatusLinkedEffects(a,statusId){ensureActorRuntime(a);a.effects=a.effects.filter(e=>!(e.sourceKind==='estado'&&e.sourceId===statusId));for(const key of Object.keys(a.used||{}))if(key.startsWith('status:'+statusId+':')||key.startsWith('statuspassive:'+statusId+':'))delete a.used[key];}
+const STAT_KEYS=Object.keys(STAT_NAMES);
+function statSelected(action,stat){return !(Array.isArray(action?.stats)&&action.stats.length)||action.stats.includes(stat);}
+function directionSelected(action,value){const mode=action?.direction||'both';return value!==0&&(mode==='both'||mode==='up'&&value>0||mode==='down'&&value<0);}
+function ownerSuppressed(effect,state,recipient){
+  if(effect.sourceKind!=='habilidad')return false;
+  const side=effect.sourceOwnerSide,index=effect.sourceOwnerIndex;
+  const owner=side!==undefined&&index!==undefined?state.teams?.[sideIndex(side)]?.[index]:recipient;
+  return !!owner?.effects?.some(e=>e.id==='suppressed');
+}
+function blocksStage(actor,stat,value,state,extra=[]){
+  if(!value)return false;
+  return [...(actor.effects||[]).filter(e=>e.id==='block_stat_changes'&&!ownerSuppressed(e,state,actor)),...(actor.passiveStatBlocks||[]),...extra]
+    .some(e=>statSelected(e,stat)&&directionSelected(e,value));
+}
+function sourceSuffix(state){return state.currentSourceName?` por ${state.currentSourceName}${state.currentSourceActor?' de '+state.currentSourceActor:''}`:'';}
+function annotateLogs(state,start,source,actor){if(!source)return;const suffix=` por ${source}${actor?' de '+actor:''}`;for(let i=start;i<state.log.length;i++)if(!state.log[i].includes(suffix))state.log[i]=state.log[i].replace(/\.$/,'')+suffix+'.';}
 function actorSide(a){return a?.side==='right'?1:0;}
 function activeActors(state,side){return (state.active[side]||[]).map(i=>state.teams[side][i]).filter(a=>a&&a.hp>0);}
 function partnerOf(state,user){return activeActors(state,actorSide(user)).find(a=>a!==user)||null;}
@@ -97,7 +113,7 @@ function firstOpponent(state,user){return activeActors(state,1-actorSide(user))[
 function targetSet(kind,user,contextTarget,state){
   const own=activeActors(state,actorSide(user)),enemy=activeActors(state,1-actorSide(user)),partner=partnerOf(state,user);
   switch(kind){
-    case'self':return[user];case'ally':return partner?[partner]:[];case'ally_team':return own;case'enemy_team':return enemy;case'all':return [...own.filter(a=>a!==user),...enemy];case'all_active':return[...own,...enemy];case'target':return contextTarget&&contextTarget.hp>0?[contextTarget]:[];default:return contextTarget&&contextTarget.hp>0?[contextTarget]:enemy.slice(0,1);
+    case'self':return[user];case'ally':return partner?[partner]:[];case'ally_team':return own;case'enemy_team':return enemy;case'all':return [...own.filter(a=>a!==user),...enemy];case'all_active':return[...own,...enemy];case'attacker':return contextTarget&&contextTarget.hp>0?[contextTarget]:[];case'target':return contextTarget&&contextTarget.hp>0?[contextTarget]:[];default:return contextTarget&&contextTarget.hp>0?[contextTarget]:enemy.slice(0,1);
   }
 }
 // Protección letal determinista: cada impacto se evalúa por separado.
@@ -110,7 +126,7 @@ function inflictDamage(target,amount,state,source='move'){
     // Las habilidades neutralizadas no participan; las protecciones por efectos sí.
     const candidates=(target.effects.some(e=>e.id==='suppressed')?[]:(target.abilities||[]))
       .filter(a=>a?.definition?.survive).map(a=>({id:a.id,kind:'ability',config:a.definition.survive}))
-      .concat((target.effects||[]).filter(e=>e.id==='survive'&&!(target.effects.some(x=>x.id==='suppressed')&&e.sourceKind==='habilidad')).map(e=>({id:e.sourceId||'effect',kind:'effect',config:e})));
+      .concat((target.effects||[]).filter(e=>e.id==='survive'&&!ownerSuppressed(e,state,target)).map(e=>({id:e.sourceId||'effect',kind:'effect',config:e})));
     candidates.sort((a,b)=>(Number(b.config.priority)||0)-(Number(a.config.priority)||0));
     for(const candidate of candidates){
       const cfg=candidate.config,allowed=cfg.sources||['move','effect','environment'];
@@ -158,7 +174,12 @@ function action(rule,user,contextTarget,state,depth){
   if(act.type==='force_miss'){state.forceMiss=true;return;}
   if(act.type==='do_nothing'){state.preventAction=true;return;}
   if(act.type==='apply_effect'){
-    const effect=state.catalog.effects?.[v];if(effect&&depth<6)for(const sub of effect.definition.rules||[])if(sub.event==='manual'&&conditionsPass(sub,user,contextTarget,state)&&chance(sub,state))action(sub,user,contextTarget,state,depth+1);return;
+    const effect=state.catalog.effects?.[v];if(effect&&depth<6){const prior={currentSourceName:state.currentSourceName,currentSourceId:state.currentSourceId,currentSourceKind:state.currentSourceKind};try{
+      state.currentSourceName=effect.name||effect.id||'Efecto';state.currentSourceKind='efecto';state.currentSourceId=effect.id||v;
+      for(const sub of effect.definition.rules||[])if(sub.event==='manual'&&conditionsPass(sub,user,contextTarget,state)&&chance(sub,state)){
+        action(sub,user,contextTarget,state,depth+1);
+      }
+    }finally{Object.assign(state,prior);}}return;
   }
   const targets=act.type==='resurrect'&&rule.target==='self'?[user]:act.type==='resurrect'&&rule.target==='ally_team'?state.teams[actorSide(user)].filter(t=>t.hp===0):act.type==='resurrect'&&rule.target==='target'&&contextTarget?[contextTarget]:targetSet(rule.target,user,contextTarget,state);
   if(['environment_immunity','prevent_environment','effect_immunity'].includes(act.type)){
@@ -197,7 +218,7 @@ function action(rule,user,contextTarget,state,depth){
   }
   for(const t of targets){
     if(!t||(t.hp<=0&&act.type!=='resurrect'))continue;ensureActorRuntime(t);
-    if(t.effects?.some(e=>e.id==='effect_immunity')||t.passiveEffectImmunity){
+    if(t.effects?.some(e=>e.id==='effect_immunity'&&!ownerSuppressed(e,state,t))||t.passiveEffectImmunity){
       if(!['effect_immunity','survive','remove_effect','remove_status'].includes(act.type)){state.log.push(`${battleLogName(t)} es inmune al efecto.`);continue;}
     }
     if(act.type==='resurrect'){if(t.hp!==0)continue;const hp=act.fixedHp!==undefined?integer(act.fixedHp):Math.ceil(t.maxHp*percent(act.percent??v??25)/100);t.hp=Math.max(1,Math.min(t.maxHp,hp));state.log.push(`${battleLogName(t)} resucita con ${t.hp} PS.`);state.refreshPassives?.();}
@@ -218,7 +239,22 @@ function action(rule,user,contextTarget,state,depth){
     }
     else if(act.type==='damage_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0;const amount=Math.max(0,integer(dealt*drainPercent(v)/100));if(amount>0){const actual=inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${actual} PS de daño por el daño infligido (${drainPercent(v)} %).`);state.pushVisualUnit?.(t);}}
     else if(act.type==='heal_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0,before=t.hp,amount=Math.max(0,integer(dealt*drainPercent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0){state.log.push(`${battleLogName(t)} recupera ${actual} PS (${drainPercent(v)} % del daño infligido).`);state.pushVisualUnit?.(t);}}
-    else if(act.type==='stat_change'&&['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'].includes(act.stat)){const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(statChangeText(t,act.stat,delta));state.pushVisualUnit?.(t);}}
+    else if(act.type==='stat_change'&&STAT_KEYS.includes(act.stat)){if(blocksStage(t,act.stat,integer(v),state)){state.log.push(`${battleLogName(t)} no puede modificar ${STAT_NAMES[act.stat]}${sourceSuffix(state)}.`);continue;}const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(statChangeText(t,act.stat,delta));state.pushVisualUnit?.(t);}}
+    else if(act.type==='clear_stat_changes'){
+      let modified=false;
+      for(const stat of STAT_KEYS){const old=t.stages[stat]||0;if(!statSelected(act,stat)||!directionSelected(act,old))continue;t.stages[stat]=0;modified=true;
+        t.statSources=(t.statSources||[]).filter(x=>x.stat!==stat);
+        state.log.push(`${battleLogName(t)} elimina ${old>0?'subidas':'bajadas'} de ${STAT_NAMES[stat]}${sourceSuffix(state)}.`);
+      }
+      if(modified){state.refreshPassives?.();state.pushVisualUnit?.(t);}
+    }
+    else if(act.type==='block_stat_changes'){
+      const meta=sourceMeta(state),duration=integer(rule.duration),existing=t.effects.find(e=>e.id==='block_stat_changes'&&e.sourceId===meta.sourceId&&e.sourceKind===meta.sourceKind);
+      const item={id:'block_stat_changes',stats:Array.isArray(act.stats)?act.stats.filter(x=>STAT_KEYS.includes(x)):[],direction:['up','down','both'].includes(act.direction)?act.direction:'both',turns:duration,permanent:duration===0,streakRuleKey:state.currentRuleKey||undefined,...meta};
+      if(existing)Object.assign(existing,item);else t.effects.push(item);
+      state.log.push(`${battleLogName(t)} impide cambios de estadística${sourceSuffix(state)}.`);
+      state.refreshEnvironment?.();state.refreshStatus?.();state.pushVisualUnit?.(t);
+    }
     else if(act.type==='apply_status'&&!t.status&&!t.statusBlocked){const st=state.catalog.statuses?.[safe(v)],f=st?.definition?.typeFilter||{mode:'all',types:[]},matched=(f.types||[]).some(x=>t.types.includes(x)),immune=f.mode==='exclude'&&matched||f.mode==='include'&&!matched;if(immune)state.log.push(`${battleLogName(t)} es inmune a ${st?.name||safe(v)}.`);else{t.status={id:safe(v),turns:Math.max(0,integer(rule.duration)),streakRuleKey:state.currentRuleKey||undefined};state.log.push(`${battleLogName(t)} recibe ${st?.name||t.status.id}.`);state.refreshStatus?.();state.refreshPassives?.();state.pushVisualUnit?.(t);rulesFor(null,'on_status_applied',t,user,state);}}
     else if(act.type==='remove_status'){if(t.status){const oldId=t.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;t.status=null;clearStatusLinkedEffects(t,oldId);state.log.push(`${battleLogName(t)} pierde ${old}.`);state.refreshStatus?.();state.refreshPassives?.();state.pushVisualUnit?.(t);}}
     else if(act.type==='suppress_abilities'){
@@ -239,8 +275,8 @@ function action(rule,user,contextTarget,state,depth){
       state.log.push(`${battleLogName(t)} tiene sus movimientos restringidos.`);
       state.pushVisualUnit?.(t);
     }
-    else if(act.type==='modify_active_cooldowns'){for(const[mid,n]of Object.entries(t.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(v));t.cooldowns[mid]=next;const m=t.moves.find(x=>x.id===mid);state.log.push(`${battleLogName(t)}: cooldown activo de ${m?.name||mid} ${integer(v)>=0?'+':''}${integer(v)} → ${next}.`);}}
-    else if(act.type==='cooldown_on_use')t.effects.push({id:'cooldown_on_use',streakRuleKey:state.currentRuleKey||undefined,value:integer(v),turns:Math.max(1,integer(rule.duration)),...sourceMeta(state)});
+    else if(act.type==='modify_active_cooldowns'){for(const[mid,n]of Object.entries(t.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(v));t.cooldowns[mid]=next;const m=t.moves.find(x=>x.id===mid);state.log.push(`${battleLogName(t)}: cooldown activo de ${m?.name||mid} ${integer(v)>=0?'+':''}${integer(v)} → ${next}${sourceSuffix(state)}.`);}}
+    else if(act.type==='cooldown_on_use'){t.effects.push({id:'cooldown_on_use',streakRuleKey:state.currentRuleKey||undefined,value:integer(v),turns:Math.max(1,integer(rule.duration)),...sourceMeta(state)});state.log.push(`${battleLogName(t)} modifica el cooldown de sus movimientos${sourceSuffix(state)}.`);}
     else if(act.type==='immunity')t.effects.push({id:'immunity',streakRuleKey:state.currentRuleKey||undefined,damageClass:act.damageClass||'all',filter:act.typeFilter||{mode:'all',types:[]},turns:integer(rule.duration),permanent:integer(rule.duration)===0,...sourceMeta(state)});
     else if(act.type==='switch_character'){
       const owner=switchTargetOwner(state,t),slot=state.active[owner].findIndex(i=>i===t.teamIndex),mode=act.switchMode==='manual'?'manual':'random';
@@ -262,7 +298,7 @@ function rulesFor(entry,event,user,contextTarget,state){
     if(rule.event!==event||(event==='on_status'&&rule.action?.type==='stat_change')||!conditionsPass(rule,user,contextTarget,state)||!chance(rule,state))continue;
     const key='status:'+statusId+':'+(st.definition.rules.indexOf(rule));if(rule.limit>0&&(user.used[key]||0)>=rule.limit)continue;
     user.used[key]=(user.used[key]||0)+1;
-    state.currentSourceName=st.name;state.currentSourceKind='estado';state.currentSourceId=st.id||statusId;state.currentSourceActor=user.name;
+    state.currentSourceName=st.name;state.currentSourceKind='estado';state.currentSourceId=st.id||statusId;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;
     action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';state.currentSourceActor='';
   }}
   for(const ability of user.abilities||[]){
@@ -270,7 +306,7 @@ function rulesFor(entry,event,user,contextTarget,state){
     for(const[idx,rule]of(ability?.definition?.rules||[]).map((rule,idx)=>({idx,rule})).sort((a,b)=>event==='on_death'?Number(b.rule.action?.type==='resurrect')-Number(a.rule.action?.type==='resurrect'):0).map(({idx,rule})=>[idx,rule])){
       const key=ability.id+':'+idx;if(rule.event!==event||(rule.limit>0&&(user.used[key]||0)>=rule.limit))continue;
       if(!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;user.used[key]=(user.used[key]||0)+1;
-      state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;const previousLogLength=state.log.length,abilityLabel=state.currentSourceName;action(rule,user,contextTarget,state,0);for(let i=previousLogLength;i<state.log.length;i++)if(!state.log[i].includes(' por '+abilityLabel+' de '))state.log[i]=state.log[i].replace(/\.$/,'')+' por '+abilityLabel+' de '+user.name+'.';state.currentSourceName='';state.currentSourceId='';
+      state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;const previousLogLength=state.log.length,abilityLabel=state.currentSourceName;action(rule,user,contextTarget,state,0);for(let i=previousLogLength;i<state.log.length;i++)if(!state.log[i].includes(' por '+abilityLabel+' de '))state.log[i]=state.log[i].replace(/\.$/,'')+' por '+abilityLabel+' de '+user.name+'.';state.currentSourceName='';state.currentSourceId='';
     }
   }
 }
@@ -282,9 +318,9 @@ function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false,chain
       const timing=rule.chainTiming||move.definition?.multihit?.effects||'each';
       if(timing!==chainPhase)continue;
     }
-    if((onlySwitch&&rule.action?.type!=='switch_character')||(!onlySwitch&&event==='manual'&&rule.action?.type==='switch_character'))continue;if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
+    if((onlySwitch&&rule.action?.type!=='switch_character')||(!onlySwitch&&event==='manual'&&rule.action?.type==='switch_character'))continue;if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;action(rule,user,contextTarget,state,0);state.currentSourceName='';state.currentSourceId='';}
 }
-function applyMoveCooldown(attacker,move,state){const d=move.definition;let cd=Math.max(0,integer(d.cooldown||0));for(const e of attacker.effects.filter(e=>e.id==='cooldown_on_use'))cd=Math.max(0,cd+integer(e.value));for(const e of attacker.environmentCooldownOnUse||[])if(chance(e,state))cd=Math.max(0,cd+integer(e.value));if(cd>0){attacker.cooldowns[move.id]=cd;attacker.cooldownSetRound[move.id]=state.round;state.log.push(`${battleLogName(attacker)} tiene ${cd} ${cd===1?'turno restante':'turnos restantes'} para poder volver a usar ${move.name}.`);}}
+function applyMoveCooldown(attacker,move,state){const d=move.definition;let cd=Math.max(0,integer(d.cooldown||0));for(const e of attacker.effects.filter(e=>e.id==='cooldown_on_use'&&!ownerSuppressed(e,state,attacker)))cd=Math.max(0,cd+integer(e.value));for(const e of attacker.environmentCooldownOnUse||[])if(chance(e,state))cd=Math.max(0,cd+integer(e.value));if(cd>0){attacker.cooldowns[move.id]=cd;attacker.cooldownSetRound[move.id]=state.round;const origins=attacker.effects.filter(e=>e.id==='cooldown_on_use'&&!ownerSuppressed(e,state,attacker)).map(e=>e.sourceName).filter(Boolean);state.log.push(`${battleLogName(attacker)} tiene ${cd} ${cd===1?'turno restante':'turnos restantes'} para poder volver a usar ${move.name}${origins.length?' (efecto: '+[...new Set(origins)].join(', ')+')':''}.`);}}
 function relationBonus(moveType,defender,state){let bonus=0,immune=false;for(const t of defender.types){const rel=state.chart?.[moveType]?.[t]||'neutral';if(rel==='inmune')immune=true;else if(rel==='eficaz')bonus+=.3;else if(rel==='ineficaz')bonus-=.2;}return{bonus,immune};}
 function resolvePosition(state,ref){if(!ref||!['left','right'].includes(ref.side)||!Number.isInteger(Number(ref.slot)))return null;const s=sideIndex(ref.side),slot=Number(ref.slot),idx=state.active[s]?.[slot];return idx===undefined?null:state.teams[s][idx]||null;}
 function moveTargets(user,move,orderTarget,state){
@@ -304,7 +340,7 @@ function restrictedMove(effect,move){
 function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   ensureActorRuntime(attacker);const d=move.definition;if(attacker.hp<=0)return;
   if((attacker.cooldowns[move.id]||0)>0){state.log.push(`${battleLogName(attacker)} no puede usar ${move.name}: quedan ${attacker.cooldowns[move.id]} turnos de cooldown.`);return;}
-  if([...(attacker.effects||[]),...(attacker.environmentMoveRestrictions||[])].some(e=>e.id==='restrict_moves'&&restrictedMove(e,move))){state.log.push(`${battleLogName(attacker)} no puede usar ${move.name}: movimiento restringido.`);return;}
+  if([...(attacker.effects||[]),...(attacker.environmentMoveRestrictions||[])].some(e=>e.id==='restrict_moves'&&!ownerSuppressed(e,state,attacker)&&restrictedMove(e,move))){state.log.push(`${battleLogName(attacker)} no puede usar ${move.name}: movimiento restringido.`);return;}
   let targets=moveTargets(attacker,move,orderTarget,state),context=targets[0]||firstOpponent(state,attacker);state.damageBonus=0;
   const counter=attacker.consecutiveCounters.attack||0;state.attackModifiers={power:[],accuracy:[],critical:[],final:[]};const charge=attacker.effects.some(e=>e.id==='suppressed')?null:(attacker.abilities||[]).find(a=>a.definition?.consecutiveAttack)?.definition.consecutiveAttack;
   let successfulHit=false;state.currentSwitchChoice=switchChoice;
@@ -334,7 +370,9 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   let manualSwitchApplied=false;
   for(const defender of targets){
     if(!defender||defender.hp<=0||attacker.hp<=0)continue;ensureActorRuntime(defender);
-    if(state.forceMiss||(d.accuracy!==null&&d.accuracy!==undefined&&Number(d.accuracy)!==0&&state.random()*100>=hitChance(Math.max(.00001,modifiedValue(Number(d.accuracy),state.attackModifiers.accuracy,[0,100])),attacker,defender))){state.log.push(`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);runMoveRules(move,'on_miss',attacker,defender,state);rulesFor(null,'on_miss',attacker,defender,state);continue;}
+    const evaded=!state.forceMiss&&d.accuracy!==null&&d.accuracy!==undefined&&Number(d.accuracy)!==0&&state.random()*100>=hitChance(Math.max(.00001,modifiedValue(Number(d.accuracy),state.attackModifiers.accuracy,[0,100])),attacker,defender);
+    if(state.forceMiss||evaded){state.log.push(`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);runMoveRules(move,'on_miss',attacker,defender,state);rulesFor(null,'on_miss',attacker,defender,state);
+      if(evaded&&!state.forceMiss){state.currentReceivedMove={type:d.type,category:d.category,moveId:move.id};rulesFor(null,'on_dodge',defender,attacker,state);state.currentReceivedMove=null;}continue;}
     // El cambio en «manual» se aplica tras acertar, no antes del daño.
     const hits=minHits===maxHits?minHits:minHits+Math.floor(state.random()*(maxHits-minHits+1));
     let chainDamage=0,landedHits=0;
@@ -343,7 +381,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
       // El índice de golpe acompaña exclusivamente al mensaje de daño.
       let damage=0;
       if(d.category!=='status'&&Number(d.power)>0){
-        const effectImmune=[...(defender.effects||[]),...(defender.environmentDamageImmunity||[]),...(defender.passiveDamageImmunity||[])].some(e=>e.id==='immunity'&&(e.damageClass==='all'||e.damageClass===d.category)&&(()=>{const f=e.filter||{mode:'all',types:[]},matched=(f.types||[]).includes(d.type);return f.mode==='all'||f.mode==='include'&&matched||f.mode==='exclude'&&!matched})());
+        const effectImmune=[...(defender.effects||[]),...(defender.environmentDamageImmunity||[]),...(defender.passiveDamageImmunity||[])].some(e=>e.id==='immunity'&&!ownerSuppressed(e,state,defender)&&(e.damageClass==='all'||e.damageClass===d.category)&&(()=>{const f=e.filter||{mode:'all',types:[]},matched=(f.types||[]).includes(d.type);return f.mode==='all'||f.mode==='include'&&matched||f.mode==='exclude'&&!matched})());
         const rel=relationBonus(d.type,defender,state);if(effectImmune||rel.immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);break;}
         const attack=effective(attacker,d.category==='special'?'specialAttack':'attack'),defense=effective(defender,d.category==='special'?'specialDefense':'defense'),raw=Math.max(1,Math.floor((2*50/5+2)*modifiedValue(Number(d.power),[...state.attackModifiers.power,...(streakModifier(move,attacker)?[streakModifier(move,attacker)]:[])],[0,5000])*attack/defense/50+2));
         let bonus=(attacker.types.includes(d.type)?.2:0)+rel.bonus;
@@ -358,7 +396,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
       landedHits++;
       runMoveRules(move,'on_hit',attacker,defender,state,false,multi?'each':null);
       rulesFor(null,'on_hit',attacker,defender,state);
-      if(damage>0)rulesFor(null,'on_damage_taken',defender,attacker,state);
+      if(damage>0){state.currentReceivedMove={type:d.type,category:d.category,moveId:move.id};rulesFor(null,'on_damage_taken',defender,attacker,state);rulesFor(null,'on_receive_attack',defender,attacker,state);state.currentReceivedMove=null;}
       state.resolveDeaths();
       if(!manualSwitchApplied){manualSwitchApplied=true;runMoveRules(move,'manual',attacker,defender,state,true);}
     }
@@ -377,7 +415,7 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
     attacker.consecutiveCounters.lastAttackRound=state.round;
   }
   if(charge){
-    if(successfulHit||(charge.conditionMode==='use'&&d.category!=='status'&&Number(d.power)>0)){attacker.consecutiveCounters.attack=counter+1;attacker.consecutiveCounters.lastAttackRound=state.round;const amount=integer(charge.speedStages??1);if(amount){const old=attacker.stages.speed||0;attacker.stages.speed=clamp(old+amount,-10,10);const delta=attacker.stages.speed-old;if(delta){attacker.statSources.push({stat:'speed',value:delta,sourceName:(attacker.abilities||[]).find(a=>a.definition?.consecutiveAttack)?.name||'Carga',sourceKind:'habilidad',sourceActor:attacker.name});state.log.push(statChangeText(attacker,'speed',delta));state.pushVisualUnit?.(attacker);}}state.log.push(`${battleLogName(attacker)} acumula Carga (${counter+1}).`);}
+    if(successfulHit||(charge.conditionMode==='use'&&d.category!=='status'&&Number(d.power)>0)){attacker.consecutiveCounters.attack=counter+1;attacker.consecutiveCounters.lastAttackRound=state.round;const amount=integer(charge.speedStages??1);if(amount&&!blocksStage(attacker,'speed',amount,state)){const old=attacker.stages.speed||0;attacker.stages.speed=clamp(old+amount,-10,10);const delta=attacker.stages.speed-old;if(delta){attacker.statSources.push({stat:'speed',value:delta,sourceName:(attacker.abilities||[]).find(a=>a.definition?.consecutiveAttack)?.name||'Carga',sourceKind:'habilidad',sourceActor:attacker.name});state.log.push(statChangeText(attacker,'speed',delta));state.pushVisualUnit?.(attacker);}}state.log.push(`${battleLogName(attacker)} acumula Carga (${counter+1}).`);}
     else{attacker.consecutiveCounters.attack=0;state.log.push(`${battleLogName(attacker)} pierde su acumulación de Carga.`);}
   }
   state.refreshPassives?.();
@@ -437,6 +475,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
           if(a.hp>0){koSeen.delete(a);state.pushVisualUnit?.(a,'unit_state');}
           else {state.deathEvents.push({side:a.side,teamIndex:a.teamIndex,round:state.round});
             state.log.push(`${battleLogName(a)} queda fuera de combate.`);
+             if(state.mode==='doubles'){const partner=partnerOf(state,a);if(partner?.hp>0)rulesFor(null,'on_ally_ko',partner,a,state);}
             const ld=state.lastDamage;
             if(ld&&ld.defenderSide===a.side&&ld.defenderTeamIndex===a.teamIndex){
               const killer=state.teams[sideIndex(ld.attackerSide)]?.[ld.attackerTeamIndex];
@@ -475,7 +514,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
     for(const[key,id,kind]of[['weather',weather,'weathers'],['field',field,'fields'],['scenario',scenario,'scenarios']])if(id){if(!catalog[kind]?.[id])throw Error('Entorno no encontrado: '+kind+'/'+id);state[key]=id;state[key+'Turns']=5;state.log.push('Entorno inicial: '+catalog[kind][id].name+' (5 rondas).');}
     snapshotRound(0);
   }
-  const envKinds=[['weather','weathers'],['field','fields'],['scenario','scenarios']],matches=(a,e)=>e.filter==='all'||(e.filter==='include'?e.types.some(t=>a.types.includes(t)):!e.types.some(t=>a.types.includes(t))),immune=(a,kind)=>a.effects.some(e=>e.id==='environment_immunity'&&(e.kind==='all'||e.kind===kind)&&!(e.source==='ability'&&a.effects.some(x=>x.id==='suppressed')));
+  const envKinds=[['weather','weathers'],['field','fields'],['scenario','scenarios']],matches=(a,e)=>e.filter==='all'||(e.filter==='include'?e.types.some(t=>a.types.includes(t)):!e.types.some(t=>a.types.includes(t))),immune=(a,kind)=>a.effects.some(e=>e.id==='environment_immunity'&&(e.kind==='all'||e.kind===kind)&&!ownerSuppressed(e,state,a));
   // Pasivas puras: calcular desde cero en cada cambio de PS, entrada o supresión.
   // Nunca se acumulan de manera permanente en stages; quitar condición quita el bono.
   const refreshPassives=()=>{
@@ -485,6 +524,14 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
       for(const a of state.allActive()){
         const before=a.passiveStages||{},previousBlocked=!!a.passiveStatusBlocked;
         const stages={},immunities=[],passiveSources=[];let block=false,effectImmune=false;
+        const statBlocks=[];
+        for(const owner of state.allActive())if(!owner.effects.some(e=>e.id==='suppressed')){
+          for(const ability of owner.abilities||[])for(const rule of ability?.definition?.rules||[]){
+            if(rule.event!=='on_condition'||rule.action?.type!=='block_stat_changes'||!conditionsPass(rule,owner,firstOpponent(state,owner),state))continue;
+            if(targetSet(rule.target||'self',owner,firstOpponent(state,owner),state).includes(a))statBlocks.push({...rule.action});
+          }
+        }
+        a.passiveStatBlocks=statBlocks;
         for(const owner of state.allActive()){
           for(const ability of owner.abilities||[])for(const [ruleIndex,rule] of (ability?.definition?.rules||[]).entries()){
             if(rule.event!=='on_condition')continue;
@@ -503,10 +550,10 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
             const lastTick=Number(owner.used[key]||0);
             owner.used[key]=recurring?state.round||1:1;
             const act=rule.action||{};
-            if(!['stat_change','block_status','immunity','effect_immunity'].includes(act.type)){
+            if(!['stat_change','block_status','immunity','effect_immunity','block_stat_changes'].includes(act.type)){
               if((!wasActive||recurring&&lastTick!==(state.round||1))&&a===owner){
                 state.currentRuleKey=key+'@'+owner.side+':'+owner.teamIndex;
-                state.currentSourceName=ability.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=owner.name;
+                state.currentSourceName=ability.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=owner.name;state.currentSourceOwnerSide=owner.side;state.currentSourceOwnerIndex=owner.teamIndex;
                 action(rule,owner,firstOpponent(state,owner),state,0);
                 state.currentSourceName='';state.currentSourceKind='';state.currentSourceId='';state.currentSourceActor='';state.currentRuleKey='';
               }
@@ -519,6 +566,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
               const counter=owner.consecutiveCounters?.[parts[0]]||0;
               const levels=rule.condition?.type==='streak_count'&&rule.streakEffectMode==='per_turn'?Math.max(1,counter-Math.max(0,Number(parts[1])||0)+1):1;
               const val=Math.max(-10,Math.min(10,integer(act.value)*levels));
+              if(blocksStage(a,act.stat,val,state,statBlocks))continue;
               stages[act.stat]=(stages[act.stat]||0)+val;
               passiveSources.push({stat:act.stat,value:val,sourceKind:'habilidad',sourceName:ability.name||ability.id,sourceActor:owner.name});}
             if(act.type==='block_status')block=true;if(act.type==='effect_immunity')effectImmune=true;
@@ -537,7 +585,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
             if(act.type==='stat_change')continue;
             if(!['block_status','immunity'].includes(act.type)){
               if(!beforeActive&&a===owner){
-                state.currentSourceName=statusEntry.name||'Estado';state.currentSourceKind='estado';state.currentSourceId=statusId;state.currentSourceActor=owner.name;
+                state.currentSourceName=statusEntry.name||'Estado';state.currentSourceKind='estado';state.currentSourceId=statusId;state.currentSourceActor=owner.name;state.currentSourceOwnerSide=owner.side;state.currentSourceOwnerIndex=owner.teamIndex;
                 action(rule,owner,firstOpponent(state,owner),state,0);
                 state.currentSourceName='';state.currentSourceKind='';state.currentSourceId='';state.currentSourceActor='';
               }
@@ -560,10 +608,10 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
     }finally{state._refreshingPassives=false;}
   };
   state.refreshPassives=refreshPassives;
-  const refreshEnvironment=()=>{const before=new Map();for(const a of state.allActive()){ensureActorRuntime(a);before.set(a,JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null}));a.environmentStages={};a.environmentStatSources=[];a.environmentCrit=0;a.environmentCooldownOnUse=[];a.environmentDamageImmunity=[];a.environmentMoveRestrictions=[];a.statusBlocked=false;a.environmentStatusBlocked=false;}for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!=='continuous')continue;for(const a of state.allActive()){if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))continue;if(e.type==='stat_change'){a.environmentStages[e.stat]=(a.environmentStages[e.stat]||0)+e.value;a.environmentStatSources.push({stat:e.stat,value:Number(e.value)||0,sourceKind:kind,sourceName:entry.name,sourceActor:'entorno'});}else if(e.type==='critical_change'){a.environmentCrit+=e.value;a.environmentStatSources.push({stat:'criticalChance',value:Number(e.value)||0,sourceKind:kind,sourceName:entry.name,sourceActor:'entorno'});}else if(e.type==='remove_status'&&a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state.refreshStatus?.();}else if(e.type==='block_status'){if(a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);}a.statusBlocked=true;a.environmentStatusBlocked=true;state.refreshStatus?.();}else if(e.type==='cooldown_on_use')a.environmentCooldownOnUse.push(e);else if(e.type==='restrict_moves')a.environmentMoveRestrictions.push({id:'restrict_moves',categories:e.categories||[],types:e.moveTypes||[]});else if(e.type==='immunity')a.environmentDamageImmunity.push({id:'immunity',damageClass:e.damageClass||'all',filter:e.immunityTypeFilter||{mode:'all',types:[]},sourceKind:kind,sourceName:entry.name});}}}refreshPassives();for(const a of state.allActive()){const after=JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null});if(before.get(a)!==after)state.pushVisualUnit?.(a);}};state.refreshEnvironment=refreshEnvironment;
-  const applyEnv=(a,e,entry,kind)=>{if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))return;if(e.type==='damage_percent'){const amount=e.value===0?0:Math.max(1,integer(a.maxHp*e.value/100));if(amount>0){inflictDamage(a,amount,state,'environment');state.log.push(entry.name+': '+battleLogName(a)+' pierde '+amount+' PS ('+e.value+' %).');state.pushVisualUnit?.(a);}}else if(e.type==='heal_percent'){const before=a.hp,amount=integer(a.maxHp*e.value/100);a.hp=Math.min(a.maxHp,a.hp+amount);const actual=a.hp-before;if(actual>0){state.log.push(entry.name+': '+battleLogName(a)+' recupera '+actual+' PS ('+e.value+' %).');state.pushVisualUnit?.(a);}}else if(e.type==='cooldown_change'){for(const[mid,n]of Object.entries(a.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(e.value));a.cooldowns[mid]=next;const m=a.moves.find(x=>x.id===mid);state.log.push(entry.name+': cooldown activo de '+(m?.name||mid)+' en '+battleLogName(a)+' '+(e.value>=0?'+':'')+e.value+' → '+next+'.');}}else if(e.type==='remove_status'&&a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}else if(e.type==='block_status'){if(a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}a.statusBlocked=true;}else if(e.type==='stat_change'){const stat=e.stat,before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}else if(e.type==='critical_change'){const stat='criticalChance',before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}};
+  const refreshEnvironment=()=>{const before=new Map();for(const a of state.allActive()){ensureActorRuntime(a);before.set(a,JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null}));a.environmentStages={};a.environmentStatSources=[];a.environmentCrit=0;a.environmentCooldownOnUse=[];a.environmentDamageImmunity=[];a.environmentMoveRestrictions=[];a.statusBlocked=false;a.environmentStatusBlocked=false;}for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!=='continuous')continue;for(const a of state.allActive()){if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))continue;if(e.type==='stat_change'){if(blocksStage(a,e.stat,Number(e.value)||0,state))continue;a.environmentStages[e.stat]=(a.environmentStages[e.stat]||0)+e.value;a.environmentStatSources.push({stat:e.stat,value:Number(e.value)||0,sourceKind:kind,sourceName:entry.name,sourceActor:'entorno'});}else if(e.type==='critical_change'){if(blocksStage(a,'criticalChance',Number(e.value)||0,state))continue;a.environmentCrit+=e.value;a.environmentStatSources.push({stat:'criticalChance',value:Number(e.value)||0,sourceKind:kind,sourceName:entry.name,sourceActor:'entorno'});}else if(e.type==='remove_status'&&a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state.refreshStatus?.();}else if(e.type==='block_status'){if(a.status){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);}a.statusBlocked=true;a.environmentStatusBlocked=true;state.refreshStatus?.();}else if(e.type==='cooldown_on_use')a.environmentCooldownOnUse.push(e);else if(e.type==='restrict_moves')a.environmentMoveRestrictions.push({id:'restrict_moves',categories:e.categories||[],types:e.moveTypes||[]});else if(e.type==='immunity')a.environmentDamageImmunity.push({id:'immunity',damageClass:e.damageClass||'all',filter:e.immunityTypeFilter||{mode:'all',types:[]},sourceKind:kind,sourceName:entry.name});}}}refreshPassives();for(const a of state.allActive()){const after=JSON.stringify({environmentStages:a.environmentStages||{},environmentCrit:a.environmentCrit||0,statusBlocked:!!a.statusBlocked,status:a.status?{id:a.status.id,turns:a.status.turns}:null});if(before.get(a)!==after)state.pushVisualUnit?.(a);}};state.refreshEnvironment=refreshEnvironment;
+  const applyEnv=(a,e,entry,kind)=>{if(a.hp<=0||immune(a,kind)||!matches(a,e)||!chance(e,state))return;if(e.type==='damage_percent'){const amount=e.value===0?0:Math.max(1,integer(a.maxHp*e.value/100));if(amount>0){inflictDamage(a,amount,state,'environment');state.log.push(entry.name+': '+battleLogName(a)+' pierde '+amount+' PS ('+e.value+' %).');state.pushVisualUnit?.(a);}}else if(e.type==='heal_percent'){const before=a.hp,amount=integer(a.maxHp*e.value/100);a.hp=Math.min(a.maxHp,a.hp+amount);const actual=a.hp-before;if(actual>0){state.log.push(entry.name+': '+battleLogName(a)+' recupera '+actual+' PS ('+e.value+' %).');state.pushVisualUnit?.(a);}}else if(e.type==='cooldown_change'){for(const[mid,n]of Object.entries(a.cooldowns)){if(n<=0)continue;const next=Math.max(0,n+integer(e.value));a.cooldowns[mid]=next;const m=a.moves.find(x=>x.id===mid);state.log.push(entry.name+': cooldown activo de '+(m?.name||mid)+' en '+battleLogName(a)+' '+(e.value>=0?'+':'')+e.value+' → '+next+'.');}}else if(e.type==='remove_status'&&a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}else if(e.type==='block_status'){if(a.status){const oldId=a.status.id,old=state.catalog.statuses?.[oldId]?.name||oldId;a.status=null;clearStatusLinkedEffects(a,oldId);state.refreshStatus?.();state.log.push(entry.name+': '+battleLogName(a)+' pierde '+old+'.');state.pushVisualUnit?.(a);}a.statusBlocked=true;}else if(e.type==='stat_change'){if(blocksStage(a,e.stat,Number(e.value)||0,state))return;const stat=e.stat,before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}else if(e.type==='critical_change'){if(blocksStage(a,'criticalChance',Number(e.value)||0,state))return;const stat='criticalChance',before=a.stages[stat]||0,next=clamp(before+integer(e.value),-10,10),delta=next-before;a.stages[stat]=next;if(delta){a.statSources.push({stat,value:delta,sourceName:entry.name,sourceKind:kind,sourceActor:'entorno'});state.log.push(statChangeText(a,stat,delta));state.pushVisualUnit(a);}}};
   const environmentTimed=timing=>{for(const[key,kind]of envKinds){const id=state[key],entry=state.catalog[kind]?.[id];if(!id||!entry)continue;for(const e of entry.definition.fieldEffects||[]){if(e.timing!==timing)continue;for(const a of state.allActive())applyEnv(a,e,entry,kind);}}};
-  const refreshStatus=()=>{for(const t of teams)for(const a of t){const before=JSON.stringify(a.statusStages||{});a.statusStages={};a.statusStatSources=[];if(a.status){const st=state.catalog.statuses?.[a.status.id];for(const r of st?.definition?.rules||[]){if(!['on_status','on_condition'].includes(r.event)||r.action?.type!=='stat_change'||!conditionsPass(r,a,firstOpponent(state,a),state))continue;const stat=r.action.stat,val=integer(r.action.value);a.statusStages[stat]=(a.statusStages[stat]||0)+val;a.statusStatSources.push({stat,value:val,sourceKind:'estado',sourceName:st?.name||a.status.id,sourceActor:a.name});}}if(before!==JSON.stringify(a.statusStages||{}))state.pushVisualUnit?.(a);}};state.refreshStatus=refreshStatus;refreshStatus();refreshEnvironment();
+  const refreshStatus=()=>{for(const t of teams)for(const a of t){const before=JSON.stringify(a.statusStages||{});a.statusStages={};a.statusStatSources=[];if(a.status){const st=state.catalog.statuses?.[a.status.id];for(const r of st?.definition?.rules||[]){if(!['on_status','on_condition'].includes(r.event)||r.action?.type!=='stat_change'||!conditionsPass(r,a,firstOpponent(state,a),state))continue;const stat=r.action.stat,val=integer(r.action.value);if(blocksStage(a,stat,val,state))continue;a.statusStages[stat]=(a.statusStages[stat]||0)+val;a.statusStatSources.push({stat,value:val,sourceKind:'estado',sourceName:st?.name||a.status.id,sourceActor:a.name});}}if(before!==JSON.stringify(a.statusStages||{}))state.pushVisualUnit?.(a);}};state.refreshStatus=refreshStatus;refreshStatus();refreshEnvironment();
   const replacementHistory=[leftReplacements,rightReplacements];
   const requiredSlots=s=>{if(!remaining(s))return [];const koSlots=active[s].map((idx,slot)=>({slot,a:teams[s][idx]})).filter(x=>!x.a||x.a.hp<=0).map(x=>x.slot);const forced=state.forcedSwitches.filter(f=>sideIndex(f.side)===s&&active[s][Number(f.slot)]===f.targetTeamIndex).map(f=>Number(f.slot));return [...new Set([...koSlots,...forced])].sort((a,b)=>a-b);};
   const applyReplacementForRound=(s,round)=>{const required=requiredSlots(s);if(!required.length)return;const raw=replacementHistory[s]?.[round-1],choices=Array.isArray(raw)?raw:raw?.choices;if(!Array.isArray(choices))return;for(const slot of required){const c=choices.find(x=>Number(x.slot)===slot);if(!c)continue;switchTo(s,slot,Number(c.teamIndex),true,'Relevo');}};

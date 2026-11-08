@@ -3,7 +3,8 @@ import {readFileSync} from 'node:fs';
 const read=n=>readFileSync(new URL('./public/'+n+'.html',import.meta.url),'utf8');
 const index=read('index'),practice=read('practice'),catalog=read('catalog'),tutorial=read('tutorial');
 for(const [name,text] of [['practice',practice],['catalog',catalog],['tutorial',tutorial]]){
- assert.match(text,/href="\/">← Volver al menú principal<\/a>/,name);
+ if(name==='practice')assert.match(text,/id="udPracticeReturnHome"[^>]*>Volver al menú principal<\/button>/,name);
+ else assert.match(text,/class="ud-menu-return"[^>]*>Volver al menú principal<\/button>/,name);
  assert.doesNotMatch(text,/href="\/">← Volver al juego/);
 }
 assert.doesNotMatch(practice,/<nav class="row">[^<]*<a href="\/catalog.html">/);
