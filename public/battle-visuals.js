@@ -26,10 +26,10 @@
   const avg={x:positions.reduce((n,p)=>n+p.x,0)/positions.length,y:positions.reduce((n,p)=>n+p.y,0)/positions.length},here=center(from),deltaX=avg.x-here.x,deltaY=avg.y-here.y;
   const stage=from.closest('.battle-stage')?.getBoundingClientRect(),maximumX=(stage?.width||900)*.83,maximumY=(stage?.height||700)*.78;
   const x=clamp(deltaX*.92,-maximumX,maximumX),y=clamp(deltaY*.92,-maximumY,maximumY);
-  const time=Math.round(2000*scale),stay=Math.round(time*.56);
+  const time=Math.round(2000*scale*.67),stay=Math.round(time*.56);
   const animation=play(from,[{translate:'0px 0px',offset:0},{translate:`${x}px ${y}px`,offset:.56},{translate:`${x}px ${y}px`,offset:.7},{translate:'0px 0px',offset:1}],time,'cubic-bezier(.37,.04,.35,1)');
   await new Promise(r=>setTimeout(r,stay));
-  const reaction=hit?play(hit,miss?[{translate:'0px 0px'},{translate:'13px -9px'},{translate:'-7px 5px'},{translate:'0px 0px'}]:[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale)) :Promise.resolve();
+  const reaction=hit?play(hit,miss?[{translate:'0px 0px'},{translate:'13px -9px'},{translate:'-7px 5px'},{translate:'0px 0px'}]:[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale*.67)) :Promise.resolve();
   await Promise.all([animation,reaction]);
  }
  async function circles(ref,scale=1){
@@ -37,7 +37,11 @@
   const r=9;const frames=[];
   for(let i=0;i<=16;i++){const theta=Math.PI*2*(i/8),a=i/16;frames.push({translate:`${Math.round(r*Math.cos(theta)-r)}px ${Math.round(r*Math.sin(theta))}px`,filter:`brightness(${(1+0.55*Math.sin(Math.PI*a)).toFixed(2)})`,offset:a});}
   frames[0].translate='0px 0px';frames[frames.length-1].translate='0px 0px';
-  await play(node,frames,Math.round(1900*scale));
+  await play(node,frames,Math.round(1900*scale*.8));
  }
- g.UDBattleVisuals={roster,mount,travel,circles};
+ async function recoil(ref,scale=1){
+  const node=sprite(ref);if(!node)return;
+  await play(node,[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale));
+ }
+ g.UDBattleVisuals={roster,mount,travel,circles,recoil};
 })(window);

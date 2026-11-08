@@ -27,3 +27,9 @@ body:has(#battleView:not(.hidden)) #battleView .battle-unit.ud-portal-arrive .ba
 body:has(#battleView:not(.hidden)) #battleView .battle-unit.ud-portal-leave .battle-sprite-window{animation-duration:1.75s!important}
 
 body:has(#battleView:not(.hidden)) #battleView .battle-unit .battle-nameplate .ud-type-mark img{width:clamp(19px,2vw,28px)!important;height:clamp(19px,2vw,28px)!important}
+
+/* En las tarjetas de selección solo aparecen medallones de tipo, no textos. */
+.ud-team-pick .ud-team-types{position:relative;min-height:28px;flex:0 0 auto;z-index:2;}
+.ud-team-pick .ud-team-types .ud-type-text{display:none!important}
+.ud-team-pick .ud-sprite-preview{flex:0 0 auto;isolation:isolate}
+.ud-team-pick .ud-team-types .ud-type-mark{min-width:23px;justify-content:center}

@@ -2,7 +2,11 @@
 (function(){
   const reEscape=text=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const LIMIT=120;
-  const normalizeLegacyDamage=text=>String(text||'').replace(/^(.+?) ahora tiene (\d+) de daño\.$/u,'$1 recibe $2 de daño.');
+  // Some earlier narrator customizations mistakenly rewrote damage events as HP totals.
+  // Keep the canonical engine semantics without removing valid custom messages.
+  const normalizeLegacyDamage=text=>String(text||'')
+    .replace(/^(.+?) ahora tiene (\d+|\[DAÑO\]) de daño\.$/u,'$1 recibe $2 de daño.')
+    .replace(/^(.+?) ya no tiene (\d+|\[PS\]) PS(?=\s*\(|\.)/u,'$1 pierde $2 PS');
   function apply(text,rules){
     const original=normalizeLegacyDamage(text);
     if(!Array.isArray(rules))return original;
