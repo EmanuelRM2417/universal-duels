@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+const worker=readFileSync(new URL('./worker.js',import.meta.url),'utf8');
+for(const token of ['on_receive_attack','on_dodge','on_ally_ko','received_move_type','received_move_category','clear_stat_changes','block_stat_changes','attacker'])assert.ok(html.includes(token),'la opción '+token+' es accesible en el selector existente');
+assert.match(html,/statScopeWrap\.hidden=!\['clear_stat_changes','block_stat_changes'\]\.includes\(a\)/,'configuración visible solo para el efecto');
+assert.match(html,/wrappers\.statDirection\.hidden=statScopeWrap\.hidden/,'filtro de dirección condicionado');
+assert.match(html,/data-view="oval"/);
+assert.match(html,/data-studio-view="oval"/);
+assert.match(html,/id="udOvalNeutralImage"[^>]+environment-visuals\/scenarios\/ud-neutral-default/,'preview usa escenario neutral privado');
+for(const k of ['x','y','width','height'])assert.ok(html.includes("'"+k+"'"),'control independiente '+k);
+assert.match(html,/fetch\('\/editor-api\/ui-layout',\{method:'PUT'/,'se guarda solo como borrador');
+assert.match(html,/Cargar parche para publicarlo/,'se recuerda la publicación manual');
+assert.match(worker,/const fieldOval=Object\.fromEntries/,'validación del óvalo en backend');
+assert.match(worker,/v<0\|\|v>100/,'límites del layout');
+assert.match(worker,/fieldOval,narratorRules/,'el backend persiste óvalo con narrador');
+assert.match(worker,/const uiLayout=await env\.EDITOR_DRAFTS\.get\('alpha04:ui-layout:v1'/,'publicación lee el borrador');
+console.log('Alpha 0.8: editor de reglas y óvalo privado con publicación manual OK');

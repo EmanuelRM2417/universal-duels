@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {validateRules, EVENTS, CONDITIONS, TARGETS, ACTIONS} from './catalog-validation.js';
+for(const id of ['on_receive_attack','on_dodge','on_ally_ko'])assert.ok(EVENTS.includes(id));
+for(const id of ['received_move_type','received_move_category'])assert.ok(CONDITIONS.includes(id));
+assert.ok(TARGETS.includes('attacker'));
+for(const id of ['clear_stat_changes','block_stat_changes'])assert.ok(ACTIONS.includes(id));
+const rule=(event,condition,action)=>({event,target:'attacker',condition,conditions:[],action,chance:100,duration:3,limit:0});
+const fire={type:'received_move_type',value:'fuego'},special={type:'received_move_category',value:'special'};
+assert.doesNotThrow(()=>validateRules({rules:[rule('on_receive_attack',fire,{type:'block_stat_changes',stats:['speed','attack'],direction:'down'})]},'abilities'));
+assert.doesNotThrow(()=>validateRules({rules:[rule('on_dodge',special,{type:'clear_stat_changes',stats:[],direction:'both'})]},'abilities'));
+assert.doesNotThrow(()=>validateRules({rules:[rule('on_ally_ko',{type:'always',value:''},{type:'clear_stat_changes',stats:['accuracy'],direction:'up'})]},'abilities'));
+assert.throws(()=>validateRules({rules:[rule('on_receive_attack',fire,{type:'block_stat_changes',stats:['hp'],direction:'both'})]},'abilities'),/estadísticas inválida/);
+assert.throws(()=>validateRules({rules:[rule('on_receive_attack',fire,{type:'clear_stat_changes',stats:[],direction:'random'})]},'abilities'),/subidas, bajadas/);
+assert.throws(()=>validateRules({rules:[rule('on_receive_attack',{type:'received_move_category',value:'magic'},{type:'clear_stat_changes',stats:[],direction:'both'})]},'abilities'),/clase del movimiento/);
+console.log('Alpha 0.8: el Editor valida/guarda todos los eventos, objetivos y filtros nuevos sin aceptar valores inválidos');

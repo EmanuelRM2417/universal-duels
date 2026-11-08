@@ -225,7 +225,11 @@ export default {
         if(data.order!==undefined){if(!Array.isArray(data.order)||data.order.length!==3||new Set(data.order).size!==3||data.order.some(x=>!sections.includes(x)))return privateJson({error:'Orden inválido.'},400);order=data.order;}
         const toolKeys=['player','enemy','environment','types','log'];let toolbar=toolKeys;if(data.toolbar!==undefined){if(!Array.isArray(data.toolbar)||data.toolbar.length!==toolKeys.length||new Set(data.toolbar).size!==toolKeys.length||data.toolbar.some(x=>!toolKeys.includes(x)))return privateJson({error:'Barra de combate inválida.'},400);toolbar=data.toolbar;}const opts=data.options||{};if(typeof opts!=='object'||Array.isArray(opts)||Object.keys(opts).some(x=>!['showMoveType','showMoveCategory','showMoveStab','showMoveAffinity'].includes(x))||Object.values(opts).some(x=>typeof x!=='boolean'))return privateJson({error:'Opciones de movimientos inválidas.'},400);const previousNarrator=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json');const narratorRules=data.narratorRules??previousNarrator?.narratorRules??[];
         if(!Array.isArray(narratorRules)||narratorRules.length>120||narratorRules.some(r=>!r||typeof r!=='object'||typeof r.pattern!=='string'||typeof r.replacement!=='string'||!r.pattern.trim()||r.pattern.length>240||r.replacement.length>360||/[<>]/.test(r.pattern+r.replacement)))return privateJson({error:'Plantillas del narrador inválidas (máximo 120).'},400);
-        const layout={labels,order,toolbar,options:opts,narratorRules:narratorRules.map(r=>({pattern:r.pattern,replacement:r.replacement}))};await env.EDITOR_DRAFTS.put('alpha04:ui-layout:v1',JSON.stringify(layout));
+        const previousOval=previousNarrator?.fieldOval||{};
+        const incomingOval=data.fieldOval??previousOval;
+        if(!incomingOval||typeof incomingOval!=='object'||Array.isArray(incomingOval)||Object.keys(incomingOval).some(k=>!['x','y','width','height'].includes(k))||Object.values(incomingOval).some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0||v>100))return privateJson({error:'Óvalo del campo inválido.'},400);
+        const fieldOval=Object.fromEntries([['x',1],['y',8],['width',98],['height',41]].map(([k,v])=>[k,incomingOval[k]??v]));
+        const layout={labels,order,toolbar,options:opts,fieldOval,narratorRules:narratorRules.map(r=>({pattern:r.pattern,replacement:r.replacement}))};await env.EDITOR_DRAFTS.put('alpha04:ui-layout:v1',JSON.stringify(layout));
         return privateJson({ok:true,layout,message:'Borrador guardado. Publicar con Cargar parche.'});
       }
 

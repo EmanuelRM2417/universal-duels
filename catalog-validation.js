@@ -1,8 +1,8 @@
 // Validación de configuración, no balance automático. No muta el contenido.
-export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','manual','manual_doubles','on_status','on_condition','on_status_applied'];
-export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','stat_below','streak_count','in_doubles'];
-export const TARGETS = ['self','target','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity'];
+export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
+export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles'];
+export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
@@ -22,7 +22,8 @@ function condition(c, prefix){
  }
  if(c.type==='stat_below' && !(c.value!=='' && within(Number(c.value),0,10000))) fail(prefix+': la Velocidad límite debe ser un número válido.');
  if(['weather_is','field_is','scenario_is','has_status'].includes(c.type) && c.value!=='' && c.value!==null && c.value!==undefined && !slug(c.value)) fail(prefix+': se necesita un ID válido.');
- if(['has_type','was_hit_by_type'].includes(c.type) && !TYPES.includes(c.value)) fail(prefix+': tipo desconocido.');
+ if(['has_type','was_hit_by_type','received_move_type'].includes(c.type) && !TYPES.includes(c.value)) fail(prefix+': tipo desconocido.');
+ if(c.type==='received_move_category' && !['physical','special','status'].includes(c.value)) fail(prefix+': clase del movimiento recibido inválida.');
 }
 export function validateRules(definition,category){
  if(!Array.isArray(definition.rules)) fail('La lista de reglas debe ser una lista (puede estar vacía).');
@@ -56,6 +57,10 @@ export function validateRules(definition,category){
   if(a.type==='restrict_moves'){for(const [values,allowed,label] of [[a.categories,['physical','special','status'],'clases'],[a.types,TYPES,'tipos']])if(values!==undefined&&(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x))))fail(at+': restricción de '+label+' inválida.');}
   if(a.type==='switch_character' && !['manual','random'].includes(a.switchMode)) fail(at+': Cambio de personaje requiere modo manual o aleatorio.');
   if(a.type==='stat_change' && (!STATS.includes(a.stat)||!(v!==''&&Number.isInteger(Number(v))&&Number(v)>=-10&&Number(v)<=10))) fail(at+': elegí estadística y cambio entero entre −10 y +10 niveles.');
+  if(['clear_stat_changes','block_stat_changes'].includes(a.type)){
+   if(a.stats!==undefined&&(!Array.isArray(a.stats)||new Set(a.stats).size!==a.stats.length||a.stats.some(x=>!STATS.includes(x))))fail(at+': lista de estadísticas inválida.');
+   if(a.direction!==undefined&&!['both','up','down'].includes(a.direction))fail(at+': elegí subidas, bajadas o ambas.');
+  }
   if(['apply_status','apply_effect','remove_effect','set_weather','set_field','set_scenario'].includes(a.type)&&!slug(v)) fail(at+': la acción necesita un ID válido.');
   if(['environment_immunity','prevent_environment'].includes(a.type) && !['weathers','fields','scenarios','all'].includes(v))fail(at+': inmunidad debe indicar clima, campo, escenario o todos.');
   if(['modify_active_cooldowns','cooldown_on_use'].includes(a.type)&&(!Number.isInteger(Number(v))||Number(v)<-50||Number(v)>50))fail(at+': el cambio de cooldown debe ser un entero entre −50 y +50 turnos.');
