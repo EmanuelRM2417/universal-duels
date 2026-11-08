@@ -1,0 +1,29 @@
+/* Alpha 0.8 · Tarjetas de relevo, indicador de turno y sprites de tipos. */
+.ud-team-pick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 5px}
+.ud-team-pick{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;min-height:174px;width:100%;padding:10px 7px 9px;text-align:center;background:linear-gradient(155deg,#2b304c,#161a2b);border:1px solid #596088;border-radius:14px;color:#f6f3ff;transition:border-color .15s,filter .15s,box-shadow .15s}
+.ud-team-pick strong{display:block;width:100%;order:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:800;font-size:clamp(11px,1.15vw,15px)}
+.ud-team-pick .ud-sprite-preview{order:1;width:75px;height:75px;min-height:75px;position:relative;display:block;overflow:hidden;pointer-events:none}
+.ud-team-pick .ud-sprite-preview .battle-sprite-sheet{position:absolute;height:75px;width:150px;left:0;top:0;max-width:none;image-rendering:pixelated}
+.ud-team-pick .ud-sprite-preview canvas{image-rendering:pixelated;display:block}
+.ud-team-pick .ud-team-types{order:2;display:flex;justify-content:center;align-items:center;gap:4px;flex-wrap:wrap;min-height:26px}
+.ud-team-pick .ud-team-types .ud-type-mark img{width:26px!important;height:26px!important;image-rendering:pixelated}
+.ud-team-pick .ud-team-hp{order:3;width:100%;display:grid;gap:4px;font-size:11px;font-weight:700}
+.ud-team-pick .ud-team-hp-track{display:block;height:9px;background:#572f38;border-radius:999px;border:1px solid #1c1e30;overflow:hidden}
+.ud-team-pick .ud-team-hp-fill{display:block;height:100%;background:#4bd176;border-radius:inherit}
+.ud-team-pick:not(:disabled):hover,.ud-team-pick:not(:disabled):focus-visible{border-color:#c6b6ff;box-shadow:0 0 14px #b29dff77;outline:2px solid #d5cbff;outline-offset:1px}
+.ud-team-pick:disabled{cursor:not-allowed;opacity:.44;filter:grayscale(.78);border-color:#4c4f60}
+.ud-team-pick .ud-team-unavailable{position:absolute;bottom:7px;left:5px;right:5px;text-align:center;border-radius:5px;background:#121523dc;color:#f8d6e0;padding:2px 4px;font-size:10px;font-weight:800;z-index:4}
+.ud-team-pick:disabled .ud-team-hp{margin-bottom:17px}
+.battle-unit.ud-choosing-action .battle-nameplate{border-color:#cbbcff!important;box-shadow:0 0 0 2px #a292ff,0 0 20px 5px #9f8cffb5!important;filter:brightness(1.13);animation:udChoicePulse 1.5s ease-in-out infinite alternate}
+@keyframes udChoicePulse{from{box-shadow:0 0 0 2px #998af9,0 0 8px #9282ef88}to{box-shadow:0 0 0 3px #d8d0ff,0 0 24px #b69effd9}}
+/* Escudos de tipo: mayor contraste y bordes definidos sin interpolación borrosa. */
+.ud-type-mark img,.type-icon img{image-rendering:pixelated!important;object-fit:contain!important;filter:drop-shadow(0 1px 1px #03030b) drop-shadow(0 0 2px #d9d4ff70)}
+.type-legend .ud-type-mark img{width:28px;height:28px}
+@media(max-width:650px){.ud-team-pick-grid{gap:4px}.ud-team-pick{min-height:135px;padding:6px 2px}.ud-team-pick strong{font-size:9px}.ud-team-pick .ud-sprite-preview{height:56px;min-height:56px;width:56px}.ud-team-pick .ud-team-types .ud-type-mark img{width:18px!important;height:18px!important}.ud-team-pick .ud-team-hp{font-size:9px}}
+
+/* Efectos más legibles (aprox. dos segundos en velocidad normal). */
+body:has(#battleView:not(.hidden)) #battleView .battle-unit.ud-fx-status .battle-sprite-window{animation:udFxStatus calc(1.9s * var(--ud-speed-multiplier,1)) ease-in-out 1!important}
+body:has(#battleView:not(.hidden)) #battleView .battle-unit.ud-portal-arrive .battle-sprite-window{animation-duration:1.75s!important}
+body:has(#battleView:not(.hidden)) #battleView .battle-unit.ud-portal-leave .battle-sprite-window{animation-duration:1.75s!important}
+
+body:has(#battleView:not(.hidden)) #battleView .battle-unit .battle-nameplate .ud-type-mark img{width:clamp(19px,2vw,28px)!important;height:clamp(19px,2vw,28px)!important}

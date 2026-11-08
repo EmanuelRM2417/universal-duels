@@ -2,6 +2,9 @@
 (()=>{
  const $=id=>document.getElementById(id),gate=$('udAuthGate'),name=$('udAccountName'),status=$('udAuthStatus');
  let account=null,accessGranted=false,tutorialRunning=false,mandatory=false;
+ const GUEST_SESSION_KEY='ud-alpha08-guest-session-active';
+ function rememberedGuest(){try{return localStorage.getItem(GUEST_SESSION_KEY)==='1';}catch{return false;}}
+ function rememberGuest(active){try{if(active)localStorage.setItem(GUEST_SESSION_KEY,'1');else localStorage.removeItem(GUEST_SESSION_KEY);}catch{}}
  window.udMandatoryTutorial=false;
  function setStatus(text){status.textContent=text;}
  function showGate(){gate.hidden=false;$('udAccountBar').hidden=true;}
@@ -21,16 +24,16 @@
    tutorialRunning=false;mandatory=false;window.udMandatoryTutorial=false;$('udEmbeddedClose').hidden=false;
    window.udCloseEmbed?.();allowPlay();
  }
- window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('udEmbeddedFrame').contentWindow&&e.data?.type==='ud-tutorial-complete')finalize();});
- $('udGuestButton').addEventListener('click',()=>{account=null;tutorial(true);});
- $('udAccountLogout').addEventListener('click',async()=>{if(account)try{await json('/api/auth/logout',{method:'POST'});}catch{}account=null;window.udAccountReady?.(null);accessGranted=false;window.udAuthAllowed=false;showGate();});
+ window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('udEmbeddedFrame').contentWindow&&['ud-tutorial-complete','ud-tutorial-skip'].includes(e.data?.type))finalize();});
+ $('udGuestButton').addEventListener('click',()=>{account=null;rememberGuest(true);tutorial(true);});
+ $('udAccountLogout').addEventListener('click',async()=>{if(account)try{await json('/api/auth/logout',{method:'POST'});}catch{}account=null;rememberGuest(false);window.udAccountReady?.(null);accessGranted=false;window.udAuthAllowed=false;showGate();});
  async function renderGoogle(clientId){
    if(!clientId){setStatus('El Worker publicado no está recibiendo GOOGLE_CLIENT_ID. Revisá que la variable esté en Main (no Editor ni Preview), en el entorno de producción, y que los cambios se hayan desplegado.');return;}
    const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;
    script.onload=()=>{
      if(!window.google?.accounts?.id){setStatus('Google no está disponible en este navegador.');return;}
      google.accounts.id.initialize({client_id:clientId,callback:async response=>{
-       try{setStatus('Verificando cuenta de Google…');const data=await json('/api/auth/google',{method:'POST',body:JSON.stringify({credential:response.credential})});account=data.user;
+       try{setStatus('Verificando cuenta de Google…');const data=await json('/api/auth/google',{method:'POST',body:JSON.stringify({credential:response.credential})});account=data.user;rememberGuest(false);
          if(account.tutorialComplete)allowPlay();else tutorial(true);
        }catch(e){showGate();setStatus(e.message);}
      }});
@@ -77,12 +80,24 @@
    }catch(e){statsStatus.textContent='No se pudo guardar el nick: '+e.message;}
  });
  async function init(){
-   showGate();
+   // No mostrar el formulario antes de conocer la sesión: evita el destello
+   // de la pantalla de inicio de sesión al recargar con Google o invitado.
+   gate.hidden=true;
    try{
-     const [config,me]=await Promise.all([json('/api/auth/config'),json('/api/auth/me')]);
-     if(me.user){account=me.user;if(account.tutorialComplete){allowPlay();return;}tutorial(true);}
-     await renderGoogle(config.googleClientId);
-   }catch(e){setStatus('No se pudo comprobar Google: '+e.message+'; podés continuar como invitado.');}
+     const me=await json('/api/auth/me');
+     if(me.user){
+       account=me.user;rememberGuest(false);
+       if(account.tutorialComplete){allowPlay();return;}
+       tutorial(true);
+     }else if(rememberedGuest()){
+       account=null;allowPlay();return;
+     }else showGate();
+   }catch(e){
+     if(rememberedGuest()){account=null;allowPlay();return;}
+     showGate();setStatus('No se pudo verificar la sesión: '+e.message);
+   }
+   try{const config=await json('/api/auth/config');await renderGoogle(config.googleClientId);}
+   catch(e){setStatus('No se pudo comprobar Google: '+e.message+'; podés continuar como invitado.');}
  }
  init();
 })();

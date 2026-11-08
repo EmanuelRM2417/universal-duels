@@ -11,7 +11,7 @@
 .stat-fill{display:block;width:100%;height:var(--stat-percent);background:var(--stat-color);transition:height .35s ease,background .35s ease;border-radius:4px 4px 0 0}
 .related-links{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 18px}.related-links h3{flex:0 0 100%;margin:0}
 @media(max-width:600px){.stats{gap:3px}.stat{padding:5px 1px}.stat-track{width:15px;height:112px}.stat strong{font-size:9px}.stat .stat-value{font-size:11px}}
-</style></head><body><div class="wrap"><div class="row brand-row"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Catálogo de Universal Duels</h1></div></div><button type="button" class="ud-menu-return" onclick="if(window.parent!==window){window.parent.postMessage({type:'ud-close-embedded'},location.origin)}else{location.assign('/')}">Volver al menú principal</button></div>
+</style><link rel="stylesheet" href="/battle-visuals.css"></head><body><div class="wrap"><div class="row brand-row"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Catálogo de Universal Duels</h1></div></div><button type="button" class="ud-menu-return" onclick="if(window.parent!==window){window.parent.postMessage({type:'ud-close-embedded'},location.origin)}else{location.assign('/')}">Volver al menú principal</button></div>
 <p class="muted">Personajes, estadísticas, movimientos, habilidades y sus relaciones. El catálogo corresponde al parche publicado.</p>
 <section id="browse" class="panel"><label for="search">Buscar personajes</label><div><input id="search" placeholder="Nombre o #etiqueta" autocomplete="off"></div><p id="count" class="muted"></p><div id="cards" class="cards"></div></section>
 <section id="details" class="panel details" hidden><div class="row"><button id="back">← Volver</button><span id="revision" class="muted"></span></div><div id="detail"></div></section>
@@ -101,8 +101,8 @@ function render(){const q=$('search').value.trim().toLocaleLowerCase('es'),entri
   const d=e.definition||{};const tags=[...(d.tags||[]),...Object.values(data.catalog.tags||{}).filter(t=>t.definition?.entityIds?.includes(e.id)).map(t=>t.name)];return q.startsWith('#')?tags.some(t=>String(t).toLocaleLowerCase('es').includes(q.slice(1))):e.name.toLocaleLowerCase('es').includes(q);
 }).sort((a,b)=>a.name.localeCompare(b.name,'es'));$('cards').replaceChildren();$('count').textContent=entries.length+' personajes';
 for(const e of entries){const card=document.createElement('button');card.className='card';
-  const d=e.definition||{};if(d.spriteId){const url='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.append(spritePreview(url));}
-  card.append(text('strong',e.name));addTypes(card,d.types||[]);card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
+  const d=e.definition||{};card.append(text('strong',e.name));if(d.spriteId){const url='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.append(spritePreview(url));}
+  addTypes(card,d.types||[]);card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
 window.UDTypeIcons?.mount($('cards'));window.UDSprites?.mount($('cards'));
 }
 $('search').oninput=render;
