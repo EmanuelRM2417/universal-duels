@@ -11,11 +11,11 @@ assert.doesNotMatch(practice,/<nav class="row">[^<]*<a href="\/catalog.html">/);
 assert.doesNotMatch(tutorial,/<a href="\/practice.html">Probar en Entrenamiento<\/a>/);
 assert.match(index,/backgroundId=data\.scenario\?sc\.imageId:udNeutralSceneId/);
 assert.match(practice,/!data\?\.scenario\?udNeutralSceneId:''/);
-assert.match(index,/const playbackLimit=battle\?\.phase==='replacement'\?8000:12500;/,'longer online playback but capped to preserve timed decisions');
+assert.match(index,/const playbackLimit=battle\?\.phase==='replacement'\?8000:18000;/,'longer online playback but capped to preserve timed decisions');
 assert.match(index,/serverDeadline\?serverDeadline-Date\.now\(\)-8500/,'must reserve time for online actions');
 assert.match(index,/if\(cat==='physical'\)await wait\(360\)/,'physical headline remains readable before travel');
 assert.match(practice,/if\(cat==='physical'\)await wait\(370\)/,'practice headline remains readable before travel');
-assert.match(practice,/await wait\(udReadImpact\(line\)\?700:1250\)/,'practice damage text has dwell time');
+assert.match(practice,/await wait\(Math\.max\(0,\(1700\*speedFactor\(\)-\(Date\.now\(\)-udHeadlineAt\)\)\/speedFactor\(\)\)\)/,'practice move title has its own dwell time');
 assert.match(practice,/const sleep=ms=>new Promise\(r=>setTimeout\(r,Math\.round\(ms\*speedFactor\(\)\)\)\)/,'one common speed factor');
 assert.match(practice,/wait=ms=>sleep\(ms\)/,'no double application of speed factor');
 for(const html of [index,practice]){

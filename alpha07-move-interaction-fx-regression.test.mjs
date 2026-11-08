@@ -9,7 +9,7 @@ for(const file of files){
  const selectSource=functionBlock(html,'function maybeSwitchChoice(','function commitAction(');
  const elements={
   battleModalTitle:{textContent:''},battleModalBody:{innerHTML:'',querySelectorAll(sel){return [...this.innerHTML.matchAll(/data-i="(\d+)"/g)].map(match=>({dataset:{i:match[1]},onclick:null})).map(btn=>{this.buttons.push(btn);return btn;})},buttons:[]},
-  battleModalClose:{hidden:true},battleModal:{hidden:true},
+  battleModalClose:{hidden:true},battleModal:{hidden:true,dataset:{}},
  };
  const chosen=[];
  const ctx={

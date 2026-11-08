@@ -26,11 +26,11 @@ const fake={};vm.runInNewContext(code,{window:fake,document:{querySelector:s=>no
 await fake.UDBattleVisuals.travel({side:'left',slot:0},[{side:'right',slot:0},{side:'right',slot:1}],{side:'right',slot:0},.02);
 assert.ok(events.length>=2,'actor avanza y defensor retrocede');
 assert.match(events[0].frames[1].translate,/px/,'avance calculado por posición real');
-assert.equal(events[0].opt.duration,40,'avance de ~2 segundos a velocidad normal (test escalado)');
+assert.equal(events[0].opt.duration,27,'avance físico reducido 33 % (test escalado)');
 events.length=0;
 await fake.UDBattleVisuals.circles({side:'left',slot:0},.01);
 assert.ok(events[0].frames.length>=16,'se trazan dos círculos completos');
-assert.equal(events[0].opt.duration,19);
+assert.equal(events[0].opt.duration,15,'círculos especiales acelerados 20 %');
 for(const f of files){const html=readFileSync(new URL(f+'.html',base),'utf8');
  assert.match(html,/\/battle-visuals\.css/);assert.match(html,/\/battle-visuals\.js/);
  assert.match(html,/udRosterCards/);assert.match(html,/ud-team-pick:not\(:disabled\)/);
