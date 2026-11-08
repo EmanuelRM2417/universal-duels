@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+const pattern=html.match(/const normalizeLegacyReplacement=value=>String\(value\)[\s\S]*?;(?=\s*const allTemplates)/);
+assert.ok(pattern,'editor provides a migration for obsolete narrator replacements');
+const context={};vm.runInNewContext(pattern[0]+';this.normalizer=normalizeLegacyReplacement',context);
+const normalize=context.normalizer;
+assert.equal(normalize('[CLIMA]: [PERSONAJE] ya no tiene [PS] PS ([PORCENTAJE] %).'),'[CLIMA]: [PERSONAJE] pierde [PS] PS ([PORCENTAJE] %).');
+assert.equal(normalize('[PERSONAJE] ahora tiene [DAÑO] de daño.'),'[PERSONAJE] recibe [DAÑO] de daño.');
+assert.equal(normalize('[PERSONAJE] se cura [PS] PS.'),'[PERSONAJE] se cura [PS] PS.');
+assert.match(html,/const updated=normalizeLegacyReplacement\(r\.replacement\)/,'stored drafts migrate on load');
+assert.match(html,/const refresh=\(\)=>\{const value=normalizeLegacyReplacement\(input\.value\.trim\(\)\)/,'live preview uses corrected text');
+assert.match(html,/const line=String\(lines\[i\]\),use=line\.match\(\/\^\(\.\+\?\) usó/,'lab retains move narration');
+assert.match(html,/await sleep\(Math\.max\(0,1700\*speedFactor\(\)-\(Date\.now\(\)-udHeadlineAt\)\)\)/,'lab enforces headline duration');
+console.log('Alpha 0.8: editor migrates old incorrect messages; lab headline gets independent time');

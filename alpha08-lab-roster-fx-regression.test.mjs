@@ -14,5 +14,5 @@ assert.ok(html.includes('n+=30')&&html.includes('n-=20'));
 assert.ok(!html.includes('Solo representa tipos; ignora todos los demás modificadores.'));
 assert.match(css,/repeat\(4,minmax\(0,1fr\)\)/);
 assert.match(css,/\.lab-type-mark img/);
-assert.match(script,/g\.UDBattleVisuals=\{roster,mount,travel,circles\}/);
+assert.match(script,/g\.UDBattleVisuals=\{roster,mount,travel,circles,recoil\}/);
 console.log('Lab Alpha 0.8: tarjetas ordenadas, selección segura, animación de combate y afinidades OK');
