@@ -29,7 +29,7 @@
   const time=Math.round(2000*scale*.67),stay=Math.round(time*.56);
   const animation=play(from,[{translate:'0px 0px',offset:0},{translate:`${x}px ${y}px`,offset:.56},{translate:`${x}px ${y}px`,offset:.7},{translate:'0px 0px',offset:1}],time,'cubic-bezier(.37,.04,.35,1)');
   await new Promise(r=>setTimeout(r,stay));
-  const reaction=hit?play(hit,miss?[{translate:'0px 0px'},{translate:'13px -9px'},{translate:'-7px 5px'},{translate:'0px 0px'}]:[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale*.67)) :Promise.resolve();
+  const reaction=hit&&!miss?play(hit,[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale*.67)) :Promise.resolve();
   await Promise.all([animation,reaction]);
  }
  async function circles(ref,scale=1){
@@ -39,9 +39,19 @@
   frames[0].translate='0px 0px';frames[frames.length-1].translate='0px 0px';
   await play(node,frames,Math.round(1900*scale*.8));
  }
+ async function dodge(ref,scale=1){
+  const node=sprite(ref);if(!node)return;
+  const partnerNodes=[...document.querySelectorAll(`.battle-unit[data-side="${ref.side}"]`)].filter(e=>Number(e.dataset.slot)!==Number(ref.slot)).map(e=>e.querySelector('.battle-sprite-window')).filter(Boolean);
+  // Doubles: the defender on screen-right dodges right, and the one on screen-left left.
+  // Singles: move away from the opponent's side without needing a partner.
+  const x=center(node).x,partner=partnerNodes.length?center(partnerNodes[0]).x:null;
+  const direction=partner===null?(ref.side==='right'?1:-1):(x>=partner?1:-1);
+  const distance=17*direction;
+  await play(node,[{translate:'0px 0px',offset:0},{translate:`${distance}px 0px`,offset:.42},{translate:`${distance}px 0px`,offset:.63},{translate:'0px 0px',offset:1}],Math.round(520*scale),'ease-out');
+ }
  async function recoil(ref,scale=1){
   const node=sprite(ref);if(!node)return;
   await play(node,[{translate:'0px 0px',filter:'brightness(1)'},{translate:'-10px 4px',filter:'brightness(1.7)'},{translate:'5px -2px'},{translate:'0px 0px',filter:'brightness(1)'}],Math.round(440*scale));
  }
- g.UDBattleVisuals={roster,mount,travel,circles,recoil};
+ g.UDBattleVisuals={roster,mount,travel,circles,recoil,dodge};
 })(window);
