@@ -11,6 +11,6 @@ const old={entities:{},tags:{}},next={entities:{},tags:{dioses:{id:'dioses',name
 assert.deepEqual(publicationDiff({catalog:old},{catalog:next}).tags.added,['dioses']);
 assert.equal(selectRelease(old,next,{tags:['dioses']}).catalog.tags.dioses.name,'Dioses');
 const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
-for(const token of ['data-view="labels"','Golpe único','Golpes en cadena','Acertar golpes consecutivamente','Usar ataques consecutivamente','tagMembers','tagSave','tagDelete','sleep(1500*speedFactor())','sleep(2000*speedFactor())'])assert.ok(html.includes(token),token);
+for(const token of ['data-view="labels"','Golpe único','Golpes en cadena','Acertar golpes consecutivamente','Usar ataques consecutivamente','tagMembers','tagSave','tagDelete','udLabNarrationDwell(udHeadlineAt)','2500*speedFactor()/1.2'])assert.ok(html.includes(token),token);
 assert.ok(html.includes('animation:none'),'clima estático');
 console.log('Editor etiquetas, cadenas, condiciones y narración con velocidad sincronizada OK');

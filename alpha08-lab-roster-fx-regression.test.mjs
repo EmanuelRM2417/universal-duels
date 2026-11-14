@@ -7,12 +7,13 @@ for(const part of ['labSwitchCards(team,active,[],act.slot)','labSwitchCards(tea
 assert.match(html,/if\(!choices\.some\(x=>x\.i===selected\)\)return;/,'las selecciones no válidas no avanzan');
 assert.match(html,/\?\' ud-choosing-action\':\'\'/,'solo se ilumina el actor que decide');
 assert.ok(!html.includes('<small>Acción de ${escapeHtml(unit?.name'), 'no aparece el texto antiguo');
-assert.match(html,/UDBattleVisuals\.travel\(actor,targets,targets\[0\],speedFactor\(\)\)/,'ataque físico hacia objetivos');
+assert.match(html,/UDBattleVisuals\.travel\(actor,targets,null,speedFactor\(\),true\)/,'ataque físico hacia objetivos sin atribuir un choque antes de saber si acertó');
 assert.match(html,/UDBattleVisuals\.circles\(actor,speedFactor\(\)\*\.53\)/,'ataque especial inicia círculo atacante');
-assert.match(html,/UDBattleVisuals\.circles\(t,speedFactor\(\)\*\.53\)/,'círculo del defensor después');
+assert.match(html,/UDBattleVisuals\.recoil\(\{side:damaged\.side,slot:damaged\.activeSlot\},speedFactor\(\)\)/,'solo el defensor acertado recibe retroceso');
+assert.match(html,/UDBattleVisuals\.dodge\(\{side:dodged\.side,slot:dodged\.activeSlot\},speedFactor\(\)\)/,'solo el defensor que esquiva se desplaza lateralmente');
 assert.ok(html.includes('n+=30')&&html.includes('n-=20'));
 assert.ok(!html.includes('Solo representa tipos; ignora todos los demás modificadores.'));
 assert.match(css,/repeat\(4,minmax\(0,1fr\)\)/);
 assert.match(css,/\.lab-type-mark img/);
-assert.match(script,/g\.UDBattleVisuals=\{roster,mount,travel,circles,recoil\}/);
+assert.match(script,/g\.UDBattleVisuals=\{roster,mount,travel,circles,recoil,dodge\}/);
 console.log('Lab Alpha 0.8: tarjetas ordenadas, selección segura, animación de combate y afinidades OK');

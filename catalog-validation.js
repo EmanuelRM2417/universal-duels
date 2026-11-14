@@ -43,6 +43,13 @@ export function validateRules(definition,category){
     if(!['AND','OR'].includes(c.operator)) fail(at+': operador debe ser Y u O.');
     if(typeof c.negate!=='boolean') fail(at+': «NO» debe ser sí o no.');
   }
+  if(r.receivedAttackFilter!==undefined){
+   if(r.event!=='on_receive_attack')fail(at+': filtro de ataque recibido solo válido en «Al recibir ataque».');
+   const f=r.receivedAttackFilter;
+   if(!f||!['all','include','exclude'].includes(f.mode)||!['both','physical','special'].includes(f.category)||!Array.isArray(f.types)||new Set(f.types).size!==f.types.length||f.types.some(t=>!TYPES.includes(t)))fail(at+': filtro del ataque recibido inválido.');
+   if(f.mode!=='all'&&!f.types.length)fail(at+': seleccioná al menos un tipo de ataque para incluir o excluir.');
+   if(f.mode==='all'&&f.types.length)fail(at+': con «Todos» no deben seleccionarse tipos.');
+  }
   if(!TARGETS.includes(r.target)) fail(at+': objetivo no implementado.');
   if(!r.action || !ACTIONS.includes(r.action.type)) fail(at+': acción no implementada.');
   if(r.streakEffectMode!==undefined&&!['normal','per_turn'].includes(r.streakEffectMode))fail(at+': modo de racha no válido.');

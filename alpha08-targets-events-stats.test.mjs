@@ -12,7 +12,7 @@ assert.ok(reflected.left.hp<base.left.hp,'el atacante recibe daño reflejado de 
 assert.ok(reflected.log.some(t=>t.includes('Espejo')),'el narrador identifica el origen de la habilidad');
 const missed=simulate({...common,catalog:(()=>{const c=cat({}, {ability:'dodge'});c.moves.hit.definition.accuracy=10;return c;})(),randomSource:()=>0.99});
 assert.ok(missed.left.hp<500,'al esquivar se ejecuta en el defensor contra el atacante');
-assert.ok(missed.log.some(x=>x.includes('falló contra')),'la evasión es real');
+assert.ok(missed.log.some(x=>x.includes('esquivó el ataque')),'la evasión es real');
 // El reflejo necesita el tipo que recibió, y no se activa con un tipo distinto.
 const different=cat({}, {ability:'reflect'});different.moves.hit.definition.type='agua';
 const noReflect=simulate({...common,catalog:different});

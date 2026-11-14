@@ -12,5 +12,5 @@ assert.equal(normalize('[PERSONAJE] se cura [PS] PS.'),'[PERSONAJE] se cura [PS]
 assert.match(html,/const updated=normalizeLegacyReplacement\(r\.replacement\)/,'stored drafts migrate on load');
 assert.match(html,/const refresh=\(\)=>\{const value=normalizeLegacyReplacement\(input\.value\.trim\(\)\)/,'live preview uses corrected text');
 assert.match(html,/const line=String\(lines\[i\]\),use=line\.match\(\/\^\(\.\+\?\) usó/,'lab retains move narration');
-assert.match(html,/await sleep\(Math\.max\(0,1700\*speedFactor\(\)-\(Date\.now\(\)-udHeadlineAt\)\)\)/,'lab enforces headline duration');
+assert.match(html,/await udLabNarrationDwell\(udHeadlineAt\)/,'lab enforces 2.5s narration beats');
 console.log('Alpha 0.8: editor migrates old incorrect messages; lab headline gets independent time');
