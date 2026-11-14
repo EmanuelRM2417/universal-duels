@@ -313,6 +313,12 @@ function action(rule,user,contextTarget,state,depth){
       if(slot<0||t.hp<=0)continue;const eligible=state.teams[owner].map((a,i)=>({a,i})).filter(x=>x.a.hp>0&&!state.active[owner].includes(x.i));if(!eligible.length)continue;
       if(mode==='manual'){const chosen=state.currentSwitchChoice;
         if(chosen&&sideIndex(chosen.side??sideName(owner))===owner&&Number(chosen.slot)===slot&&eligible.some(x=>x.i===Number(chosen.teamIndex)))state.switchTo(owner,slot,Number(chosen.teamIndex),true,'Cambio por efecto');
+        else if(state.autoResolveSwitchSides?.has(sideName(owner))){
+          // Solo en Entrenamiento: la IA decide un relevo manual al activarse
+          // la regla, no después de terminar los demás ataques de la ronda.
+          const pick=eligible[Math.floor(state.random()*eligible.length)].i;
+          state.switchTo(owner,slot,pick,true,'Cambio automático de IA');
+        }
         else{if(!state.forcedSwitches.some(f=>f.side===sideName(owner)&&f.slot===slot)){state.forcedSwitches.push({side:sideName(owner),slot,reason:state.currentSourceName||'Efecto',targetTeamIndex:t.teamIndex});state.log.push(`${battleLogName(t)} debe cambiar de personaje.`);}}}
       else{const pick=eligible[Math.floor(state.random()*eligible.length)].i;state.switchTo(owner,slot,pick,true,'Cambio forzado');}
     }
@@ -478,7 +484,7 @@ function tick(a,state){ensureActorRuntime(a);
   }
   if(a.status?.turns>0&&--a.status.turns===0){const old=a.status.id;a.status=null;clearStatusLinkedEffects(a,old);state?.log.push(`${battleLogName(a)} deja de tener ${state?.catalog?.statuses?.[old]?.name||old}.`);state?.refreshStatus?.();state?.refreshPassives?.();state?.pushVisualUnit?.(a);}}
 
-export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=10,randomTape=[],randomSource,weather='',field='',scenario='',leftMove='',rightMove='',leftOrders=[],rightOrders=[],leftReplacements=[],rightReplacements=[],mode='singles',resume=null,replacementsOnly=false,includeCheckpoint=false}){
+export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=10,randomTape=[],randomSource,weather='',field='',scenario='',leftMove='',rightMove='',leftOrders=[],rightOrders=[],leftReplacements=[],rightReplacements=[],mode='singles',resume=null,replacementsOnly=false,includeCheckpoint=false,autoResolveSwitchSides=[]}){
   mode=mode==='doubles'?'doubles':'singles';if(!Number.isInteger(turns)||turns<0||turns>300)throw Error('Rondas entre 0 y 300.');if(!Array.isArray(randomTape)||randomTape.length>30000||randomTape.some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0||v>=1))throw Error('Historial RNG inválido.');
   const tape=randomTape.slice();let cursor=resume&&tape.length>=resume.randomCursor?resume.randomCursor:0;const fresh=typeof randomSource==='function'?randomSource:()=>crypto.getRandomValues(new Uint32Array(1))[0]/4294967296;const random=()=>{if(cursor<tape.length)return tape[cursor++];const v=fresh();if(!Number.isFinite(v)||v<0||v>=1)throw Error('RNG inválido.');tape.push(v);cursor++;return v;};
   const load=(id,side,teamIndex)=>{const e=catalog.entities[id];if(!e)throw Error('Entidad no encontrada: '+id);const d=e.definition,moves=[...(d.moveIds||[]),d.uniqueMoveId].map(mid=>{const m=catalog.moves[mid];if(!m)throw Error('Ataque inexistente: '+mid);return m;}),abilities=[d.globalAbilityId,d.uniqueAbilityId].map(aid=>{const a=catalog.abilities[aid];if(!a)throw Error('Habilidad inexistente: '+aid);return a;});return actor(e,moves,abilities,side,teamIndex);};
@@ -491,6 +497,9 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
   const state={mode,chart,catalog,teams,active,weather:resume?.weather||'',field:resume?.field||'',scenario:resume?.scenario||'',
     weatherTurns:resume?.weatherTurns||0,fieldTurns:resume?.fieldTurns||0,scenarioTurns:resume?.scenarioTurns||0,
     round:resume?.round||0,lastDamage:resume?.lastDamage||null,damageBonus:0,random,log:[],timeline:[],visualEvents:[],
+    // La selección automática de la IA es exclusiva del simulador de práctica;
+    // las salas online siguen solicitando los cambios manuales a los jugadores.
+    autoResolveSwitchSides:new Set(Array.isArray(autoResolveSwitchSides)?autoResolveSwitchSides.filter(s=>s==='right'||s==='left'):[]),
     forcedSwitches:resume?.forcedSwitches||[],deathEvents:resume?.deathEvents||[],
     matchStats:resume?.matchStats||[{damageDealt:0,damageReceived:0,defeated:0},{damageDealt:0,damageReceived:0,defeated:0}],damageCauserSide:null};
   // Detectar KOs por transición de PS, sin volver a activar Al morir para el mismo KO.
