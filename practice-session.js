@@ -22,6 +22,9 @@ const run=(session,catalog,chart,turns)=>{
   return simulate({catalog,chart,leftTeam:session.leftTeam,rightTeam:session.rightTeam,mode:session.mode,turns,
     leftOrders:session.leftOrders,rightOrders:session.rightOrders,leftReplacements:session.leftReplacements,rightReplacements:session.rightReplacements,
     randomTape:incremental?[]:session.randomTape,resume:incremental?checkpoint:null,
+    // La IA controla el lado derecho. Cuando un efecto le exige seleccionar
+    // un reemplazo, se ejecuta en ese preciso momento (no al final de la ronda).
+    autoResolveSwitchSides:['right'],
     replacementsOnly:!!incremental&&turns===checkpoint.round,includeCheckpoint:true});
 };
 const updateState=(session,result)=>{
