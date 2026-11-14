@@ -18,7 +18,7 @@ export function scaledChance(baseChance,...stages){
   return clamp(base*probabilityStageFactor(n),0,100);
 }
 export function actorStages(actor,stat){
-  return netStages(actor?.stages?.[stat],actor?.environmentStages?.[stat],actor?.statusStages?.[stat],stat==='criticalChance'?actor?.environmentCrit:0);
+  return netStages(actor?.stages?.[stat],actor?.environmentStages?.[stat],actor?.statusStages?.[stat],actor?.passiveStages?.[stat],stat==='criticalChance'?actor?.environmentCrit:0);
 }
 /** accuracy=0 is a sentinel: cannot miss, even against an evasive opponent.
  * Accuracy scales its HIT chance, evasion scales the move's MISS chance.

@@ -87,6 +87,16 @@ function conditionsPass(rule,user,target,state){
   for(const part of parts){const yes=part.negate?!meets(part,user,target,state):meets(part,user,target,state);result=result===null?yes:part.operator==='OR'?(result||yes):(result&&yes);}
   return rule.negate?!result:result;
 }
+function receivedAttackFilterPasses(rule,state){
+  if(rule.event!=='on_receive_attack'||!rule.receivedAttackFilter)return true;
+  const f=rule.receivedAttackFilter,move=state.currentReceivedMove;
+  if(!move)return false;
+  if(f.category&&f.category!=='both'&&f.category!==move.category)return false;
+  const types=Array.isArray(f.types)?f.types:[];
+  if(f.mode==='include'&&!types.includes(move.type))return false;
+  if(f.mode==='exclude'&&types.includes(move.type))return false;
+  return true;
+}
 function chance(rule,state){return percent(rule.chance??100)>=100||state.random()*100<percent(rule.chance??100);}
 function sourceMeta(state){return {sourceKind:state.currentSourceKind||'efecto',sourceId:state.currentSourceId||'',sourceName:state.currentSourceName||'Efecto',sourceActor:state.currentSourceActor||'',sourceOwnerSide:state.currentSourceOwnerSide,sourceOwnerIndex:state.currentSourceOwnerIndex};}
 function clearStatusLinkedEffects(a,statusId){ensureActorRuntime(a);a.effects=a.effects.filter(e=>!(e.sourceKind==='estado'&&e.sourceId===statusId));for(const key of Object.keys(a.used||{}))if(key.startsWith('status:'+statusId+':')||key.startsWith('statuspassive:'+statusId+':'))delete a.used[key];}
@@ -258,7 +268,7 @@ function action(rule,user,contextTarget,state,depth){
     }
     else if(act.type==='damage_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0;const amount=Math.max(0,integer(dealt*drainPercent(v)/100));if(amount>0){const actual=inflictDamage(t,amount,state,'effect');state.log.push(`${battleLogName(t)} recibe ${actual} PS de daño por el daño infligido (${drainPercent(v)} %).`);state.pushVisualUnit?.(t);}}
     else if(act.type==='heal_from_damage'){const dealt=state.lastDamage?.attackerTeamIndex===user.teamIndex&&state.lastDamage?.attackerSide===user.side?state.lastDamage.amount:0,before=t.hp,amount=Math.max(0,integer(dealt*drainPercent(v)/100));t.hp=Math.min(t.maxHp,t.hp+amount);const actual=t.hp-before;if(actual>0){state.log.push(`${battleLogName(t)} recupera ${actual} PS (${drainPercent(v)} % del daño infligido).`);state.pushVisualUnit?.(t);}}
-    else if(act.type==='stat_change'&&STAT_KEYS.includes(act.stat)){if(blocksStage(t,act.stat,integer(v),state)){state.log.push(`${battleLogName(t)} no puede modificar ${STAT_NAMES[act.stat]}${sourceSuffix(state)}.`);continue;}const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(statChangeText(t,act.stat,delta));state.pushVisualUnit?.(t);}}
+    else if(act.type==='stat_change'&&STAT_KEYS.includes(act.stat)){if(blocksStage(t,act.stat,integer(v),state)){state.log.push(`${battleLogName(t)} no puede modificar ${STAT_NAMES[act.stat]}${sourceSuffix(state)}.`);continue;}const before=t.stages[act.stat]||0,next=clamp(before+integer(v),-10,10),delta=next-before;t.stages[act.stat]=next;if(delta){t.statSources.push({stat:act.stat,value:delta,sourceName:state.currentSourceName||'Efecto',sourceKind:state.currentSourceKind||'efecto',sourceActor:state.currentSourceActor||user.name});state.log.push(statChangeText(t,act.stat,delta));state.pushVisualUnit?.(t);}else if(integer(v)!==0){state.log.push(`${STAT_NAMES[act.stat]} de ${battleLogName(t)} ya está en el límite ${before>0?'máximo':'mínimo'}.`);}}
     else if(act.type==='clear_stat_changes'){
       let modified=false;
       for(const stat of STAT_KEYS){const old=t.stages[stat]||0;if(!statSelected(act,stat)||!directionSelected(act,old))continue;t.stages[stat]=0;modified=true;
@@ -314,7 +324,7 @@ function rulesFor(entry,event,user,contextTarget,state){
     if(!user.status||user.status.id!==statusId)break;
     // Los modificadores continuos de estadísticas se calculan en refreshStatus,
     // nunca como acumulaciones permanentes al final de ronda.
-    if(rule.event!==event||(event==='on_status'&&rule.action?.type==='stat_change')||!conditionsPass(rule,user,contextTarget,state)||!chance(rule,state))continue;
+    if(rule.event!==event||!receivedAttackFilterPasses(rule,state)||(event==='on_status'&&rule.action?.type==='stat_change')||!conditionsPass(rule,user,contextTarget,state)||!chance(rule,state))continue;
     const key='status:'+statusId+':'+(st.definition.rules.indexOf(rule));if(rule.limit>0&&(user.used[key]||0)>=rule.limit)continue;
     user.used[key]=(user.used[key]||0)+1;
     state.currentSourceName=st.name;state.currentSourceKind='estado';state.currentSourceId=st.id||statusId;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;
@@ -324,7 +334,7 @@ function rulesFor(entry,event,user,contextTarget,state){
     if(user.effects.some(e=>e.id==='suppressed'))break;
     for(const[idx,rule]of(ability?.definition?.rules||[]).map((rule,idx)=>({idx,rule})).sort((a,b)=>event==='on_death'?Number(b.rule.action?.type==='resurrect')-Number(a.rule.action?.type==='resurrect'):0).map(({idx,rule})=>[idx,rule])){
       const key=ability.id+':'+idx;if(rule.event!==event||(rule.limit>0&&(user.used[key]||0)>=rule.limit))continue;
-      if(!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;user.used[key]=(user.used[key]||0)+1;
+      if(!receivedAttackFilterPasses(rule,state)||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;user.used[key]=(user.used[key]||0)+1;
       state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;const previousLogLength=state.log.length,abilityLabel=state.currentSourceName;const previousEvent=state.currentRuleEvent;state.currentRuleEvent=event;action(rule,user,contextTarget,state,0);state.currentRuleEvent=previousEvent;for(let i=previousLogLength;i<state.log.length;i++)if(!state.log[i].includes(' por '+abilityLabel+' de '))state.log[i]=state.log[i].replace(/\.$/,'')+' por '+abilityLabel+' de '+user.name+'.';state.currentSourceName='';state.currentSourceId='';
     }
   }
@@ -334,7 +344,7 @@ function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false,chain
     if(chainPhase&&event==='on_hit'){
       // Compatibilidad: los movimientos históricos conservan el modo anterior
       // hasta que cada regla sea modificada individualmente en el Editor.
-      const timing=rule.chainTiming||move.definition?.multihit?.effects||'each';
+      const timing=rule.chainTiming||(rule.action?.type==='switch_character'?'each':move.definition?.multihit?.effects)||'each';
       if(timing!==chainPhase)continue;
     }
     if((onlySwitch&&rule.action?.type!=='switch_character')||(!onlySwitch&&event==='manual'&&rule.action?.type==='switch_character'))continue;if(rule.event!==event||!conditionsPass(rule,user,contextTarget,state)||(rule.action?.type!=='survive'&&!chance(rule,state)))continue;state.currentSourceName=move.name;state.currentSourceKind='movimiento';state.currentSourceId=move.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;const previousEvent=state.currentRuleEvent;state.currentRuleEvent=event;action(rule,user,contextTarget,state,0);state.currentRuleEvent=previousEvent;state.currentSourceName='';state.currentSourceId='';}
@@ -367,19 +377,8 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   // El narrador anuncia el movimiento ANTES de cualquier efecto suyo o habilidad.
   state.log.push(`${battleLogName(attacker)} usó ${move.name}.`);
   state.visualEvents.push({logIndex:state.log.length-1,type:'move_targets',side:attacker.side,slot:state.active[actorSide(attacker)].findIndex(i=>i===attacker.teamIndex),targets:targets.map(t=>({side:t.side,slot:state.active[actorSide(t)].findIndex(i=>i===t.teamIndex)}))});
-  // Narración de afinidad ANTES de los efectos. No cambia fórmulas ni daño.
+  // Solo anunciar afinidad cuando el golpe haya acertado.
   const announcedTypeImmunity=new Set();
-  if(d.category!=='status'&&Number(d.power)>0){
-    for(const defender of targets.filter(t=>t?.hp>0)){
-      const rel=relationBonus(d.type,defender,state);
-      const suffix=targets.filter(t=>t?.hp>0).length>1?' contra '+battleLogName(defender):'';
-      if(rel.immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);announcedTypeImmunity.add(defender);continue;}
-      const n=rel.bonus>0?Math.max(1,Math.round(rel.bonus/.3)):rel.bonus<0?Math.max(1,Math.round(Math.abs(rel.bonus)/.2)):0;
-      if(!n)continue;
-      const intensity=n===1?'':n===2?'muy ':'extremadamente ';
-      state.log.push(`Es ${intensity}${rel.bonus>0?'fuerte':'débil'}${suffix}.`);
-    }
-  }
   rulesFor(null,'on_attack',attacker,context,state);
   runMoveRules(move,'on_attack',attacker,context,state);
   if(state.preventAction){state.log.push(`${battleLogName(attacker)} no puede actuar.`);applyMoveCooldown(attacker,move,state);return;}
@@ -403,8 +402,19 @@ function executeMove(attacker,move,orderTarget,state,switchChoice=null){
   for(const defender of targets){
     if(!defender||defender.hp<=0||attacker.hp<=0)continue;ensureActorRuntime(defender);
     const evaded=!state.forceMiss&&d.accuracy!==null&&d.accuracy!==undefined&&Number(d.accuracy)!==0&&state.random()*100>=hitChance(Math.max(.00001,modifiedValue(Number(d.accuracy),state.attackModifiers.accuracy,[0,100])),attacker,defender);
-    if(state.forceMiss||evaded){state.log.push(`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);runMoveRules(move,'on_miss',attacker,defender,state);rulesFor(null,'on_miss',attacker,defender,state);
+    if(state.forceMiss||evaded){state.log.push(evaded?`${battleLogName(defender)} esquivó el ataque de ${battleLogName(attacker)}.`:`${battleLogName(attacker)} falló contra ${battleLogName(defender)}.`);runMoveRules(move,'on_miss',attacker,defender,state);rulesFor(null,'on_miss',attacker,defender,state);
       if(evaded&&!state.forceMiss){state.currentReceivedMove={type:d.type,category:d.category,moveId:move.id};rulesFor(null,'on_dodge',defender,attacker,state);state.currentReceivedMove=null;}continue;}
+    // Cada defensor acertado tiene su propia afinidad. Si esquivó, jamás se anuncia
+    // un bono de tipo ni una inmunidad que no llegó a comprobarse.
+    if(d.category!=='status'&&Number(d.power)>0){
+      const rel=relationBonus(d.type,defender,state);
+      const suffix=targets.filter(t=>t?.hp>0).length>1?' contra '+battleLogName(defender):'';
+      if(rel.immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);announcedTypeImmunity.add(defender);}
+      else{
+        const n=rel.bonus>0?Math.max(1,Math.round(rel.bonus/.3)):rel.bonus<0?Math.max(1,Math.round(Math.abs(rel.bonus)/.2)):0;
+        if(n){const intensity=n===1?'':n===2?'muy ':'extremadamente ';state.log.push(`Es ${intensity}${rel.bonus>0?'fuerte':'débil'}${suffix}.`);}
+      }
+    }
     // El cambio en «manual» se aplica tras acertar, no antes del daño.
     const hits=minHits===maxHits?minHits:minHits+Math.floor(state.random()*(maxHits-minHits+1));
     let chainDamage=0,landedHits=0;

@@ -26,10 +26,10 @@ for(const name of ['index','practice']){
  ],'Prueba del entorno');
  assert.deepEqual(screenshots[0],['left:0:speed','right:0:speed'],`${name}: all speed changes first`);
  assert.deepEqual(screenshots[1],['left:0:evasion','right:1:evasion'],`${name}: then all evasion changes`);
- assert.equal(waits.length,2);assert.ok(waits.every(v=>v===2000));
+ assert.equal(waits.length,2);assert.ok(waits.every(v=>v===1000),"2 stat animations share one 2.5s narration beat");
  assert.deepEqual(sounds,['stat-down','stat-up']);assert.equal(cache.size,0);
  assert.match(html,/data-battle-modal="environment"/,'field/weather/scenario detail restored in left panel');
  assert.match(html,/min-height:100%!important/,'narrator fills available action panel height');
  assert.match(html,/battle-stage:not\(:has\(\.battle-unit\.enemy\.slot-1\)\)/,'Singles nameplate centers between the Doubles slots');
 }
-console.log('Alpha 0.7: stat FX order, per-stat groups, two-second timing, narrator sizing, environment detail and Singles card position OK');
+console.log('Alpha 0.7: stat FX order, per-stat groups, timing grouped inside the 2.5-second narration, narrator sizing, environment detail and Singles card position OK');

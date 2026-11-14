@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {narrationAllowanceMs,actionLimit,replacementLimit} from './worker.js';
+assert.equal(narrationAllowanceMs([]),0);
+assert.equal(narrationAllowanceMs(['a','b','c']),7500);
+assert.equal(narrationAllowanceMs(Array(100).fill('x')),150000,'unbounded logs must not freeze an online match');
+assert.equal(actionLimit('singles'),60000);
+assert.equal(actionLimit('doubles'),120000);
+assert.equal(replacementLimit('singles'),15000);
+const code=readFileSync(new URL('./worker.js',import.meta.url),'utf8');
+assert.match(code,/selectionDeadline:Date\.now\(\)\+actionLimit\(room\.battleMode\)\+narrationAllowanceMs\(result\.log\)/);
+assert.match(code,/b\.replacementDeadline=Date\.now\(\)\+replacementLimit\([\s\S]*?\+narrationAllowanceMs\(newLogs\)/);
+assert.equal(code.match(/b\.selectionDeadline=Date\.now\(\)\+actionLimit\(b\.mode\)\+narrationAllowanceMs\(newLogs\)/g)?.length,2);
+console.log('Alpha 0.8: clock grants 2.5-second narration ahead of the original selection window');

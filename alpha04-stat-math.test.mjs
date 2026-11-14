@@ -48,13 +48,13 @@ const down=run([stages('defense',-1),stages('speed',-3)]);
 assert.equal(down.left.currentStats.defense,95);
 assert.equal(down.left.currentStats.speed,85);
 const hit=run([],[stages('evasion',4)],80,0,0.63);
-assert.ok(!hit.log.some(x=>x.includes('falló contra')),'RNG 63% must hit when hit chance is 64%');
+assert.ok(!hit.log.some(x=>x.includes('esquivó el ataque')),'RNG 63% must hit when hit chance is 64%');
 const miss=run([],[stages('evasion',4)],80,0,0.65);
-assert.ok(miss.log.some(x=>x.includes('falló contra')),'RNG 65% must miss when hit chance is 64%');
+assert.ok(miss.log.some(x=>x.includes('esquivó el ataque')),'RNG 65% must miss when hit chance is 64%');
 const zeroEvade=run([],[stages('evasion',1)],100,0,0.96);
-assert.ok(zeroEvade.log.some(x=>x.includes('falló contra')),'100% move is reduced to 95% after evasion +1');
+assert.ok(zeroEvade.log.some(x=>x.includes('esquivó el ataque')),'100% move is reduced to 95% after evasion +1');
 const neverMiss=run([stages('accuracy',-10)],[stages('evasion',10)],0,0,0.999);
-assert.ok(!neverMiss.log.some(x=>x.includes('falló contra')),'accuracy 0 ignores any stage/effect');
+assert.ok(!neverMiss.log.some(x=>x.includes('esquivó el ataque')),'accuracy 0 ignores any stage/effect');
 const zeroCritical=run([stages('criticalChance',1)],[],0,0,0.055);
 assert.ok(zeroCritical.log.some(x=>x.includes('golpe crítico')),'critical 0% plus stage +1 yields 6%');
 const normalCritical=run([stages('criticalChance',1)],[],0,0,0.07);
@@ -74,7 +74,7 @@ fieldCatalog.fields.azar={id:'azar',name:'Azar',definition:{duration:5,fieldEffe
  {type:'critical_change',timing:'continuous',filter:'all',types:[],chance:100,value:1}
 ]}};
 const fieldMiss=simulate({catalog:fieldCatalog,left:'left',right:'right',field:'azar',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>.65});
-assert.ok(fieldMiss.log.some(x=>x.includes('falló contra')),'continuous field +4 evasion reduces 80% accuracy to 64%');
+assert.ok(fieldMiss.log.some(x=>x.includes('esquivó el ataque')),'continuous field +4 evasion reduces 80% accuracy to 64%');
 assert.equal(fieldMiss.left.environmentStages.evasion,4,'environment stage not permanent stage');
 assert.equal(fieldMiss.right.environmentCrit,1,'continuous critical stage is a level, not five percentage points');
 const fieldCrit=simulate({catalog:fieldCatalog,left:'left',right:'right',field:'azar',turns:1,leftMove:'strike',rightMove:'wait',randomSource:()=>.055});

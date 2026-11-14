@@ -16,8 +16,7 @@ assert.equal(render('Ajolote recupera 13 PS (5 %).',[{pattern:'[PERSONAJE] recup
 for(const page of ['./public/index.html','./public/practice.html']){
   const html=read(page);
   assert.match(html,/udHeadlineAt=Date\.now\(\)/,page+' records when move headline appeared');
-  assert.match(html,/await wait\(Math\.max\(0,\(1700\*speedFactor\(\)-\(Date\.now\(\)-udHeadlineAt\)\)\/speedFactor\(\)\)\)/,page+' reserves its own read time');
-  assert.match(html,/extremadamente \|muy /,page+' recognizes separate intensity narration');
+  assert.match(html,/await udNarrationDwell\(udHeadlineAt\)/,page+' reserves a separate 2.5s narration beat');
 }
-assert.match(read('./public/index.html'),/const playbackLimit=battle\?\.phase==='replacement'\?8000:18000;/,'online deadline reserves time for longer commentary');
+assert.match(read('./public/index.html'),/const playbackLimit=Math\.max\(18000,Math\.min\(150000,lines\.length\*2500/,'online playback scales to narration length');
 console.log('Alpha 0.8: narrator HP loss corrected from obsolete overrides; move headline and affinity timing separate');
