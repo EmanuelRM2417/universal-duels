@@ -619,7 +619,7 @@ async function udAnimateStatGroups(changes,message){
    for(const ch of group)udStatBursts.set([ch.side,ch.teamIndex].join(':'),[{stat:ch.stat,delta:ch.delta,at:now}]);
    renderBattle(battleDisplayData,message);
    window.udSound?.effect(group[0].delta>0?'stat-up':'stat-down');
-   await wait(2000); // x2 applies to text and animation; online server timeout retains priority.
+   await wait(Math.floor(2000/Math.max(1,groups.size))); // Distribuir las animaciones de stats dentro del mensaje de 2,5 s.
  }
  udStatBursts.clear();if(groups.size)renderBattle(battleDisplayData,message);
 }
@@ -689,6 +689,7 @@ function udCinematicScale(){const normal=Math.max(.35,speedFactor()/1.2);return 
 async function udPlaySpriteFx(ref,kind){
   if(kind==='special')return window.UDBattleVisuals.circles(ref,udCinematicScale());
   if(kind==='special-hit')return window.UDBattleVisuals.recoil(ref,udCinematicScale());
+  if(kind==='dodge')return window.UDBattleVisuals.dodge(ref,udCinematicScale());
   const node=udFindFxUnit(ref);if(!node)return;
   const css='ud-fx-'+kind;
   node.classList.remove('ud-fx-physical','ud-fx-special','ud-fx-special-hit','ud-fx-recoil','ud-fx-dodge','ud-fx-status');
@@ -699,6 +700,8 @@ async function udPlaySpriteFx(ref,kind){
 function udReadImpact(line){
  const damage=String(line).match(/^(.+?) (?:recibe|recibió) \d+ de daño(?: \(golpe \d+\))?\./);
  if(damage)return{kind:'hit',name:damage[1]};
+ const dodged=String(line).match(/^(.+?) esquivó el ataque de (.+?)\./);
+ if(dodged)return{kind:'miss',name:dodged[1],attacker:dodged[2]};
  const miss=String(line).match(/^(.+?) falló contra (.+?)\./);
  if(miss)return{kind:'miss',name:miss[2],attacker:miss[1]};
  return null;
@@ -708,6 +711,7 @@ async function udAnimateImpact(line){const impact=udReadImpact(line),move=udLast
  const target=udActorFxRef(impact.name);
  if(move.category==='physical'){
    await window.UDBattleVisuals.travel(move.actor,move.targets||[],target,udCinematicScale(),impact.kind!=='hit');
+   if(impact.kind==='miss'&&target)await udPlaySpriteFx(target,'dodge');
  }else if(move.category==='special'&&target){
    await udPlaySpriteFx(target,impact.kind==='hit'?'special-hit':'dodge');
  }
@@ -720,11 +724,14 @@ async function udAnimateOtherStatusTargets(events){const move=udLastMoveVisual;i
  if(affected.length)await Promise.all(affected.map(t=>udPlaySpriteFx(t,'status')));
 }
 
+// Cada mensaje tiene su propio bloque de 2,5 s en x1, contando efectos y animaciones.
+// En salas se mantiene la reserva del temporizador del servidor para no impedir al jugador actuar.
+async function udNarrationDwell(start){const desired=2500*speedFactor()/1.2;const available=udPlaybackDeadline?Math.max(0,udPlaybackDeadline-Date.now()):Infinity;await sleep(Math.min(Math.max(0,desired-(Date.now()-start)),available));}
 async function animateLogLines(lines,finalData,visual=[]){
   // The server clock starts when the round resolves, not after browser playback.
   // Keep narration, but reserve time to choose replacements/actions before timeout.
   const serverDeadline=Number(battle?.replacementDeadline||battle?.selectionDeadline)||0;
-  const playbackLimit=battle?.phase==='replacement'?8000:18000;
+  const playbackLimit=Math.max(18000,Math.min(150000,lines.length*2500*speedFactor()/1.2+3500));
   udPlaybackDeadline=Date.now()+Math.max(0,Math.min(playbackLimit,serverDeadline?serverDeadline-Date.now()-8500:playbackLimit));
   battleAnimating=true;renderBattle(battleDisplayData,'');const by=new Map();for(const e of visual){const i=Number(e.localIndex);if(!by.has(i))by.set(i,[]);by.get(i).push(e)}for(let i=0;i<lines.length;i++){
  const udBatch=[i],udGroup=udLineStatType(lines[i]),udActors=new Set([udLineStatActor(lines[i])]);
@@ -739,12 +746,12 @@ async function animateLogLines(lines,finalData,visual=[]){
    // El título del movimiento es una línea independiente y no comparte duración
    // con «Es fuerte/débil», incluso cuando no hay animación visible.
    if(cat==='physical')await wait(360);
-   await wait(Math.max(0,(1700*speedFactor()-(Date.now()-udHeadlineAt))/speedFactor()));
+   await udNarrationDwell(udHeadlineAt);
    continue;
  }
  if(udReadImpact(line)?.kind!=='hit')await udAnimateImpact(line);
  await udAnimateOtherStatusTargets(beatEvents);
- if(udChanges.length)continue;if(/(?:se debilita|fuera de combate|se retira|abandona el combate)/i.test(line)){const who=line.split(/ se debilita| fuera de combate| se retira| abandona el combate/i)[0];const u=findUnitByIdentity(who);if(u){const el=document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`);el?.classList.add('ud-portal-leave');window.udSound?.effect('portal-out');}}if(!beatEvents.some(e=>e.unit&&/ (?:recibe|recibió) \d+ de daño| recupera \d+ PS/.test(line)))applyVisualLine(line);if(!udChanges.length)udPlayStatFx([],line);if(/^Es (?:extremadamente |muy )?(?:fuerte|débil)(?: contra .+)?\.$/u.test(line))await wait(1500);else if(/recibe \d+ de daño|falló|crítico|estado|recupera|pierde|inmune|cooldown|volver a usar/i.test(line))await wait(1350);else if(/debilitado|fuera de combate|entra|termina/i.test(line))await wait(1650);else await wait(900)}battleDisplayData=clone(finalData);battleLastData=battleDisplayData;battleAnimating=false;udKoTransitions.clear();udPlaybackDeadline=0;actionDraft=[];pendingLocalOrder=null;renderBattle(battleDisplayData,'');}
+ if(udChanges.length){await udNarrationDwell(udHeadlineAt);continue;}if(/(?:se debilita|fuera de combate|se retira|abandona el combate)/i.test(line)){const who=line.split(/ se debilita| fuera de combate| se retira| abandona el combate/i)[0];const u=findUnitByIdentity(who);if(u){const el=document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`);el?.classList.add('ud-portal-leave');window.udSound?.effect('portal-out');}}if(!beatEvents.some(e=>e.unit&&/ (?:recibe|recibió) \d+ de daño| recupera \d+ PS/.test(line)))applyVisualLine(line);if(!udChanges.length)udPlayStatFx([],line);await udNarrationDwell(udHeadlineAt)}battleDisplayData=clone(finalData);battleLastData=battleDisplayData;battleAnimating=false;udKoTransitions.clear();udPlaybackDeadline=0;actionDraft=[];pendingLocalOrder=null;renderBattle(battleDisplayData,'');}
 function statusEffectText(statusId){const st=catalog?.statuses?.[statusId];if(!st)return'Estado no encontrado.';const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Probabilidad de crítico'};return(st.definition?.rules||[]).map(r=>{const a=r.action||{};if(a.type==='damage')return`−${a.value}% PS`;if(a.type==='heal')return`+${a.value}% PS`;if(a.type==='stat_change')return`${Number(a.value)>0?'+':''}${a.value} ${names[a.stat]||a.stat}`;return`${a.type}${a.value!==''&&a.value!=null?' · '+a.value:''}`}).join('\n')||'Sin efectos configurados.'}
 function statBreakdown(u,stat){const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Probabilidad de crítico'},rows=[];for(const x of u?.statSources||[])if(x.stat===stat&&Number(x.value))rows.push(`${Number(x.value)>0?'+':''}${x.value} · ${x.sourceName||x.sourceKind||'Efecto'} · ${x.sourceActor||'origen no identificado'}`);const combined=(u?.stages?.[stat]||0)+(u?.environmentStages?.[stat]||0)+(u?.statusStages?.[stat]||0)+(u?.passiveStages?.[stat]||0);const formula=['attack','defense','specialAttack','specialDefense','speed'].includes(stat)?`Niveles efectivos: ${Math.max(-10,Math.min(10,combined))}. Los positivos aportan +15 % por nivel y los negativos −5 % por nivel.`:stat==='accuracy'||stat==='evasion'?`Precisión final = precisión del movimiento × (1 − 0.05 × (evasión del defensor − precisión del atacante)); mínimo 10 %, salvo movimiento infalible (0 %).`: 'Probabilidad de crítico: cambios relativos de ±5 % por nivel (base 0 % despierta con +1).';return`<h3>${names[stat]||stat}</h3><p>${esc(formula)}</p>${rows.map(x=>`<div class="environment-effect">${esc(x)}</div>`).join('')||'<p>Sin fuentes registradas.</p>'}`}
 function effectRows(u){if(!u)return'<p>Sin personaje.</p>';const names={attack:'Ataque',specialAttack:'Ataque especial',defense:'Defensa',specialDefense:'Defensa especial',speed:'Velocidad',accuracy:'Precisión',evasion:'Evasión',criticalChance:'Crítico'},core=['attack','defense','specialAttack','specialDefense','speed'];let a=[];if(u.baseStats&&u.currentStats)a.push(`<div class="stat-comparison"><strong>Stats base → actuales</strong>${core.map(k=>`<div>${names[k]}: ${u.baseStats[k]} → <b>${u.currentStats[k]}</b></div>`).join('')}</div>`);if(u.status)a.push(`<button class="effect-chip battle-effect-detail" data-status="${esc(u.status.id)}" data-side="${u.side}" data-team="${u.teamIndex}">${esc(catalog.statuses?.[u.status.id]?.name||u.status.id)}</button>`);for(const k of Object.keys(names)){const v=(u.stages?.[k]||0)+(u.environmentStages?.[k]||0)+(u.statusStages?.[k]||0)+(u.passiveStages?.[k]||0);if(v||(k==='criticalChance'&&u.environmentCrit))a.push(`<button class="effect-chip battle-effect-detail" data-stat="${k}" data-side="${u.side}" data-team="${u.teamIndex}">${names[k]} ${v>0?'+':''}${v}${k==='criticalChance'&&u.environmentCrit?` · Entorno ${Number(u.environmentCrit)>0?'+':''}${u.environmentCrit}%`:''}</button>`)}for(const e of u.effects||[])a.push(`<span class="effect-chip">${esc(e.id)}${e.turns?' · '+e.turns+' r.':''}</span>`);return a.join('')||'<p>Sin efectos.</p>'}

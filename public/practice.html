@@ -526,7 +526,7 @@ async function udAnimatePracticeStatGroups(changes,message){
    for(const ch of group)battleTransientFx.set([ch.side,ch.teamIndex].join(':'),[{stat:ch.stat,delta:ch.delta,created:now}]);
    renderBattle(battleDisplayData,message);
    udSound.effect(group[0].delta>0?'stat-up':'stat-down');
-   await sleep(2000); // Un único factor de velocidad para narración y animación.
+   await sleep(Math.floor(2000/Math.max(1,groups.size))); // Cada grupo comparte el tiempo visible del mensaje, sin exceder 2,5 s.
  }
  battleTransientFx.clear();if(groups.size)renderBattle(battleDisplayData,message);
 }
@@ -594,6 +594,7 @@ function udCinematicScale(){const normal=Math.max(.35,speedFactor()/1.2);return 
 async function udPlaySpriteFx(ref,kind){
   if(kind==='special')return window.UDBattleVisuals.circles(ref,udCinematicScale());
   if(kind==='special-hit')return window.UDBattleVisuals.recoil(ref,udCinematicScale());
+  if(kind==='dodge')return window.UDBattleVisuals.dodge(ref,udCinematicScale());
   const node=udFindFxUnit(ref);if(!node)return;
   const css='ud-fx-'+kind;
   node.classList.remove('ud-fx-physical','ud-fx-special','ud-fx-special-hit','ud-fx-recoil','ud-fx-dodge','ud-fx-status');
@@ -604,6 +605,8 @@ async function udPlaySpriteFx(ref,kind){
 function udReadImpact(line){
  const damage=String(line).match(/^(.+?) (?:recibe|recibió) \d+ de daño(?: \(golpe \d+\))?\./);
  if(damage)return{kind:'hit',name:damage[1]};
+ const dodged=String(line).match(/^(.+?) esquivó el ataque de (.+?)\./);
+ if(dodged)return{kind:'miss',name:dodged[1],attacker:dodged[2]};
  const miss=String(line).match(/^(.+?) falló contra (.+?)\./);
  if(miss)return{kind:'miss',name:miss[2],attacker:miss[1]};
  return null;
@@ -613,6 +616,7 @@ async function udAnimateImpact(line){const impact=udReadImpact(line),move=udLast
  const target=udActorFxRef(impact.name);
  if(move.category==='physical'){
    await window.UDBattleVisuals.travel(move.actor,move.targets||[],target,udCinematicScale(),impact.kind!=='hit');
+   if(impact.kind==='miss'&&target)await udPlaySpriteFx(target,'dodge');
  }else if(move.category==='special'&&target){
    await udPlaySpriteFx(target,impact.kind==='hit'?'special-hit':'dodge');
  }
@@ -625,6 +629,8 @@ async function udAnimateOtherStatusTargets(events){const move=udLastMoveVisual;i
  if(affected.length)await Promise.all(affected.map(t=>udPlaySpriteFx(t,'status')));
 }
 
+// Duración total del mensaje, incluyendo su animación, sin acumular pausas entre eventos.
+async function udNarrationDwell(start){await new Promise(resolve=>setTimeout(resolve,Math.max(0,2500*speedFactor()/1.2-(Date.now()-start))));}
 async function animateLogLines(lines,finalData,visual=[]){
   battleAnimating=true;renderBattle(battleDisplayData,'');
   const grouped=new Map();for(const e of visual){const i=Number(e.localIndex);if(!grouped.has(i))grouped.set(i,[]);grouped.get(i).push(e);}
@@ -652,10 +658,10 @@ async function animateLogLines(lines,finalData,visual=[]){
       if(cat==='physical')await wait(370); // La embestida se ejecuta en el mensaje de impacto.
       // El texto «usó [movimiento]» tiene su propio tiempo de lectura, no
       // comparte el del mensaje de afinidad que aparece a continuación.
-      await wait(Math.max(0,(1700*speedFactor()-(Date.now()-udHeadlineAt))/speedFactor()));
-    }else if(isStage){if(!statChanges.length){udSound.effect(/subió/.test(line)?'stat-up':'stat-down');await wait(2000);}}
-    else if(isEnvironment){await wait(2000);}
-    else {if(!events.some(e=>e.unit&&/ (?:recibe|recibió) \d+ de daño| recupera \d+ PS/.test(line)))applyVisualLine(line);if(udReadImpact(line)?.kind!=='hit')await udAnimateImpact(line);await udAnimateOtherStatusTargets(events);if(!statChanges.length)await wait(/^Es (?:extremadamente |muy )?(?:fuerte|débil)(?: contra .+)?\.$/u.test(line)?1500:(udReadImpact(line)?700:1250));}
+      await udNarrationDwell(udHeadlineAt);
+    }else if(isStage){if(!statChanges.length)udSound.effect(/subió/.test(line)?'stat-up':'stat-down');await udNarrationDwell(udHeadlineAt);}
+    else if(isEnvironment){await udNarrationDwell(udHeadlineAt);}
+    else {if(!events.some(e=>e.unit&&/ (?:recibe|recibió) \d+ de daño| recupera \d+ PS/.test(line)))applyVisualLine(line);if(udReadImpact(line)?.kind!=='hit')await udAnimateImpact(line);await udAnimateOtherStatusTargets(events);await udNarrationDwell(udHeadlineAt);}
   }
   battleDisplayData=clone(finalData);battleLastData=battleDisplayData;battleAnimating=false;udKoTransitions.clear();actionDraft=[];pendingLocalOrder=null;renderBattle(battleDisplayData,'');
 }
