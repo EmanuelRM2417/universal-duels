@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+
+const rule=(event,action,target='target')=>({event,condition:{type:'always',value:''},conditions:[],target,action,chance:100,duration:0,limit:0,operator:'AND',negate:false});
+const secondary=(type,more=[])=>rule('on_hit',{type:'attack',attack:{type,category:'special',power:45,accuracy:100,criticalChance:0,target:'target',chance:100,animate:false,rules:more}});
+const tri={id:'tri',name:'Golpe de tres elementos',definition:{kind:'global',type:'fuego',category:'physical',power:25,accuracy:100,criticalChance:0,priority:5,cooldown:0,targeting:'single',rules:[secondary('planta',[rule('on_hit',{type:'stat_change',stat:'speed',value:-1})]),secondary('agua'),secondary('fuego')]}};
+const noop={id:'noop',name:'Esperar',definition:{kind:'global',type:'agua',category:'status',power:0,accuracy:0,criticalChance:0,priority:0,cooldown:0,targeting:'single',rules:[]}};
+const ent=(id,moves)=>({id,name:id,definition:{types:['agua'],hp:500,attack:90,defense:90,specialAttack:90,specialDefense:90,speed:90,moveIds:moves,uniqueMoveId:'noop',globalAbilityId:'ab',uniqueAbilityId:'ab'}});
+const catalog={entities:{a:ent('a',['tri','noop','noop']),b:ent('b',['noop','tri','noop'])},moves:{tri,noop},abilities:{ab:{id:'ab',definition:{kind:'global',rules:[]}}},statuses:{},effects:{}};
+
+const result=simulate({left:'a',right:'b',catalog,chart:{},turns:1,leftMove:'tri',rightMove:'noop',randomSource:()=>0.5});
+assert.equal(result.log.filter(x=>x.includes('realiza un ataque adicional')).length,3,'los tres ataques secundarios deben ejecutarse');
+assert.equal(result.right.stages.speed,-1,'solo el impacto propio con regla aplica la modificación de velocidad');
+assert.ok(result.right.hp<480,'cada impacto aplica daño');
+assert.ok(result.visualEvents.filter(x=>x.type==='secondary_attack').length>=3,'impactos visuales independientes');
+assert.deepEqual(tri.definition.type,'fuego','el tipo visible del ataque principal nunca cambia');
+const round0=simulate({left:'a',right:'b',catalog,chart:{},turns:0,randomSource:()=>0.5,includeCheckpoint:true});
+const incremental=simulate({left:'a',right:'b',catalog,chart:{},turns:1,leftOrders:[{actions:[{move:'tri',target:'b'}]}],rightOrders:[{actions:[{move:'noop'}]}],resume:round0.checkpoint,includeCheckpoint:true,randomSource:()=>0.5});
+assert.ok(incremental.rounds===1,'El Laboratorio avanza desde el checkpoint anterior');
+console.log('Ataques secundarios, reglas propias, 3 tipos y continuidad de Laboratorio: OK');

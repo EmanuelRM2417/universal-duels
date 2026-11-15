@@ -165,6 +165,61 @@ function inflictDamage(target,amount,state,source='move'){
 function switchTargetOwner(state,target){return actorSide(target);}
 function resetSwitchStages(a){ensureActorRuntime(a);a.stages={};a.statSources=[];a.consecutiveCounters={};}
 function resetEntryAbilityUsage(a){ensureActorRuntime(a);for(const ability of a.abilities||[])for(const [idx,rule] of (ability?.definition?.rules||[]).entries())if(rule.event==='on_enter')delete a.used[ability.id+':'+idx];}
+// Ataque secundario producido por una regla. Usa las mismas fórmulas y eventos de
+// impacto que el ataque principal, sin cambiar su tipo público ni sus datos de catálogo.
+function performSecondaryAttack(rule,user,contextTarget,state,depth){
+  const spec=rule.action?.attack||{};
+  if((state.extraAttackDepth||0)>=4||(state.extraAttacksThisRound||0)>=16)return;
+  if(!['physical','special'].includes(spec.category)||!Number.isFinite(Number(spec.power))||Number(spec.power)<=0)return;
+  if(!Number.isFinite(Number(spec.accuracy))||!Number.isFinite(Number(spec.criticalChance)))return;
+  if(!state.chart?.[spec.type]&&!['fuego','agua','planta','roca','rayo','hielo','viento','espectro','divinidad','mente','agilidad','guerra','valor','luz','oscuridad','veneno','dragon','metal','tecnologia','encanto'].includes(spec.type))return;
+  state.extraAttackDepth=(state.extraAttackDepth||0)+1;
+  state.extraAttacksThisRound=(state.extraAttacksThisRound||0)+1;
+  const prior={currentSourceName:state.currentSourceName,currentSourceId:state.currentSourceId,currentSourceKind:state.currentSourceKind,currentRuleEvent:state.currentRuleEvent,currentReceivedMove:state.currentReceivedMove};
+  const source=state.currentSourceName||'Efecto';
+  try{
+    const recipients=targetSet(spec.target||rule.target||'target',user,contextTarget,state).filter(t=>t?.hp>0);
+    const nested=Array.isArray(spec.rules)?spec.rules.slice(0,12):[];
+    function ownRules(event,defender){for(const sub of nested){if(sub.event!==event||!conditionsPass(sub,user,defender,state)||!chance(sub,state))continue;action(sub,user,defender,state,depth+1);}}
+    for(const defender of recipients){
+      if(user.hp<=0||defender.hp<=0)break;
+      const target={side:defender.side,slot:state.active[actorSide(defender)]?.findIndex(i=>i===defender.teamIndex)};
+      const origin={side:user.side,slot:state.active[actorSide(user)]?.findIndex(i=>i===user.teamIndex)};
+      state.log.push(`${battleLogName(user)} realiza un ataque adicional por ${source}.`);
+      state.visualEvents.push({logIndex:state.log.length-1,type:'secondary_attack',side:origin.side,slot:origin.slot,targets:[target],category:spec.category,animate:spec.animate!==false});
+      ownRules('manual',defender);
+      rulesFor(null,'on_attack',user,defender,state);
+      if(state.random()*100 < Number(spec.chance??100)){
+        const hit=Number(spec.accuracy)===0||state.random()*100<hitChance(Number(spec.accuracy),user,defender);
+        if(!hit){state.log.push(`${battleLogName(defender)} esquivó el ataque de ${battleLogName(user)}.`);ownRules('on_miss',defender);rulesFor(null,'on_miss',user,defender,state);state.currentReceivedMove={type:spec.type,category:spec.category,moveId:'secondary-attack'};rulesFor(null,'on_dodge',defender,user,state);state.currentReceivedMove=null;continue;}
+        const rel=relationBonus(spec.type,defender,state);
+        const immune=[...(defender.effects||[]),...(defender.environmentDamageImmunity||[]),...(defender.passiveDamageImmunity||[])].some(e=>e.id==='immunity'&&!ownerSuppressed(e,state,defender)&&(e.damageClass==='all'||e.damageClass===spec.category)&&(()=>{const f=e.filter||{mode:'all',types:[]},matches=(f.types||[]).includes(spec.type);return f.mode==='all'||f.mode==='include'&&matches||f.mode==='exclude'&&!matches})());
+        if(rel.immune||immune){state.log.push(`${battleLogName(defender)} es inmune al ataque.`);continue;}
+        const atk=effective(user,spec.category==='special'?'specialAttack':'attack');
+        const def=effective(defender,spec.category==='special'?'specialDefense':'defense');
+        const base=Math.max(1,Math.floor((2*50/5+2)*Number(spec.power)*atk/Math.max(1,def)/50+2));
+        let bonus=(user.types.includes(spec.type)?.2:0)+rel.bonus;
+        if(state.random()*100<criticalChance(Number(spec.criticalChance),user)){bonus+=.5;state.log.push(`${battleLogName(user)} hizo un golpe crítico contra ${battleLogName(defender)}.`);}
+        const damage=Math.max(1,integer(base*(1+bonus)));
+        state.damageCauserSide=actorSide(user);
+        const actual=inflictDamage(defender,damage,state,'move');state.damageCauserSide=null;
+        state.lastDamage={attackerSide:user.side,attackerTeamIndex:user.teamIndex,defenderSide:defender.side,defenderTeamIndex:defender.teamIndex,amount:actual,moveId:'secondary-attack'};
+        defender.lastHitType=spec.type;
+        state.log.push(`${battleLogName(defender)} recibe ${damage} de daño.`);
+        state.pushVisualUnit?.(defender);
+        state.currentReceivedMove={type:spec.type,category:spec.category,moveId:'secondary-attack'};
+        ownRules('on_hit',defender);
+        rulesFor(null,'on_hit',user,defender,state);
+        if(actual>0){rulesFor(null,'on_damage_taken',defender,user,state);rulesFor(null,'on_receive_attack',defender,user,state);}
+        state.currentReceivedMove=null;
+        state.resolveDeaths?.();
+      }
+    }
+  }finally{
+    Object.assign(state,prior);
+    state.extraAttackDepth--;
+  }
+}
 function action(rule,user,contextTarget,state,depth){
   ensureActorRuntime(user);if(contextTarget)ensureActorRuntime(contextTarget);const act=rule.action||{};
   // Por turno: la intensidad de acciones numéricas crece con los niveles de racha.
@@ -181,6 +236,7 @@ function action(rule,user,contextTarget,state,depth){
     if(state.allActive().some(a=>a.effects.some(e=>e.id==='prevent_environment'&&(e.kind==='all'||e.kind===kind)))){state.log.push('Activación de entorno bloqueada.');return;}
     state[key]=safe(v);state[key+'Turns']=5;state.log.push(environmentText(kind,entry,true));state.pushVisualEnvironment?.(key);state.refreshEnvironment?.();return;
   }
+  if(act.type==='attack'){performSecondaryAttack(rule,user,contextTarget,state,depth);return;}
   if(act.type==='force_miss'){state.forceMiss=true;return;}
   if(act.type==='do_nothing'){state.preventAction=true;return;}
   if(act.type==='apply_effect'){
@@ -673,7 +729,7 @@ export function simulate({left,right,leftTeam,rightTeam,chart={},catalog,turns=1
     syncMirrorTags();refreshEnvironment();snapshotRound(played);
   }
   for(let round=played+1;!replacementsOnly&&round<=turns&&remaining(0)&&remaining(1);round++){
-    played=round;state.round=round;syncMirrorTags();state.log.push('— Ronda '+round+' —');refreshEnvironment();environmentTimed('turn_start');for(const a of state.allActive())if(a.hp>0)rulesFor(null,'turn_start',a,firstOpponent(state,a),state);
+    played=round;state.round=round;state.extraAttacksThisRound=0;syncMirrorTags();state.log.push('— Ronda '+round+' —');refreshEnvironment();environmentTimed('turn_start');for(const a of state.allActive())if(a.hp>0)rulesFor(null,'turn_start',a,firstOpponent(state,a),state);
     const orders=[parseSideOrder(leftOrders,round,leftMove),parseSideOrder(rightOrders,round,rightMove)],switches=[];
     for(const s of[0,1])for(let slot=0;slot<active[s].length;slot++){const a=current(s,slot),o=orders[s][slot];if(a?.hp>0&&o?.switch!==undefined)switches.push({s,slot,a,index:Number(o.switch)});}
     switches.sort((x,y)=>effective(y.a,'speed')-effective(x.a,'speed')||(random()<.5?-1:1));for(const sw of switches)switchTo(sw.s,sw.slot,sw.index,false,'Cambio');refreshEnvironment();
