@@ -405,8 +405,8 @@
   </div>
   <section class="panel" data-studio-view="ai" hidden style="max-width:1300px">
     <h2>✦ Asistente para crear personajes</h2>
-    <p class="help">Escribí un nombre y un ID de sprite previamente subido a R2. La IA consulta información del personaje, compara ejemplos de tu catálogo privado y propone las estadísticas, los tres movimientos globales, la habilidad global y un movimiento y habilidad exclusivos. <strong>No se publica nada automáticamente.</strong></p>
-    <p class="help">Para usarlo, configurá el secreto <code>UD_AI_API_KEY</code> en el Worker privado del Editor. Las solicitudes consultan un proveedor externo y pueden generar cargos. La investigación y las propuestas deben revisarse antes de publicarlas. El PNG del sprite se envía al proveedor externo para darle contexto visual.</p>
+    <p class="help">Escribí un nombre y un ID de sprite previamente subido a R2. La IA consulta información del personaje, revisa el catálogo COMPLETO (incluidas todas las categorías y borradores) y utiliza tus correcciones aprobadas para proponer las estadísticas, los tres movimientos globales, la habilidad global y un movimiento y habilidad exclusivos. <strong>No se publica nada automáticamente.</strong></p>
+    <p class="help">Para usarlo, configurá el secreto <code>UD_AI_API_KEY</code> en el Worker privado del Editor. Las solicitudes consultan un proveedor externo y pueden generar cargos. La investigación y las propuestas deben revisarse antes de publicarlas. El PNG del sprite y los datos del catálogo completo se envían al proveedor externo para darle contexto visual; un catálogo grande puede generar más llamadas y costos. La memoria solo aprende cuando aprobás una comparación.</p>
     <div class="builder-grid">
       <label>Nombre del personaje<input id="udAIName" maxlength="100" autocomplete="off" placeholder="Ej. Atenea"></label>
       <label>ID del sprite (nuevo o ya guardado)<input id="udAISpriteId" maxlength="60" autocomplete="off" placeholder="Ej. atenea-001"></label>
@@ -419,6 +419,18 @@
     <label for="udAIProposal">Propuesta completa editable (JSON). Podés ajustar estadísticas, movimientos, reglas y nombres antes de guardar.</label>
     <textarea id="udAIProposal" rows="22" spellcheck="false" style="width:100%;font-family:ui-monospace,Consolas,monospace;white-space:pre;line-height:1.5" placeholder="La propuesta aparecerá aquí cuando la IA termine."></textarea>
     <p class="help">Guardá primero el movimiento y la habilidad exclusivos; después se guardará la entidad con sus referencias. Si uno falla, revisá el aviso antes de publicar. Luego podés balancear todo desde el Catálogo visual y publicar manualmente.</p>
+    <section style="margin-top:24px;padding:16px;border:1px solid #596078;border-radius:12px;background:rgba(20,28,48,.55)" aria-label="Memoria privada de diseño">
+      <h3>🧠 Memoria de diseño de la IA</h3>
+      <p class="help">Cada generación guarda una copia privada de la propuesta inicial. Después de guardar el personaje y corregirlo (también desde Catálogo), seleccioná <strong>Revisar diferencias</strong> y <strong>Aprobar como ejemplo</strong>. Solo las aprobadas se incluyen en futuras generaciones. La IA no se reentrena ni publica nada por su cuenta.</p>
+      <p class="help" id="udAICatalogStats">El catálogo completo se consulta del servidor al generar, sin limitar la cantidad de personajes, movimientos, habilidades ni efectos.</p>
+      <label for="udAIFeedback">Qué querés que aprenda de tus cambios (opcional)
+        <textarea id="udAIFeedback" rows="2" maxlength="1600" placeholder="Ej.: bajé la Velocidad porque este arquetipo es resistente, no veloz."></textarea>
+      </label>
+      <div class="row"><button type="button" id="udAIApprove" disabled>Aprobar mis correcciones para la memoria</button><button type="button" id="udAIMemoryRefresh">Actualizar historial</button></div>
+      <p id="udAIMemoryStatus" role="status" aria-live="polite"></p>
+      <div id="udAIMemoryList" style="display:grid;gap:10px"></div>
+      <details style="margin-top:12px"><summary>Ver comparación de una generación</summary><pre id="udAIMemoryCompare" style="max-height:450px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px"></pre></details>
+    </section>
   </section>
   <div class="panel" data-studio-view="home">
     <section class="detail-section" aria-label="Publicación y versiones">
@@ -2375,7 +2387,7 @@ function moveInfoHTML(m,unit){const d=m?.definition||{};return `${escapeHtml(m?.
   generate.addEventListener('click',async()=>{
     const name=id('udAIName').value.trim(),spriteId=id('udAISpriteId').value.trim(),notes=id('udAINotes').value.trim();
     if(!name||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(spriteId)){status.textContent='Completá nombre y sprite ID (minúsculas, números y guiones).';return;}
-    generate.disabled=true;save.disabled=true;status.textContent='Verificando sprite y preparando generación…';research.hidden=true;out.value='';
+    generate.disabled=true;save.disabled=true;delete out.dataset.generationId;document.getElementById('udAIApprove').disabled=true;status.textContent='Verificando sprite y preparando generación…';research.hidden=true;out.value='';
     try{
       const file=id('udAISpriteFile').files?.[0];
       if(file){
@@ -2386,7 +2398,7 @@ function moveInfoHTML(m,unit){const d=m?.definition||{};return `${escapeHtml(m?.
       status.textContent='Investigando al personaje y analizando el catálogo…';
       const r=await fetch('/editor-api/ai-character',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,spriteId,notes})});
       const data=await r.json();if(!r.ok||!data.ok)throw Error(data.error||'Error del generador.');
-      validProposal=data.proposal;out.value=JSON.stringify(validProposal,null,2);
+      validProposal=data.proposal;out.dataset.generationId=data.generationId||'';out.value=JSON.stringify(validProposal,null,2);document.getElementById('udAICatalogStats').textContent='Catálogo completo consultado: '+Object.entries(data.catalogCounts||{}).map(([k,n])=>k+': '+n).join(' · ')+' · Correcciones aprobadas usadas: '+(data.approvedExamplesUsed||0);document.dispatchEvent(new Event('ud-ai-generated'));
       research.hidden=false;research.replaceChildren();
       const intro=document.createElement('p');intro.textContent=validProposal.researchNotes||'Revisá las fuentes por tu cuenta.';research.append(intro);
       const title=document.createElement('strong');title.textContent='Referencias propuestas (verificar):';research.append(title);
@@ -2409,9 +2421,64 @@ function moveInfoHTML(m,unit){const d=m?.definition||{};return `${escapeHtml(m?.
         const data=await r.json();if(!r.ok||!data.ok)throw Error(data.error||'No se pudo guardar '+entry.id);
         saved.push(category+'/'+entry.id);
       }
-      status.textContent='✓ Guardados en KV privado: '+saved.join(' · ')+'. Revisá desde el Catálogo visual y publicá solo cuando quieras.';
+      status.textContent='✓ Guardados en KV privado: '+saved.join(' · ')+'. Podés corregirlos desde Catálogo y luego aprobar el ejemplo para la memoria.';document.getElementById('udAIApprove').disabled=!out.dataset.generationId;document.dispatchEvent(new Event('ud-ai-saved'));
     }catch(e){status.textContent='Guardado parcial ('+saved.join(', ')+'). Error: '+e.message+'; revisá las referencias antes de volver a intentar.';save.disabled=false;}
   });
+})();
+</script>
+<script>
+(()=>{
+ const id=s=>document.getElementById(s);
+ const status=id('udAIMemoryStatus'),list=id('udAIMemoryList'),comparison=id('udAIMemoryCompare'),approve=id('udAIApprove'),out=id('udAIProposal');
+ if(!list)return;
+ let selected='';
+ const request=async(path,options={})=>{const r=await fetch(path,{cache:'no-store',...options});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Error de memoria');return d;};
+ const select=async(generationId)=>{
+   selected=generationId;approve.disabled=false;comparison.textContent='Cargando…';
+   try{
+     const d=await request('/editor-api/ai-memory/'+encodeURIComponent(generationId));
+     comparison.textContent=JSON.stringify({personaje:d.generation.characterName,fecha:d.generation.createdAt,elementosSinGuardar:d.missing,cambios:d.changes,aprobado:d.example},null,2);
+     comparison.closest('details').open=true;
+     status.textContent=d.missing.length?'Aún faltan guardar elementos: '+d.missing.join(', '):'Comparación lista ('+d.changes.length+' diferencias). Podés aprobarla cuando esté conforme.';
+   }catch(e){status.textContent=e.message;comparison.textContent='';}
+ };
+ async function refresh(){
+   list.replaceChildren();status.textContent='Consultando generaciones privadas…';
+   try{
+     const d=await request('/editor-api/ai-memory');
+     status.textContent=d.generations.length+' generaciones guardadas · '+d.approvedCount+' ejemplos aprobados.';
+     if(!d.generations.length){const p=document.createElement('p');p.textContent='Todavía no hay generaciones registradas.';list.append(p);}
+     for(const entry of d.generations){
+       const card=document.createElement('div');card.style.cssText='border:1px solid #596078;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;';
+       const name=document.createElement('strong');name.textContent=entry.characterName+' · '+new Date(entry.createdAt).toLocaleString();name.style.flex='1 1 230px';
+       const state=document.createElement('small');state.textContent=entry.approvedAt?'✓ Aprobado para aprendizaje':'Pendiente de aprobación';
+       const check=document.createElement('button');check.type='button';check.textContent='Revisar diferencias';check.onclick=()=>select(entry.id);
+       const use=document.createElement('button');use.type='button';use.textContent='Aprobar como ejemplo';use.onclick=async()=>{await select(entry.id);await approveSelected();};
+       const del=document.createElement('button');del.type='button';del.textContent='Eliminar memoria';del.onclick=async()=>{
+         if(!confirm('¿Eliminar el historial y la memoria de esta generación? NO elimina personajes ni movimientos del catálogo.'))return;
+         try{await request('/editor-api/ai-memory/'+encodeURIComponent(entry.id),{method:'DELETE'});if(selected===entry.id){selected='';comparison.textContent='';approve.disabled=true;}await refresh();}
+         catch(e){status.textContent=e.message;}
+       };
+       card.append(name,state,check,use,del);list.append(card);
+     }
+   }catch(e){status.textContent=e.message;}
+ }
+ async function approveSelected(){
+   const generationId=selected||out.dataset.generationId;
+   if(!generationId){status.textContent='Primero elegí una generación.';return;}
+   if(!confirm('¿Aprobar el personaje y sus exclusivos guardados como ejemplo para generaciones futuras? No se publica nada.'))return;
+   approve.disabled=true;
+   try{
+     const data=await request('/editor-api/ai-memory/'+encodeURIComponent(generationId)+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feedback:id('udAIFeedback').value})});
+     status.textContent='✓ Ejemplo aprobado: '+data.changeCount+' diferencias. Se utilizará en las siguientes generaciones.';
+     await refresh();await select(generationId);
+   }catch(e){status.textContent=e.message;}finally{approve.disabled=false;}
+ }
+ approve.addEventListener('click',approveSelected);
+ id('udAIMemoryRefresh').addEventListener('click',refresh);
+ document.addEventListener('ud-ai-generated',()=>{selected=out.dataset.generationId||'';approve.disabled=true;refresh();});
+ document.addEventListener('ud-ai-saved',()=>{selected=out.dataset.generationId||'';approve.disabled=!selected;refresh();});
+ refresh();
 })();
 </script>
 </body>
