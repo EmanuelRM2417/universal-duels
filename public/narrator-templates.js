@@ -1,7 +1,7 @@
 /* Universal Duels: editor-published narrator templates. Only text patterns, no HTML/regex injection. */
 (function(){
   const reEscape=text=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const LIMIT=120;
+  const LIMIT=400;
   // Some earlier narrator customizations mistakenly rewrote damage events as HP totals.
   // Keep the canonical engine semantics without removing valid custom messages.
   const normalizeLegacyDamage=text=>String(text||'')

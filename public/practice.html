@@ -615,7 +615,8 @@ async function udAnimateImpact(line){const impact=udReadImpact(line),move=udLast
  if(impact.attacker&&impact.attacker!==move.attacker)return;
  const target=udActorFxRef(impact.name);
  if(move.category==='physical'){
-   await window.UDBattleVisuals.travel(move.actor,move.targets||[],target,udCinematicScale(),impact.kind!=='hit');
+   if(move.noTravel){if(target)await udPlaySpriteFx(target,impact.kind==='hit'?'recoil':'dodge');}
+   else await window.UDBattleVisuals.travel(move.actor,move.targets||[],target,udCinematicScale(),impact.kind!=='hit');
    if(impact.kind==='miss'&&target)await udPlaySpriteFx(target,'dodge');
  }else if(move.category==='special'&&target){
    await udPlaySpriteFx(target,impact.kind==='hit'?'special-hit':'dodge');
@@ -640,6 +641,8 @@ async function animateLogLines(lines,finalData,visual=[]){
 
     const line=String(lines[i]),use=line.match(/^(.+?) usó (.+?)\.$/),udHeadlineAt=Date.now(),isStage=/(?: subió \+\d+| bajó -\d+)\.$/.test(line),isEnvironment=/(?: se activó| se desactivó|^Ahora hay | desapareció\.|^Ahora estamos en |^Ya no estamos en |ya está activo\.|^Ya hay |^Ya estamos en )/.test(line);
     for(const k of udBatch.slice(0,-1))displayedBattleLog.push(lines[k]);displayedBattleLog.push(line);if(battleModalKind==='log'&&!$('battleModal').hidden){const b=$('battleModalBody'),atBottom=b.scrollTop+b.clientHeight>=b.scrollHeight-35;b.innerHTML=logBody();if(atBottom)b.scrollTop=b.scrollHeight;}
+    const extraEvent=(grouped.get(udBatch[0])||[]).find(e=>e.type==='secondary_attack');
+    if(extraEvent){const actor={side:extraEvent.side,slot:Number(extraEvent.slot)},attacker=(line.match(/^(.+?) realiza un ataque adicional por /)||[])[1]||'',cat=extraEvent.category||'physical';udLastMoveVisual={category:cat,attacker,actor,targets:extraEvent.targets||[],noTravel:extraEvent.animate===false,statusShown:new Set()};if(extraEvent.animate&&cat==='special')await udPlaySpriteFx(actor,'special');}
     if(udReadImpact(line)?.kind==='hit'){const msg=$('battleMessage');if(msg)msg.textContent=udBatch.map(k=>formatLine(lines[k])).join(' · ');await udAnimateImpact(line);}udStatusBeats.length=0;const events=udBatch.flatMap(k=>grouped.get(k)||[]),koBefore=new Set(udKoTransitions);
     // Apply ALL environment and affected unit changes in the same displayed beat.
     const statChanges=[];for(const e of events){const c=applyVisualEvent(e,formatLine(line));if(c?.length)statChanges.push(...c);if(e.type==='environment'&&e.kind==='scenario'){const sc=catalog?.scenarios?.[e.id]?.definition||{};udSound.context('battle',{scenarioId:e.id,soundId:sc.soundId,scenarioVolume:Number(sc.soundVolume??100),revision:session?.revision||revision});}}
