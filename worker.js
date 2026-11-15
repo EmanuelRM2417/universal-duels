@@ -1,4 +1,6 @@
 import { validateDefinition } from "./catalog-validation.js";
+import {generateAICharacter} from "./ai-character.js";
+import {choosePracticeActions} from "./practice-ai.js";
 import { simulate } from "./battle-engine.js";
 import {validateRelease,publicationDiff,nextHistory,selectRelease} from "./release-control.js";
 import {normalizeRegressionCase,runRegressionCase} from "./regression-suite.js";
@@ -216,7 +218,7 @@ export default {
         if(!env.EDITOR_DRAFTS)return privateJson({error:'KV privado no conectado.'},503);
         if(request.method==='GET')return privateJson({ok:true,layout:await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json')||{}});
         if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
-        const raw=await request.text();if(raw.length>80000)return privateJson({error:'Configuración demasiado grande.'},413);
+        const raw=await request.text();if(raw.length>400000)return privateJson({error:'Configuración demasiado grande.'},413);
         let data;try{data=JSON.parse(raw);}catch{return privateJson({error:'JSON inválido.'},400);}
         const allowed=['brand','subtitle','createTitle','roomTitle','battleTitle','tutorialTitle','battleMoveLabel','battleSwitchLabel','battleInfoLabel','battleLogLabel','battlePlayerEffects','battleEnemyEffects','battleTypesLabel','battleSurrender','battleSpeedLabel','battleSpeedNormal','battleSpeedFast','battleSpeedDouble','battleMoveHint','battleWaiting','battleReplacement','battleFinished','battleMoveInfoLabel','battleSwitchActionLabel'];
         if(!data||typeof data!=='object'||Array.isArray(data))return privateJson({error:'Configuración inválida.'},400);
@@ -224,7 +226,7 @@ export default {
         const sections=['home','lobby','battleView'];let order=sections;
         if(data.order!==undefined){if(!Array.isArray(data.order)||data.order.length!==3||new Set(data.order).size!==3||data.order.some(x=>!sections.includes(x)))return privateJson({error:'Orden inválido.'},400);order=data.order;}
         const toolKeys=['player','enemy','environment','types','log'];let toolbar=toolKeys;if(data.toolbar!==undefined){if(!Array.isArray(data.toolbar)||data.toolbar.length!==toolKeys.length||new Set(data.toolbar).size!==toolKeys.length||data.toolbar.some(x=>!toolKeys.includes(x)))return privateJson({error:'Barra de combate inválida.'},400);toolbar=data.toolbar;}const opts=data.options||{};if(typeof opts!=='object'||Array.isArray(opts)||Object.keys(opts).some(x=>!['showMoveType','showMoveCategory','showMoveStab','showMoveAffinity'].includes(x))||Object.values(opts).some(x=>typeof x!=='boolean'))return privateJson({error:'Opciones de movimientos inválidas.'},400);const previousNarrator=await env.EDITOR_DRAFTS.get('alpha04:ui-layout:v1','json');const narratorRules=data.narratorRules??previousNarrator?.narratorRules??[];
-        if(!Array.isArray(narratorRules)||narratorRules.length>120||narratorRules.some(r=>!r||typeof r!=='object'||typeof r.pattern!=='string'||typeof r.replacement!=='string'||!r.pattern.trim()||r.pattern.length>240||r.replacement.length>360||/[<>]/.test(r.pattern+r.replacement)))return privateJson({error:'Plantillas del narrador inválidas (máximo 120).'},400);
+        if(!Array.isArray(narratorRules)||narratorRules.length>400||narratorRules.some(r=>!r||typeof r!=='object'||typeof r.pattern!=='string'||typeof r.replacement!=='string'||!r.pattern.trim()||r.pattern.length>240||r.replacement.length>360||/[<>]/.test(r.pattern+r.replacement)))return privateJson({error:'Plantillas del narrador inválidas (máximo 400).'},400);
         const previousOval=previousNarrator?.fieldOval||{};
         const incomingOval=data.fieldOval??previousOval;
         if(!incomingOval||typeof incomingOval!=='object'||Array.isArray(incomingOval)||Object.keys(incomingOval).some(k=>!['x','y','width','height'].includes(k))||Object.values(incomingOval).some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0||v>100))return privateJson({error:'Óvalo del campo inválido.'},400);
@@ -526,8 +528,51 @@ if (
             if(rule.action?.type==='apply_status'&&rule.action.value){const key='statuses:'+rule.action.value;if(!seen.has(key)){seen.add(key);await get('statuses',rule.action.value);}}
           }
           const chart=await env.EDITOR_DRAFTS.get("type-chart-draft","json");
-          return privateJson(simulate({left:input.left,right:input.right,catalog,chart:chart?.chart||chart,turns:(input.turns === undefined || input.turns === null || input.turns === '') ? 10 : Math.min(50,Math.max(0,Number(input.turns))),randomTape:input.randomTape||[],weather:input.weather||"",field:input.field||"",scenario:input.scenario||"",leftMove:input.leftMove||"",rightMove:input.rightMove||"",leftTeam:input.leftTeam,rightTeam:input.rightTeam,leftOrders:input.leftOrders,rightOrders:input.rightOrders,leftReplacements:input.leftReplacements||[],rightReplacements:input.rightReplacements||[],mode:input.mode==='doubles'?'doubles':'singles'}));
+          const typeChart=chart?.chart||chart,turns=(input.turns===undefined||input.turns===null||input.turns==='')?10:Math.min(50,Math.max(0,Number(input.turns)));
+          const resume=url.pathname.endsWith('simulate-step')&&input.checkpoint&&typeof input.checkpoint==='object'?input.checkpoint:null;
+          // El Laboratorio avanza por checkpoint como Entrenamiento, en lugar de
+          // repetir todos los turnos y reactivar efectos de rondas anteriores.
+          if(resume&&(turns!==resume.round&&turns!==resume.round+1))return privateJson({error:'Avance del Laboratorio fuera de secuencia.'},409);
+          const leftOrders=Array.isArray(input.leftOrders)?structuredClone(input.leftOrders):[];
+          const rightOrders=Array.isArray(input.rightOrders)?structuredClone(input.rightOrders):[];
+          const lastState=input.lastState;
+          if(resume&&turns===resume.round+1&&lastState&&lastState.rounds===resume.round){
+            for(const [mode,side,orders] of [[input.modeLeft,'left',leftOrders],[input.modeRight,'right',rightOrders]]){
+              if(mode!=='auto')continue;
+              orders[turns-1]=choosePracticeActions({battle:lastState,catalog,chart:typeChart,side,difficulty:'advanced'});
+            }
+          }
+          const isReplacement=!!resume&&turns===resume.round;
+          const result=simulate({left:input.left,right:input.right,catalog,chart:typeChart,turns,randomTape:resume?[]:input.randomTape||[],weather:input.weather||"",field:input.field||"",scenario:input.scenario||"",leftMove:input.leftMove||"",rightMove:input.rightMove||"",leftTeam:input.leftTeam,rightTeam:input.rightTeam,leftOrders,rightOrders,leftReplacements:input.leftReplacements||[],rightReplacements:input.rightReplacements||[],mode:input.mode==='doubles'?'doubles':'singles',resume,replacementsOnly:isReplacement,includeCheckpoint:url.pathname.endsWith('simulate-step'),autoResolveSwitchSides:[...(input.modeLeft==='auto'?['left']:[]),...(input.modeRight==='auto'?['right']:[])]});
+          return privateJson({...result,usedOrders:{left:leftOrders[turns-1]||null,right:rightOrders[turns-1]||null}});
         } catch(e) { return privateJson({error:String(e.message||e)},400); }
+      }
+
+      // Generación ASISTIDA: nunca guarda ni publica. Requiere Cloudflare Access,
+      // Origin local y un secreto privado que no se envía al navegador.
+      if(url.pathname==='/editor-api/ai-character' && request.method==='GET'){
+        return privateJson({ok:true,configured:!!env.UD_AI_API_KEY,provider:'OpenAI Responses + búsqueda web',publicationMode:'manual'});
+      }
+      if(url.pathname==='/editor-api/ai-character' && request.method==='POST'){
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        if(!env.UD_AI_API_KEY)return privateJson({error:'IA no configurada. Agregá el Secret UD_AI_API_KEY solo al Worker Editor.'},503);
+        let body;try{const raw=await request.text();if(raw.length>5000)return privateJson({error:'Solicitud demasiado grande.'},413);body=JSON.parse(raw);}catch{return privateJson({error:'Solicitud inválida.'},400);}
+        const name=String(body?.name||''),spriteId=String(body?.spriteId||'');
+        if(!name.trim()||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(spriteId)||spriteId.length>60)return privateJson({error:'Nombre y sprite ID obligatorios.'},400);
+        if(!env.EDITOR_SPRITES)return privateJson({error:'Falta R2 privado.'},503);
+        const stored=await env.EDITOR_SPRITES.head('drafts/'+spriteId+'.png');
+        if(!stored)return privateJson({error:'Primero subí el sprite desde Inicio y sprites y escribí su ID. No se encontró: '+spriteId},400);
+        try{
+          const {catalog}=await candidateFromDrafts(env);
+          const spriteObject=await env.EDITOR_SPRITES.get('drafts/'+spriteId+'.png');
+          if(!spriteObject||spriteObject.size>2*1024*1024)return privateJson({error:'Sprite no disponible o demasiado grande para IA.'},400);
+          const imageBytes=new Uint8Array(await spriteObject.arrayBuffer());
+          let binary='';for(let i=0;i<imageBytes.length;i+=32768)binary+=String.fromCharCode(...imageBytes.subarray(i,i+32768));
+          const spriteDataUrl='data:image/png;base64,'+btoa(binary);
+          const proposal=await generateAICharacter({name,spriteId,notes:String(body?.notes||''),catalog,apiKey:env.UD_AI_API_KEY,spriteDataUrl});
+          // Validador del editor se ejecuta en ai-character.js. Aquí NO se guarda KV.
+          return privateJson({ok:true,proposal});
+        }catch(error){return privateJson({error:'No se pudo generar un borrador válido: '+String(error.message||error).slice(0,300)},422);}
       }
 
       // Catálogo privado de contenido. No ejecuta mecánicas en combate.

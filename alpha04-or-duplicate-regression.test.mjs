@@ -10,7 +10,7 @@ test('las reglas de estado conservan Y/O y NO, no fuerzan AND al guardarse',()=>
 test('duplicar regla utiliza valores actuales, incluidos operadores y condiciones extra',()=>{
  assert.match(html,/Duplicar efecto/);
  assert.match(html,/structuredClone\(readRuleRow\(row\)\)/);
- assert.match(html,/addRule\(copy\)/);
+ assert.match(html,/addRule\(copy,mount,nested\)/);
  assert.match(html,/operator:item\.querySelector\('\[data-condition-part="operator"\]'\)\.value/);
 });
 test('duplicar efecto de entorno utiliza la misma lectura que guardarlo',()=>{

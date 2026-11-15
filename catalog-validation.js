@@ -1,8 +1,8 @@
 // Validación de configuración, no balance automático. No muta el contenido.
-export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
+export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_miss','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
 export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles'];
 export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
@@ -31,7 +31,7 @@ export function validateRules(definition,category){
  for(const [i,r] of definition.rules.entries()){
   const at=`Regla ${i+1}`;
   if(!EVENTS.includes(r.event)) fail(at+': elegí un evento admitido.');
-  if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_survive','on_enemy_ko'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
+  if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_miss','on_survive','on_enemy_ko'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
   if(category==='effects' && r.event!=='manual') fail(at+': un efecto reutilizable solo admite el evento manual en este laboratorio.');
   if(['entities',...ENV_CATS].includes(category)) fail(at+': esta categoría no usa reglas propias.');
   if(category==='statuses' && ['manual','manual_doubles','on_survive'].includes(r.event)) fail(at+': ese evento no corresponde a un estado alterado.');
@@ -72,6 +72,12 @@ export function validateRules(definition,category){
   if(['environment_immunity','prevent_environment'].includes(a.type) && !['weathers','fields','scenarios','all'].includes(v))fail(at+': inmunidad debe indicar clima, campo, escenario o todos.');
   if(['modify_active_cooldowns','cooldown_on_use'].includes(a.type)&&(!Number.isInteger(Number(v))||Number(v)<-50||Number(v)>50))fail(at+': el cambio de cooldown debe ser un entero entre −50 y +50 turnos.');
   if(a.type==='immunity'){if(!['all','physical','special'].includes(a.damageClass||'all'))fail(at+': inmunidad requiere clase válida.');const f=a.typeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||f.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de inmunidad inválido.');}
+  if(a.type==='attack'){
+   const p=a.attack;
+   if(!p||!TYPES.includes(p.type)||!['physical','special'].includes(p.category)||!within(p.power,1,500)||!within(p.accuracy,0,100)||!within(p.criticalChance,0,50)||!TARGETS.includes(p.target)||!within(p.chance??100,0,100)||typeof p.animate!=='boolean'||!Array.isArray(p.rules)||p.rules.length>12)fail(at+': configurá tipo, clase, potencia, precisión, crítico, objetivo, animación, probabilidad y un máximo de 12 efectos del impacto adicional.');
+   for(const nested of p.rules)if(!['manual','on_hit','on_miss'].includes(nested.event)||nested.action?.type==='attack')fail(at+': los efectos propios permiten Al usar, Al acertar y Al fallar, pero no ataques anidados.');
+   validateRules({rules:p.rules},'moves');
+  }
   if(a.type==='apply_effect' && category==='effects' && r.duration!==0) fail(at+': la duración de un efecto reutilizable manual no está implementada; elegí 0.');
   if(['set_weather','set_field','set_scenario'].includes(a.type) && r.target==='all_active') fail(at+': el clima/campo es global, no admite «ambas entidades» como objetivo.');
   if(r.event==='manual' && category==='abilities') fail(at+': el evento manual no se ejecuta automáticamente en habilidades; usá un evento de habilidad.');

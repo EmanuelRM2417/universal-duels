@@ -16,6 +16,6 @@ const catalog={entities:{a:ent('a',['infect','noop','noop','noop']),b:ent('b',['
 const result=simulate({left:'a',right:'b',catalog,chart:{},turns:1,leftMove:'infect',rightMove:'noop',randomSource:()=>.5});
 assert.equal(result.right.hp,90,'Aplicación inmediata y final de turno, ambos eventos funcionan');
 const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
-assert.ok(html.includes('rule.event||(isStatus?'), 'Al reabrir, respeta el evento guardado');
+assert.ok(html.includes("rule.event||(nested?'on_hit':isStatus?"), 'Al reabrir, respeta el evento guardado');
 assert.ok(!html.includes("event: catalogCategory.value==='statuses'?'on_status'"), 'No reescribir eventos de estado al guardar');
 console.log('Eventos de estado, validación y persistencia: OK');
