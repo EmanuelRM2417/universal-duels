@@ -1,5 +1,7 @@
 import { validateDefinition } from "./catalog-validation.js";
-import {generateAICharacter} from "./ai-character.js";
+import {generateAICharacter,getAICatalogCounts} from "./ai-character.js";
+import {readFullDraftCatalog,mergePublishedAndDraftCatalog} from "./ai-catalog.js";
+import {recordAIGeneration,approveAIGeneration,deleteAIGeneration,listAIGenerations,listApprovedAIMemories,previewAIGeneration,learningContext} from "./ai-memory.js";
 import {choosePracticeActions} from "./practice-ai.js";
 import { simulate } from "./battle-engine.js";
 import {validateRelease,publicationDiff,nextHistory,selectRelease} from "./release-control.js";
@@ -548,6 +550,29 @@ if (
         } catch(e) { return privateJson({error:String(e.message||e)},400); }
       }
 
+      // Memoria privada del diseño de personajes. Solo aprende tras aprobación explícita.
+      if(url.pathname==='/editor-api/ai-memory' && request.method==='GET'){
+        try{
+          const [generations,examples]=await Promise.all([listAIGenerations(env.EDITOR_DRAFTS),listApprovedAIMemories(env.EDITOR_DRAFTS)]);
+          return privateJson({ok:true,generations,approvedCount:examples.length});
+        }catch(e){return privateJson({error:String(e.message||e)},500);}
+      }
+      const memoryMatch=url.pathname.match(/^\/editor-api\/ai-memory\/([0-9a-f-]{36})(?:\/(approve))?$/i);
+      if(memoryMatch){
+        const [,id,action]=memoryMatch;
+        if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        try{
+          if(request.method==='GET'&&!action)return privateJson({ok:true,...await previewAIGeneration(env.EDITOR_DRAFTS,id)});
+          if(request.method==='POST'&&action==='approve'){
+            const raw=await request.text();if(raw.length>2000)return privateJson({error:'Comentarios demasiado largos.'},413);
+            const body=JSON.parse(raw||'{}');
+            return privateJson({ok:true,...await approveAIGeneration(env.EDITOR_DRAFTS,id,{feedback:body.feedback||''})});
+          }
+          if(request.method==='DELETE'&&!action){await deleteAIGeneration(env.EDITOR_DRAFTS,id);return privateJson({ok:true});}
+          return privateJson({error:'Método no permitido.'},405);
+        }catch(e){return privateJson({error:String(e.message||e)},400);}
+      }
+
       // Generación ASISTIDA: nunca guarda ni publica. Requiere Cloudflare Access,
       // Origin local y un secreto privado que no se envía al navegador.
       if(url.pathname==='/editor-api/ai-character' && request.method==='GET'){
@@ -563,15 +588,23 @@ if (
         const stored=await env.EDITOR_SPRITES.head('drafts/'+spriteId+'.png');
         if(!stored)return privateJson({error:'Primero subí el sprite desde Inicio y sprites y escribí su ID. No se encontró: '+spriteId},400);
         try{
-          const {catalog}=await candidateFromDrafts(env);
+          const draft=await readFullDraftCatalog(env.EDITOR_DRAFTS,RELEASE_CATEGORIES);
+          // Leer catálogo íntegro: versión pública + TODOS los borradores privados.
+          // Si hay duplicados, la edición privada más reciente prevalece.
+          const published=env.PUBLIC_CONTENT?await env.PUBLIC_CONTENT.get('public-v1:current','json'):null;
+          const {catalog,chart:storedChart}=mergePublishedAndDraftCatalog(published,draft,RELEASE_CATEGORIES);
+          const chart=storedChart||createDefaultTypeChart();
+          const examples=await listApprovedAIMemories(env.EDITOR_DRAFTS);
           const spriteObject=await env.EDITOR_SPRITES.get('drafts/'+spriteId+'.png');
           if(!spriteObject||spriteObject.size>2*1024*1024)return privateJson({error:'Sprite no disponible o demasiado grande para IA.'},400);
           const imageBytes=new Uint8Array(await spriteObject.arrayBuffer());
           let binary='';for(let i=0;i<imageBytes.length;i+=32768)binary+=String.fromCharCode(...imageBytes.subarray(i,i+32768));
           const spriteDataUrl='data:image/png;base64,'+btoa(binary);
-          const proposal=await generateAICharacter({name,spriteId,notes:String(body?.notes||''),catalog,apiKey:env.UD_AI_API_KEY,spriteDataUrl});
-          // Validador del editor se ejecuta en ai-character.js. Aquí NO se guarda KV.
-          return privateJson({ok:true,proposal});
+          const proposal=await generateAICharacter({name,spriteId,notes:String(body?.notes||''),catalog,chart,approvedExamples:learningContext(examples),apiKey:env.UD_AI_API_KEY,spriteDataUrl});
+          // La IA no toca el catálogo. Solo se archiva una propuesta original privada
+          // para poder contrastarla posteriormente con las correcciones aprobadas.
+          const generation=await recordAIGeneration(env.EDITOR_DRAFTS,{proposal,characterName:name,catalogCounts:getAICatalogCounts(catalog)});
+          return privateJson({ok:true,proposal,generationId:generation.id,catalogCounts:getAICatalogCounts(catalog),approvedExamplesUsed:examples.length});
         }catch(error){return privateJson({error:'No se pudo generar un borrador válido: '+String(error.message||error).slice(0,300)},422);}
       }
 
