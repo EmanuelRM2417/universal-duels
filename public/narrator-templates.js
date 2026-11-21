@@ -13,7 +13,7 @@
     for(const rule of rules.slice(0,LIMIT)){
       const pattern=String(rule?.pattern||'').slice(0,240),replacement=String(rule?.replacement||'').slice(0,360);
       if(!pattern||!replacement)continue;
-      const tokens=[];const marker=/\[([A-ZÁÉÍÓÚÑ_]{2,24})\]/g;
+      const tokens=[];const marker=/\[([A-ZÁÉÍÓÚÑ_0-9]{2,24})\]/g;
       let last=0,m,source='^';
       while((m=marker.exec(pattern))){source+=reEscape(pattern.slice(last,m.index))+'(.+?)';tokens.push(m[1]);last=marker.lastIndex;}
       source+=reEscape(pattern.slice(last))+'$';
