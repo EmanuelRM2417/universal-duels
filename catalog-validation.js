@@ -1,9 +1,10 @@
 // Validación de configuración, no balance automático. No muta el contenido.
 export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_miss','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
 export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles'];
-export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack'];
+export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active','enemy_direct','enemy_inverse'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack','block_items','swap_positions','heal_over_time'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
+const ATTACK_TYPES=[...TYPES,'neutral'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
 const ENV_CATS=['weathers','fields','scenarios'];
 const ENV_ACTIONS=['damage_percent','heal_percent','stat_change','critical_change','remove_status','block_status','cooldown_change','cooldown_on_use','immunity','restrict_moves','final_damage'];
@@ -17,7 +18,7 @@ function condition(c, prefix){
  if(c.type==='always') {if(c.value!==''&&c.value!==null&&c.value!==undefined) fail(prefix+': «Siempre» no lleva valor.');return;}
  if(['hp_below','hp_above'].includes(c.type) && !(c.value!=='' && within(Number(c.value),0,100))) fail(prefix+': el porcentaje de PS debe ser 0–100.');
  if(c.type==='streak_count'){
-  if(!/^(hit|use|streakHits):\d{1,5}:(\d{1,5})?$/.test(String(c.value||'')))fail(prefix+': racha necesita modo:mínimo:máximo (máximo opcional).');
+  if(!/^(hit|hitAnyTurn|use|streakHits):\d{1,5}:(\d{1,5})?$/.test(String(c.value||'')))fail(prefix+': racha necesita modo:mínimo:máximo (máximo opcional).');
   const [mode,min,max]=c.value.split(':');if(Number(min)>9999||(max!==''&&(Number(max)>9999||Number(max)<Number(min))))fail(prefix+': rango mínimo/máximo de racha inválido.');
  }
  if(c.type==='stat_below' && !(c.value!=='' && within(Number(c.value),0,10000))) fail(prefix+': la Velocidad límite debe ser un número válido.');
@@ -31,6 +32,7 @@ export function validateRules(definition,category){
  for(const [i,r] of definition.rules.entries()){
   const at=`Regla ${i+1}`;
   if(!EVENTS.includes(r.event)) fail(at+': elegí un evento admitido.');
+  if(category==='items' && r.event!=='manual')fail(at+': los objetos solo admiten efectos Al usar.');
   if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_miss','on_survive','on_enemy_ko'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
   if(category==='effects' && r.event!=='manual') fail(at+': un efecto reutilizable solo admite el evento manual en este laboratorio.');
   if(['entities',...ENV_CATS].includes(category)) fail(at+': esta categoría no usa reglas propias.');
@@ -50,6 +52,7 @@ export function validateRules(definition,category){
    if(f.mode!=='all'&&!f.types.length)fail(at+': seleccioná al menos un tipo de ataque para incluir o excluir.');
    if(f.mode==='all'&&f.types.length)fail(at+': con «Todos» no deben seleccionarse tipos.');
   }
+  if(r.persistOnSwitch!==undefined&&typeof r.persistOnSwitch!=='boolean')fail(at+': persistencia al salir debe ser sí o no.');
   if(!TARGETS.includes(r.target)) fail(at+': objetivo no implementado.');
   if(!r.action || !ACTIONS.includes(r.action.type)) fail(at+': acción no implementada.');
   if(r.streakEffectMode!==undefined&&!['normal','per_turn'].includes(r.streakEffectMode))fail(at+': modo de racha no válido.');
@@ -62,6 +65,9 @@ export function validateRules(definition,category){
   if(a.type==='modify_move_power'&&['perStack','perRound'].some(k=>a[k]!==undefined&&(!Number.isFinite(Number(a[k]))||Math.abs(Number(a[k]))>5000)))fail(at+': incremento de racha por acumulación o ronda debe estar entre -5000 y 5000.');
  if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
   if(a.type==='restrict_moves'){for(const [values,allowed,label] of [[a.categories,['physical','special','status'],'clases'],[a.types,TYPES,'tipos']])if(values!==undefined&&(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x))))fail(at+': restricción de '+label+' inválida.');}
+  if(a.type==='swap_positions'&&!['ally_team','enemy_team'].includes(r.target))fail(at+': Cambiar posiciones admite equipo aliado o equipo rival.');
+  if(a.type==='heal_over_time'&&!(v!==''&&within(Number(v),0,100)||false))fail(at+': regeneración: 0–100 % de PS.');
+  if(a.type==='block_items'&&r.duration<1)fail(at+': el bloqueo de objetos necesita duración positiva.');
   if(a.type==='switch_character' && !['manual','random'].includes(a.switchMode)) fail(at+': Cambio de personaje requiere modo manual o aleatorio.');
   if(a.type==='stat_change' && (!STATS.includes(a.stat)||!(v!==''&&Number.isInteger(Number(v))&&Number(v)>=-10&&Number(v)<=10))) fail(at+': elegí estadística y cambio entero entre −10 y +10 niveles.');
   if(['clear_stat_changes','block_stat_changes'].includes(a.type)){
@@ -71,11 +77,11 @@ export function validateRules(definition,category){
   if(['apply_status','apply_effect','remove_effect','set_weather','set_field','set_scenario'].includes(a.type)&&!slug(v)) fail(at+': la acción necesita un ID válido.');
   if(['environment_immunity','prevent_environment'].includes(a.type) && !['weathers','fields','scenarios','all'].includes(v))fail(at+': inmunidad debe indicar clima, campo, escenario o todos.');
   if(['modify_active_cooldowns','cooldown_on_use'].includes(a.type)&&(!Number.isInteger(Number(v))||Number(v)<-50||Number(v)>50))fail(at+': el cambio de cooldown debe ser un entero entre −50 y +50 turnos.');
-  if(a.type==='immunity'){if(!['all','physical','special'].includes(a.damageClass||'all'))fail(at+': inmunidad requiere clase válida.');const f=a.typeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||f.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de inmunidad inválido.');}
+  if(a.type==='immunity'){if(!['all','physical','special'].includes(a.damageClass||'all'))fail(at+': inmunidad requiere clase válida.');const f=a.typeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||f.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de inmunidad inválido.');if(a.targetingFilter!==undefined&&(!Array.isArray(a.targetingFilter)||new Set(a.targetingFilter).size!==a.targetingFilter.length||a.targetingFilter.some(t=>!TARGETS.includes(t))))fail(at+': selección de objetivo del ataque inválida.');}
   if(a.type==='attack'){
    const p=a.attack;
-   if(!p||!TYPES.includes(p.type)||!['physical','special'].includes(p.category)||!within(p.power,1,500)||!within(p.accuracy,0,100)||!within(p.criticalChance,0,50)||!TARGETS.includes(p.target)||!within(p.chance??100,0,100)||typeof p.animate!=='boolean'||!Array.isArray(p.rules)||p.rules.length>12)fail(at+': configurá tipo, clase, potencia, precisión, crítico, objetivo, animación, probabilidad y un máximo de 12 efectos del impacto adicional.');
-   for(const nested of p.rules)if(!['manual','on_hit','on_miss'].includes(nested.event)||nested.action?.type==='attack')fail(at+': los efectos propios permiten Al usar, Al acertar y Al fallar, pero no ataques anidados.');
+   if(!p||!ATTACK_TYPES.includes(p.type)||!['physical','special'].includes(p.category)||!within(p.power,1,500)||!within(p.accuracy,0,100)||!within(p.criticalChance,0,50)||!TARGETS.includes(p.target)||!within(p.chance??100,0,100)||(p.hits!==undefined&&(!Number.isInteger(p.hits)||p.hits<1||p.hits>20))||(p.interactions!==undefined&&(!p.interactions||typeof p.interactions!=='object'||Object.values(p.interactions).some(v=>typeof v!=='boolean')))||typeof p.animate!=='boolean'||(p.narratorMessage!==undefined&&(typeof p.narratorMessage!=='string'||p.narratorMessage.length>240||/[<>\x00-\x1f]/.test(p.narratorMessage)))||!Array.isArray(p.rules)||p.rules.length>12)fail(at+': configurá tipo, clase, potencia, precisión, crítico, objetivo, animación, probabilidad y un máximo de 12 efectos del impacto adicional.');
+   for(const nested of p.rules)if(!['manual','on_attack','on_hit','on_miss'].includes(nested.event)||nested.action?.type==='attack')fail(at+': los efectos propios permiten Al usar, Al atacar, Al acertar y Al fallar, pero no ataques anidados.');
    validateRules({rules:p.rules},'moves');
   }
   if(a.type==='apply_effect' && category==='effects' && r.duration!==0) fail(at+': la duración de un efecto reutilizable manual no está implementada; elegí 0.');
@@ -88,11 +94,18 @@ export function validateDefinition(category,d){
  if(category==='tutorial'){if(typeof d.text!=='string'||d.text.length>12000)fail('Tutorial: se requiere un texto de máximo 12000 caracteres.');if(d.imageId!==undefined&&d.imageId!==''&&!slug(d.imageId))fail('Tutorial: ID de imagen inválido.');return;}
  if(category==='tags'){if(!Array.isArray(d.entityIds)||d.entityIds.length>1000||new Set(d.entityIds).size!==d.entityIds.length||d.entityIds.some(id=>!slug(id)))fail('Etiquetas: personajes inválidos o repetidos.');return;}
  if(category==='moves'){
-  if(!TYPES.includes(d.type)||!['physical','special','status'].includes(d.category)||!['global','unique'].includes(d.kind)) fail('Ataque: elegí clase, tipo y categoría.');
+  if(!ATTACK_TYPES.includes(d.type)||!['physical','special','status'].includes(d.category)||!['global','unique'].includes(d.kind)) fail('Ataque: elegí clase, tipo y categoría.');
   const target=d.targeting||'single';
-  if(!['self','ally_team','enemy_team','single','ally','all'].includes(target))fail('Ataque: objetivo desconocido.');
-  if(['physical','special'].includes(d.category)&&!['enemy_team','single','all'].includes(target))fail('Ataque físico/especial: objetivo debe ser Un objetivo, Equipo contrario o Todos.');
+  if(!['self','ally_team','enemy_team','single','ally','all','all_active','enemy_direct','enemy_inverse'].includes(target))fail('Ataque: objetivo desconocido.');
+  if(['physical','special'].includes(d.category)&&!['enemy_team','single','all','all_active','enemy_direct','enemy_inverse'].includes(target))fail('Ataque físico/especial: objetivo debe ser Un objetivo, Equipo contrario o Todos.');
   if(!within(d.power,0,500)||!within(d.accuracy,0,100)||!within(d.criticalChance,0,50)||!Number.isInteger(d.priority)||d.priority< -5||d.priority>5||!Number.isInteger(d.cooldown??0)||(d.cooldown??0)<0||(d.cooldown??0)>50) fail('Ataque: potencia 0–500, precisión 0–100, crítico 0–50, prioridad −5 a +5 y cooldown 0–50.');
+ }
+ if(category==='items'){
+  if(!['start','priority','end','last'].includes(d.timing||'priority'))fail('Objeto: momento de ejecución inválido.');
+  if(!Number.isInteger(d.priority??0)||(d.priority??0)<-5||(d.priority??0)>5)fail('Objeto: prioridad debe ser un entero entre −5 y +5.');
+  if(d.spriteId!==undefined&&d.spriteId!==''&&!slug(d.spriteId))fail('Objeto: ID de sprite PNG inválido.');
+  if(d.narratorMessage!==undefined&&(typeof d.narratorMessage!=='string'||d.narratorMessage.length>240||/[<>\x00-\x1f]/.test(d.narratorMessage)))fail('Objeto: mensaje del narrador inválido.');
+  if(!Array.isArray(d.rules)||!d.rules.length)fail('Objeto: agregá al menos una regla Al usar.');
  }
  if(category==='abilities'&&!['global','unique'].includes(d.kind)) fail('Habilidad: elegí global o exclusiva.');
  if(category==='moves'&&d.multihit){const x=d.multihit;
@@ -106,7 +119,7 @@ export function validateDefinition(category,d){
    if(x.limitScope!==undefined&&!['battle','entry','unlimited'].includes(x.limitScope))fail('Sobrevivir: el límite debe ser por entrada, por batalla o ilimitado.');
  }
  if(category==='abilities'&&d.consecutiveAttack){const x=d.consecutiveAttack;
-   if(x.conditionMode!==undefined&&!['hit','use'].includes(x.conditionMode))fail('Carga: la condición debe ser acertar o usar golpes consecutivamente.');
+   if(x.conditionMode!==undefined&&!['hit','hitAnyTurn','use'].includes(x.conditionMode))fail('Carga: la condición debe ser acertar o usar golpes consecutivamente.');
    if(!within(Number(x.damagePerStack??10),0,1000)||!Number.isInteger(Number(x.speedStages??1))||Number(x.speedStages??1)<0||Number(x.speedStages??1)>10)fail('Carga: incremento de daño o Velocidad inválidos.');
  }
  if(['entities','moves','abilities'].includes(category) && (d.tags!==undefined && (!Array.isArray(d.tags)||d.tags.some(x=>typeof x!=='string'||!x.trim()||x.length>40)))) fail('Etiquetas: usá una lista de textos de hasta 40 caracteres.');
@@ -136,7 +149,7 @@ export function validateDefinition(category,d){
    if(e.type==='critical_change'&&(!Number.isInteger(e.value)||e.value< -10||e.value>10))fail(at+': crítico entre −10 y +10 niveles.');
    if(['remove_status','block_status'].includes(e.type)&&e.value!==undefined)fail(at+': esta acción no lleva valor.');
    if(e.type==='restrict_moves'){for(const [values,allowed,label] of [[e.categories||[],['physical','special','status'],'clases'],[e.moveTypes||[],TYPES,'tipos']])if(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x)))fail(at+': restricción de '+label+' inválida.');}
-   if(e.type==='immunity'){if(!['all','physical','special'].includes(e.damageClass||'all'))fail(at+': inmunidad requiere Todos, Físico o Especial.');const q=e.immunityTypeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(q.mode)||!Array.isArray(q.types)||q.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de tipos de ataque inválido.');}
+   if(e.type==='immunity'){if(!['all','physical','special'].includes(e.damageClass||'all'))fail(at+': inmunidad requiere Todos, Físico o Especial.');const q=e.immunityTypeFilter||{mode:'all',types:[]};if(!['all','include','exclude'].includes(q.mode)||!Array.isArray(q.types)||q.types.some(t=>!TYPES.includes(t)))fail(at+': filtro de tipos de ataque inválido.');if(e.targetingFilter!==undefined&&(!Array.isArray(e.targetingFilter)||new Set(e.targetingFilter).size!==e.targetingFilter.length||e.targetingFilter.some(t=>!TARGETS.includes(t))))fail(at+': objetivos de inmunidad inválidos.');}
    if(['cooldown_change','cooldown_on_use'].includes(e.type)&&(!Number.isInteger(e.value)||e.value<-50||e.value>50))fail(at+': el cambio de cooldown debe ser un entero entre −50 y +50 turnos.');
    if(['damage_percent','heal_percent','cooldown_change'].includes(e.type)&&e.timing==='continuous')fail(at+': elegí Inicio de turno, Final de turno o Final de ronda para este efecto periódico.');
    if(e.type==='cooldown_on_use'&&e.timing!=='continuous')fail(at+': el cooldown al usar movimientos actúa mientras el entorno esté activo.');

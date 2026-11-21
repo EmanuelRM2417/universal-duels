@@ -1,0 +1,10 @@
+const fs=require('fs');
+let ts;try{ts=require('typescript');}catch{try{ts=require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/typescript.js');}catch{throw new Error('Para regenerar las plantillas ejecutá: npm install --no-save typescript');}}
+const path=require('path');const root=__dirname;const source=fs.readFileSync(process.argv[2]||path.join(root,'battle-engine.js'),'utf8');const sf=ts.createSourceFile('battle-engine.js',source,ts.ScriptTarget.ESNext,true,ts.ScriptKind.JS);
+function variable(expr){const txt=expr.getText(sf);if(/battleLogName\((?:attacker|user|owner|a|actor)\)/.test(txt))return 'ATACANTE';if(/battleLogName\((?:defender|target|t)\)/.test(txt))return 'PERSONAJE';if(/\.name/.test(txt)&&/move|m\?/.test(txt))return 'MOVIMIENTO';if(/\.hp|remaining|amount|damage|actual|dealt/.test(txt))return 'DAÑO';if(/round|turn/.test(txt))return 'NUMERO';return 'VALOR';}
+function body(t){if(ts.isStringLiteral(t)||ts.isNoSubstitutionTemplateLiteral(t))return t.text;
+if(ts.isTemplateExpression(t)){let out=t.head.text;const seen={};for(const span of t.templateSpans){let name=variable(span.expression);seen[name]=(seen[name]||0)+1;if(seen[name]>1)name+='_'+seen[name];out+='['+name+']'+span.literal.text;}return out;}
+if(ts.isBinaryExpression(t)&&t.operatorToken.kind===ts.SyntaxKind.PlusToken){return body(t.left)+body(t.right);}
+return '['+variable(t)+']';}
+let items=[],seen=new Set();function visit(n){if(ts.isCallExpression(n)&&/^state\??\.log\.push$/.test(n.expression.getText(sf))){const arg=n.arguments[0];if(arg){const pattern=body(arg).replace(/\s+/g,' ').trim();if(pattern.length>=12&&pattern.length<=220&&/[A-Za-zÁÉÍÓÚÑáéíóúñ]{3}/.test(pattern)&&!seen.has(pattern)){seen.add(pattern);items.push(['Motor de combate',pattern]);}}}ts.forEachChild(n,visit);}visit(sf);
+const out=process.argv[3]||path.join(root,'public/editor/narrator-engine-templates.js');fs.writeFileSync(out,`/* Generated from every state.log.push expression in battle-engine.js. Do not hand-edit. */\nwindow.udEngineNarratorTemplates=${JSON.stringify(items,null,2)};\n`);console.log(items.length,'candidate engine templates');
