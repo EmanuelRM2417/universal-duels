@@ -19,7 +19,7 @@ const compactState=result=>{
 const run=(session,catalog,chart,turns)=>{
   const checkpoint=session.engineCheckpoint;
   const incremental=checkpoint&&(turns===checkpoint.round+1||turns===checkpoint.round);
-  return simulate({catalog,chart,leftTeam:session.leftTeam,rightTeam:session.rightTeam,mode:session.mode,turns,
+  return simulate({catalog,chart,leftTeam:session.leftTeam,rightTeam:session.rightTeam,leftItems:session.leftItems||[],rightItems:session.rightItems||[],mode:session.mode,turns,
     leftOrders:session.leftOrders,rightOrders:session.rightOrders,leftReplacements:session.leftReplacements,rightReplacements:session.rightReplacements,
     randomTape:incremental?[]:session.randomTape,resume:incremental?checkpoint:null,
     // La IA controla el lado derecho. Cuando un efecto le exige seleccionar
@@ -38,18 +38,20 @@ const updateState=(session,result)=>{
   // Incremental result.log is a delta. Keep a small recent window for the UI.
   session.lastState=compactState({...result,log:[...previous,...result.log].slice(-80)});
 };
-export function createPractice({catalog,chart={},revision,mode='singles',difficulty='easy',leftTeam,rightTeam,now=Date.now()}){
+export function createPractice({catalog,chart={},revision,mode='singles',difficulty='easy',leftTeam,rightTeam,leftItems=[],rightItems=[],now=Date.now()}){
   if(!['singles','doubles'].includes(mode)||!['easy','advanced'].includes(difficulty))throw Error('Modalidad de Práctica inválida.');
   if(!revision)throw Error('Falta la versión del contenido.');
   const validate=(arr)=>Array.isArray(arr)&&arr.length>=1&&arr.length<=8&&new Set(arr).size===arr.length&&arr.every(x=>typeof x==='string'&&idRe.test(x)&&catalog?.entities?.[x]);
   if(!validate(leftTeam)||!validate(rightTeam))throw Error('Los equipos deben incluir de 1 a 8 personajes publicados sin repetir.');
-  const s={revision,mode,difficulty,leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
+  const validItems=arr=>Array.isArray(arr)&&arr.length<=3&&new Set(arr).size===arr.length&&arr.every(id=>typeof id==='string'&&idRe.test(id)&&catalog?.items?.[id]);
+  if(!validItems(leftItems)||!validItems(rightItems))throw Error('Seleccioná hasta 3 objetos publicados distintos.');
+  const s={revision,mode,difficulty,leftItems:[...leftItems],rightItems:[...rightItems],leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
   const r=run(s,catalog,chart,0);updateState(s,r);return s;
 }
-export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:session.lastState,lastTurnLogs:session.lastTurnLogs||[],visualEvents:session.visualEvents||[]};}
+export function publicPractice(session){return {revision:session.revision,mode:session.mode,difficulty:session.difficulty,round:session.round,phase:session.phase,status:session.status,outcome:session.outcome,expiresAt:session.expiresAt,state:{...session.lastState,items:{left:[...(session.leftItems||[])],right:[]},usedItems:session.lastState?.usedItems||{left:[],right:[]}},lastTurnLogs:session.lastTurnLogs||[],visualEvents:session.visualEvents||[]};}
 function validateOrders(session,order,catalog){
   const state=session.lastState,active=state.leftActive.filter(x=>x.hp>0),selected=Array.isArray(order?.actions)?order.actions:[order];
-  const actions=[];
+  const actions=[],reservedItems=new Set();
   for(const u of active){const raw=selected.find(x=>Number(x?.slot??0)===u.activeSlot);if(!raw)throw Error('Falta una acción de un personaje activo.');
     if(raw.switch!==undefined){const i=Number(raw.switch);if(!aliveReserves(state,'left').includes(i)||actions.some(a=>a.switch===i))throw Error('Cambio de personaje inválido.');actions.push({slot:u.activeSlot,switch:i});continue;}
     const entry=catalog.entities[u.id],allowed=[...(entry?.definition?.moveIds||[]),entry?.definition?.uniqueMoveId].filter(Boolean);
@@ -69,6 +71,7 @@ function validateOrders(session,order,catalog){
       if(!hasSelfChoice||c?.side!=='left'||Number(c.slot)!==u.activeSlot||!Number.isInteger(idx)||!aliveReserves(state,'left').includes(idx))throw Error('Relevo del efecto inválido.');
       a.switchChoice={side:'left',slot:u.activeSlot,teamIndex:idx};
     }
+    if(raw.item!==undefined){const id=String(raw.item);if(!(session.leftItems||[]).includes(id)||state.usedItems?.left?.includes(id)||reservedItems.has(id))throw Error('Objeto inválido, usado o reservado por otro personaje.');reservedItems.add(id);a.item=id;}
     actions.push(a);
   }
   return session.mode==='singles'?actions[0]:{actions};
