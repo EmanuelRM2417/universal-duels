@@ -44,7 +44,7 @@ export function createPractice({catalog,chart={},revision,mode='singles',difficu
   const validate=(arr)=>Array.isArray(arr)&&arr.length>=1&&arr.length<=8&&new Set(arr).size===arr.length&&arr.every(x=>typeof x==='string'&&idRe.test(x)&&catalog?.entities?.[x]);
   if(!validate(leftTeam)||!validate(rightTeam))throw Error('Los equipos deben incluir de 1 a 8 personajes publicados sin repetir.');
   const validItems=arr=>Array.isArray(arr)&&arr.length<=3&&new Set(arr).size===arr.length&&arr.every(id=>typeof id==='string'&&idRe.test(id)&&catalog?.items?.[id]);
-  if(!validItems(leftItems)||!validItems(rightItems))throw Error('Seleccioná hasta 3 objetos publicados distintos.');
+  if(!validItems(leftItems)||!validItems(rightItems))throw Error('Seleccioná hasta 3 consumibles publicados distintos.');
   const s={revision,mode,difficulty,leftItems:[...leftItems],rightItems:[...rightItems],leftTeam:[...leftTeam],rightTeam:[...rightTeam],leftOrders:[],rightOrders:[],leftReplacements:[],rightReplacements:[],randomTape:[],round:1,phase:'action',status:'playing',outcome:null,updatedAt:now,expiresAt:now+PRACTICE_TTL};
   const r=run(s,catalog,chart,0);updateState(s,r);return s;
 }
@@ -71,7 +71,7 @@ function validateOrders(session,order,catalog){
       if(!hasSelfChoice||c?.side!=='left'||Number(c.slot)!==u.activeSlot||!Number.isInteger(idx)||!aliveReserves(state,'left').includes(idx))throw Error('Relevo del efecto inválido.');
       a.switchChoice={side:'left',slot:u.activeSlot,teamIndex:idx};
     }
-    if(raw.item!==undefined){const id=String(raw.item);if(!(session.leftItems||[]).includes(id)||state.usedItems?.left?.includes(id)||reservedItems.has(id))throw Error('Objeto inválido, usado o reservado por otro personaje.');reservedItems.add(id);a.item=id;}
+    if(raw.item!==undefined){const id=String(raw.item);if(!(session.leftItems||[]).includes(id)||state.usedItems?.left?.includes(id)||reservedItems.has(id))throw Error('Consumible inválido, usado o reservado por otro personaje.');reservedItems.add(id);a.item=id;}
     actions.push(a);
   }
   return session.mode==='singles'?actions[0]:{actions};

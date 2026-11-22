@@ -9,7 +9,7 @@ Proyecto público. Contiene el Worker, motor de combate, partidas Singles/Double
 - Ejecutar pruebas de regresión: `npm test`.
 - Comprobar sintaxis: `node --check worker.js` y `node --check battle-engine.js`.
 - Comprobar bundle sin desplegar: `npx wrangler deploy --dry-run --outdir ./dist-check` (requiere Wrangler instalado). El directorio `dist-check` debe eliminarse antes de empaquetar.
-- Validar manualmente en entorno privado: Salas, Entrenamiento, Singles/Doubles, selección de 3 objetos, bloqueo del mismo objeto en Doubles, objetivos por posición, cambios de posición, bloqueo/consumo de objetos, mensajes y sprites, reconexión y finalización de combate.
+- Validar manualmente en entorno privado: Salas, Entrenamiento, Singles/Doubles, selección de 3 consumibles, bloqueo del mismo consumible en Doubles, objetivos por posición, cambios de posición, bloqueo/consumo de consumibles, mensajes y sprites, reconexión y finalización de combate.
 
 ## Publicación y entorno
 

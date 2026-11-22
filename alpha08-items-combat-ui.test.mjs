@@ -4,7 +4,7 @@ const worker=readFileSync(new URL('./worker.js',import.meta.url),'utf8');
 const practice=readFileSync(new URL('./practice-session.js',import.meta.url),'utf8');
 for(const file of ['index.html','practice.html']){
  const html=readFileSync(new URL('./public/'+file,import.meta.url),'utf8');
- assert.equal((html.match(/<button id="battleItem" disabled>Objeto<\/button>/g)||[]).length,1,'solo se deshabilita en el estado sin actor '+file);
+ assert.equal((html.match(/<button id="battleItem" disabled>Consumible<\/button>/g)||[]).length,1,'solo se deshabilita en el estado sin actor '+file);
  assert.ok(html.includes("udItemChoices().some(x=>!x.used&&!x.reserved)"),'el botón de objeto puede habilitarse '+file);
  for(const token of ['udOpenItemPicker','udPendingItem','udAnimateItemUsed','udDeselectItem','function udItemBlocked','data-ud-item','function udItemChoices','udPendingItem=null'])assert.ok(html.includes(token),`falta ${token} en ${file}`);
 }
