@@ -628,7 +628,7 @@ function udRosterCards(p,active,selected,slot){return window.UDBattleVisuals.ros
 function udMountRoster(){const root=$('battleModalBody');window.UDBattleVisuals.mount(root);wireTypeMarks(root);}
 function openSwitchPicker(){const p=pUnits(battleLastData),slot=nextActionSlot(battleLastData),active=battleLastData[playerSide()+'ActiveIndexes'],chosen=actionDraft.map(a=>a.switch).filter(Number.isInteger);$('battleModalTitle').textContent='Cambiar personaje';$('battleModalBody').innerHTML=udRosterCards(p,active,chosen,slot);$('battleModalBody').querySelectorAll('.ud-team-pick:not(:disabled)').forEach(b=>b.onclick=()=>commitAction({slot,switch:Number(b.dataset.i)}));$('battleModalClose').hidden=false;$('battleModal').hidden=false;udMountRoster();}
 function scheduleOrderSend(){if(pendingSendTimer)clearTimeout(pendingSendTimer);pendingSendTimer=setTimeout(()=>{pendingSendTimer=null;if(!pendingLocalOrder||battle?.submitted)return;send({type:'order',order:pendingLocalOrder});},900)}
-function battleIdentity(raw){const t=String(raw||'');if(t.startsWith('@@L@@'))return{side:'left',name:t.slice(5)};if(t.startsWith('@@R@@'))return{side:'right',name:t.slice(5)};return{side:'',name:t}}function formatLine(line){let out=String(line||''),p=pUnits(battleDisplayData||battleLastData||{});for(const [side,mark,key]of[['left','@@L@@','leftTeam'],['right','@@R@@','rightTeam']])for(const u of (battleLastData?.[key]||[]).slice().sort((a,b)=>(b.name||'').length-(a.name||'').length))out=out.split(mark+u.name).join(side===p.playerSide?u.name:u.name+' (oponente)');const plain=out.replaceAll('@@L@@','').replaceAll('@@R@@','');const itemUse=Object.values((catalog||{}).items||{}).some(item=>item?.name&&plain.endsWith(' consumió '+item.name+'.'));return itemUse?String(line||'').replaceAll('@@L@@','').replaceAll('@@R@@',''):(window.udNarratorFormat?.(plain,window.udNarratorRules)||plain)}
+function battleIdentity(raw){const t=String(raw||'');if(t.startsWith('@@L@@'))return{side:'left',name:t.slice(5)};if(t.startsWith('@@R@@'))return{side:'right',name:t.slice(5)};return{side:'',name:t}}function formatLine(line){let out=String(line||''),p=pUnits(battleDisplayData||battleLastData||{});for(const [side,mark,key]of[['left','@@L@@','leftTeam'],['right','@@R@@','rightTeam']])for(const u of (battleLastData?.[key]||[]).slice().sort((a,b)=>(b.name||'').length-(a.name||'').length))out=out.split(mark+u.name).join(side===p.playerSide?u.name:u.name+' (oponente)');const plain=out.replaceAll('@@L@@','').replaceAll('@@R@@','');const itemUse=Object.values((catalog||{}).items||{}).some(item=>item?.name&&plain.endsWith(' consumió '+item.name+'.'));return window.udNarratorFormat?.(plain,window.udNarratorRules)||plain}
 function findUnitByIdentity(id){const all=[...(battleDisplayData?.leftActive||[]),...(battleDisplayData?.rightActive||[])],p=battleIdentity(id);return all.find(u=>(!p.side||u.side===p.side)&&u.name===p.name)}function hpDom(u){const root=document.querySelector(`.battle-unit[data-side="${u.side}"][data-slot="${u.activeSlot}"]`);if(!root)return;const pct=Math.max(0,u.hp/u.maxHp*100),bar=root.querySelector('.battle-hp-fill');bar.style.width=pct+'%';bar.style.background=`hsl(${Math.min(120,pct*1.2)} 85% 40%)`;root.querySelector('.battle-hp-text').textContent=`${u.hp} / ${u.maxHp} PS`}
 function applyVisualLine(line){let m=line.match(/^(.+?) (?:recibe|recibió) (\d+) de daño/);if(m){const u=findUnitByIdentity(m[1]);if(u){u.hp=Math.max(0,u.hp-Number(m[2]));hpDom(u)}return}m=line.match(/^(.+?) recupera (\d+) PS/);if(m){const u=findUnitByIdentity(m[1]);if(u){u.hp=Math.min(u.maxHp,u.hp+Number(m[2]));hpDom(u)}}}
 function refreshOpenEffectsModal(){if($('battleModal').hidden||!['player','enemy'].includes(battleModalKind))return;openModal(battleModalKind)}
@@ -728,7 +728,7 @@ function openModal(kind){$('battleModalClose').hidden=false;battleModalKind=kind
 function commitAction(act){if(act.switch!==undefined)udPendingItem=null;else if(udPendingItem)act.item=udPendingItem;udPendingItem=null;$('battleModal').dataset.udPendingSwitchChoice='';actionDraft=actionDraft.filter(a=>a.slot!==act.slot);actionDraft.push(act);$('battleModal').hidden=true;const need=pUnits(battleLastData).playerActive.filter(u=>u.hp>0).length;if(actionDraft.length>=need){pendingLocalOrder={actions:clone(actionDraft)};send({type:'select_order',order:pendingLocalOrder});}renderBattle(battleLastData,'');}
 function wireControls(){document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const slot=nextActionSlot(battleLastData),m=move(b.dataset.move);if(battle.mode==='doubles')openTargetPicker(slot,b.dataset.move);else{const user=pUnits(battleLastData).playerActive.find(u=>u.activeSlot===slot),kind=targetKind(m);let target=null;if(kind==='single')target={side:pUnits(battleLastData).enemySide,slot:0};maybeSwitchChoice({slot,move:b.dataset.move,...(target?{target}:{})},m,user);}});document.querySelectorAll('[data-move-info]').forEach(b=>b.onclick=()=>{const m=move(b.dataset.moveInfo);if(!m)return;const slot=nextActionSlot(battleLastData),u=pUnits(battleLastData).playerActive.find(x=>Number(x.activeSlot)===Number(slot));$('battleModalTitle').textContent=m.name||b.dataset.moveInfo;$('battleModalBody').innerHTML='<div class="environment-card">'+moveInfo(m,u)+'</div>';$('battleModal').dataset.replacing='';$('battleModalClose').hidden=false;$('battleModal').hidden=false;});$('battleItem')?.addEventListener('click',udOpenItemPicker);$('battleSwitch')?.addEventListener('click',()=>{udPendingItem=null;openSwitchPicker();});$('battleCatalog')?.addEventListener('click',()=>udPracticeOpenCatalog());$('battleUndoAction')?.addEventListener('click',()=>{udPendingItem=null;actionDraft.pop();pendingLocalOrder=null;renderBattle(battleLastData,'')});$('battleCancelMove')?.addEventListener('click',()=>{udPendingItem=null;actionDraft=[];pendingLocalOrder=null;renderBattle(battleLastData,'')});}
 function openReplacementPicker(){if(battle.replacementSubmitted||$('battleModal').dataset.replacing==='true')return;const side=playerSide(),needed=battle.state.needsReplacement?.[side]||[],active=battle.state[side+'ActiveIndexes']||[],p=pUnits(battle.state),available=p.playerTeam.map((u,i)=>({u,i})).filter(x=>x.u.hp>0&&!active.includes(x.i));const required=needed.slice(0,available.length),selected=[];if(!required.length)return;const modal=$('battleModal');modal.dataset.replacing='true';$('battleModalClose').hidden=true;$('battleModalTitle').textContent='Elegí quién entra';const draw=()=>{$('battleModalBody').innerHTML=`<p class="muted">Seleccioná ${required.length} sustitución(es).</p>`+required.slice(selected.length,selected.length+1).map(slot=>`<div class="environment-card"><strong>Posición ${slot+1}</strong>${udRosterCards(p,active,selected.map(y=>y.teamIndex),slot)}</div>`).join('');$('battleModalBody').querySelectorAll('.ud-team-pick:not(:disabled)').forEach(b=>b.onclick=()=>{selected.push({slot:Number(b.dataset.slot),teamIndex:Number(b.dataset.i)});if(selected.length===required.length){modal.dataset.replacing='';$('battleModalClose').hidden=false;modal.hidden=true;send({type:'replacement',choices:selected});}else draw();});udMountRoster();};draw();modal.hidden=false;}
-document.querySelectorAll('[data-battle-modal]').forEach(b=>b.onclick=()=>{if(udGuided){udGuideProgress.info=true;if(['player','enemy','environment'].includes(b.dataset.battleModal))udGuideProgress.effects=true;udUpdateCoach();}openModal(b.dataset.battleModal);});function udCloseBattleChoice(){
+document.querySelectorAll('[data-battle-modal]').forEach(b=>b.onclick=()=>{if(udGuided){const step=udNextGuideStep();if(step==='info'&&b.dataset.battleModal==='types')udGuideProgress.info=true;if(step==='effects'&&['player','environment'].includes(b.dataset.battleModal))udGuideProgress.effects=true;udUpdateCoach();}openModal(b.dataset.battleModal);});function udCloseBattleChoice(){
   const modal=$('battleModal');
   if(battle?.phase==='replacement'||modal.dataset.replacing==='true')return;
   const wasSwitch=modal.dataset.udPendingSwitchChoice==='true';
@@ -776,7 +776,15 @@ function udPracticeLoadTeams(){try{const teams=JSON.parse(localStorage.getItem('
 $('udPracticeSavedTeam').onchange=()=>{try{const t=JSON.parse(localStorage.getItem('ud-alpha06-named-teams')||'[]').find(x=>x.name===$('udPracticeSavedTeam').value);if(!t)return;selected=t.ids.filter(id=>entity(id)).slice(0,8);udPracticeItems=(t.items||[]).filter(id=>catalog?.items?.[id]).slice(0,3);udRenderPracticeItems();localStorage.setItem('ud-alpha06-selected-team',t.name);renderPracticeRoster();}catch{}};
 function udPracticeOpenCatalog(){$('udPracticeCatalogOverlay').hidden=false;$('udPracticeCatalogFrame').src='/catalog.html?battle=1';}
 function udPracticeCloseCatalog(){$('udPracticeCatalogFrame').removeAttribute('src');$('udPracticeCatalogOverlay').hidden=true;}
-$('udPracticeCatalogClose').onclick=udPracticeCloseCatalog;window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('udPracticeCatalogFrame').contentWindow&&e.data?.type==='ud-close-embedded')udPracticeCloseCatalog();});
+$('udPracticeCatalogClose').onclick=udPracticeCloseCatalog;window.addEventListener('message',e=>{
+ if(e.origin!==location.origin||e.source!==$('udPracticeCatalogFrame').contentWindow)return;
+ if(e.data?.type==='ud-close-embedded')udPracticeCloseCatalog();
+ if(udGuided&&e.data?.type==='ud-catalog-tab-viewed'){
+   if(e.data.category==='entities')udGuideProgress.catalogCharacters=true;
+   if(e.data.category==='items')udGuideProgress.catalogItems=true;
+   udUpdateCoach();
+ }
+});
 // Keep navigation inside the embedded training panel; do not replace the parent URL.
 if(window.self!==window.top){
  document.querySelector('a[href="/catalog.html"]')?.addEventListener('click',e=>{e.preventDefault();udPracticeOpenCatalog();});
@@ -807,11 +815,18 @@ function showSession(message=''){if(!session)return;if(udGuided)udUpdateCoach();
 async function showInitialSession(){showSession('Comienza el entrenamiento.');const final=clone(session.state);for(const k of ['weather','field','scenario'])battleDisplayData[k]='';for(const k of ['weatherTurns','fieldTurns','scenarioTurns'])battleDisplayData[k]=0;for(const side of ['left','right'])for(const u of battleDisplayData[side+'Active']||[]){u.status=null;u.environmentStages={};u.statusStages={};}displayedBattleLog=[];renderBattle(battleDisplayData,'Comienza el entrenamiento.');await animateLogLines(session.lastTurnLogs||[],final,(session.visualEvents||[]).map(e=>({...e,localIndex:e.logIndex})));}
 function resultText(){return{victory:'¡Ganaste la práctica!',defeat:'Perdiste la práctica.',draw:'La práctica terminó en empate.',surrender:'Te rendiste.'}[session?.outcome]||'Práctica finalizada.';}
 function newLogs(previous,next){const old=previous||[],fresh=next||[];for(let common=Math.min(old.length,fresh.length);common>=0;common--)if(old.slice(old.length-common).join('\u0001')===fresh.slice(0,common).join('\u0001'))return fresh.slice(common);return fresh.slice(-16);}
-async function send(x){if(x.type==='cancel_selection')return;if(busy||!session||session.status!=='playing')return;const payload=x.type==='select_order'?{operation:'turn',order:x.order}:x.type==='replacement'?{operation:'replacement',choices:x.choices}:null;if(!payload)return;busy=true;const previous=[...(session.state.log||[])];battle.submitted=true;if(x.type==='replacement')battle.replacementSubmitted=true;renderBattle(battleLastData,'Resolviendo ronda…');try{const d=await api('/api/practice/'+token,{method:'POST',body:JSON.stringify(payload)});session=d.practice;
+async function send(x){if(x.type==='cancel_selection')return;if(busy||!session||session.status!=='playing')return;
+ if(udGuided&&x.type==='select_order'){
+   const step=udNextGuideStep(),actions=x.order?.actions||[];
+   const ok=step==='attack'?actions.some(a=>a?.move):step==='switch'?actions.some(a=>a?.switch!==undefined):step==='consumable'?actions.some(a=>a?.item&&a?.move):step==='rounds';
+   if(!ok){udUpdateCoach();notice('Completá primero la acción indicada por el tutorial.');return;}
+ }
+ const payload=x.type==='select_order'?{operation:'turn',order:x.order}:x.type==='replacement'?{operation:'replacement',choices:x.choices}:null;if(!payload)return;busy=true;const previous=[...(session.state.log||[])];battle.submitted=true;if(x.type==='replacement')battle.replacementSubmitted=true;renderBattle(battleLastData,'Resolviendo ronda…');try{const d=await api('/api/practice/'+token,{method:'POST',body:JSON.stringify(payload)});session=d.practice;
  if(udGuided&&x.type==='select_order'){
   const actions=x.order?.actions||[];
   if(actions.some(a=>a?.move))udGuideProgress.attack=true;
   if(actions.some(a=>a?.switch!==undefined))udGuideProgress.switch=true;
+  if(actions.some(a=>a?.item)&&Object.values(session?.state?.usedItems||{}).some(a=>Array.isArray(a)&&a.some(id=>actions.some(x=>x?.item===id))))udGuideProgress.consumable=true;
   udGuideRounds++;
  }
  const added=newLogs(previous,session.state.log||[]);battle=makeBattle();battle.submitted=false;displayedBattleLog=previous;const replay=session.lastTurnLogs||added,visual=(session.visualEvents||[]).map(e=>({...e,localIndex:e.logIndex}));await animateLogLines(replay,session.state,visual);busy=false;showSession();notice(session.status==='finished'?resultText():'');if(udGuided)udUpdateCoach();}catch(e){notice('No se pudo resolver: '+e.message);actionDraft=[];pendingLocalOrder=null;busy=false;battle.submitted=false;battle.replacementSubmitted=false;$('battleModal').dataset.replacing='';renderBattle(battleLastData,'Elegí la acción nuevamente.');return;}finally{busy=false;if(battle)battle.submitted=false;}}
@@ -831,31 +846,45 @@ $('new').onclick=()=>{if(session?.status!=='finished')return;udSound.context('lo
 $('surrender').onclick=async()=>{if(busy||!session||session.status!=='playing'||!confirm('¿Rendirse de esta práctica?'))return;busy=true;try{const d=await api('/api/practice/'+token,{method:'POST',body:JSON.stringify({operation:'surrender'})});session=d.practice;showSession();notice(resultText());}catch(e){notice(e.message)}finally{busy=false;}};
 
 // Tutorial jugable de primera partida: movimientos, tipos, PS, turnos y lectura de los efectos.
-let udGuideCompleted=false;const udGuideProgress={attack:false,switch:false,info:false,effects:false};
-const udCoach=document.createElement('div');udCoach.id='udGuideCoach';udCoach.setAttribute('role','status');udCoach.style.cssText='display:none;position:fixed;z-index:80;top:6px;left:50%;transform:translateX(-50%);width:min(600px,95vw);padding:8px 12px;border:2px solid #a89aff;border-radius:10px;background:#1d2440f5;color:white;font-weight:700;font-size:13px;text-align:center;box-shadow:0 4px 15px #0008';document.body.append(udCoach);
+let udGuideCompleted=false,udGuideItemsAvailable=false;
+const udGuideProgress={catalogCharacters:false,catalogItems:false,attack:false,switch:false,info:false,effects:false,consumable:false};
+function udNextGuideStep(){
+ if(!udGuideProgress.catalogCharacters||!udGuideProgress.catalogItems)return'catalog';
+ if(!udGuideProgress.attack)return'attack';
+ if(!udGuideProgress.info)return'info';
+ if(!udGuideProgress.switch)return'switch';
+ if(!udGuideProgress.effects)return'effects';
+ if(udGuideItemsAvailable&&!udGuideProgress.consumable)return'consumable';
+ return'rounds';
+}
+const udCoach=document.createElement('div');udCoach.id='udGuideCoach';udCoach.setAttribute('role','status');udCoach.style.cssText='display:none;position:fixed;z-index:80;top:6px;left:50%;transform:translateX(-50%);width:min(560px,95vw);padding:10px 14px;border:1px solid #a89aff;border-radius:9px;background:#1d2440f5;color:white;font-size:14px;text-align:center;box-shadow:0 4px 15px #0008';document.body.append(udCoach);
 function udUpdateCoach(){
  if(!udGuided||!session)return;
  udCoach.style.display='block';
  document.querySelectorAll('.ud-tutorial-point').forEach(el=>el.classList.remove('ud-tutorial-point'));
- const done=udGuideProgress.attack&&udGuideProgress.switch&&udGuideProgress.info&&udGuideProgress.effects&&udGuideRounds>=5;
+ const done=udNextGuideStep()==='rounds'&&udGuideRounds>=5;
  if(session.status==='finished'){
-  if(!done){udCoach.replaceChildren(document.createTextNode('Para completar el tutorial faltan acciones esenciales. Reiniciá la práctica guiada para aprenderlas. '));
-    const again=document.createElement('button');again.type='button';again.textContent='↻ Reiniciar tutorial';again.onclick=()=>location.reload();udCoach.append(again);return;}
-  udCoach.replaceChildren(document.createTextNode('¡Tutorial completado! Atacaste, cambiaste, consultaste efectos y jugaste al menos 5 rondas. '));
-  const b=document.createElement('button');b.textContent='Finalizar tutorial';b.type='button';b.onclick=()=>{if(udGuideCompleted)return;udGuideCompleted=true;parent.postMessage({type:'ud-tutorial-complete'},location.origin);};udCoach.append(b);return;
+  if(!done){udCoach.replaceChildren(document.createTextNode('Faltaron acciones del tutorial. Reiniciá la práctica guiada para completarlas. '));
+    const again=document.createElement('button');again.type='button';again.textContent='Reiniciar tutorial';again.onclick=()=>location.reload();udCoach.append(again);return;}
+  udCoach.replaceChildren(document.createTextNode('Tutorial completado. '));
+  const b=document.createElement('button');b.textContent='Finalizar';b.type='button';b.onclick=()=>{if(udGuideCompleted)return;udGuideCompleted=true;parent.postMessage({type:'ud-tutorial-complete'},location.origin);};udCoach.append(b);return;
  }
- const step=!udGuideProgress.attack?'attack':!udGuideProgress.info?'info':!udGuideProgress.switch?'switch':!udGuideProgress.effects?'effects':'rounds';
- const hints={attack:'① ➜ PANEL INFERIOR: tenés cuatro movimientos. Cada casilla muestra nombre, tipo, clase, STAB y efectividad cuando corresponden. El botón «i» de la esquina superior derecha explica el movimiento; el número inferior derecho son sus turnos restantes de cooldown (mientras haya, no podés elegirlo). Elegí un movimiento para atacar. A la izquierda aparecen Consumible, Cambiar, Catálogo y Cancelar. Antes de atacar podés reservar uno de tres consumibles compartidos; no consume tu movimiento y podés deseleccionarlo. Físico usa Ataque/Defensa, especial usa Ataque especial/Defensa especial.',
-  info:'② ➜ INFORMACIÓN: abrí Tabla de tipos o Efectos jugador. STAB suma 20%; cada ventaja de tipo suma 30% y cada resistencia resta 20%.',
-  switch:'③ ➜ CAMBIAR: elegí Cambiar para enviar una reserva. Sus PS y estados se conservan, pero sus cambios de niveles de estadísticas se reinician.',
-  effects:'④ ➜ EFECTOS: abrí Efectos jugador o Campo · Clima · Escenario y revisá qué está activo. Un estado alterado puede impedirte actuar.',
-  rounds:`⑤ ➜ PRACTICAR: llevás ${udGuideRounds} de 5 rondas requeridas. Leé el narrador, observá los cooldowns y probá otros ataques; el tutorial termina al acabar esta partida.`};
+ const step=udNextGuideStep();
+ const hints={
+  catalog:'Abrí Catálogo. Entrá en las pestañas Personajes y Objetos para conocer el contenido disponible.',
+  attack:'Elegí un movimiento para atacar y confirmá la acción. La clase del ataque determina qué estadísticas utiliza.',
+  info:'Abrí la Tabla de tipos para consultar las afinidades entre ataques y defensores.',
+  switch:'Usá Cambiar para enviar un personaje de reserva al campo.',
+  effects:'Abrí Efectos jugador o Campo, Clima y Escenario para consultar los efectos activos.',
+  consumable:'Elegí Consumible antes de seleccionar un movimiento. Usá el consumible y confirmá la acción. Los consumibles son acciones adicionales.',
+  rounds:`Continuá jugando. Rondas completadas: ${udGuideRounds} de 5.`
+ };
  udCoach.textContent=hints[step];
- const selector=step==='attack'?'.battle-move:not(:disabled)':step==='switch'?'#battleSwitch':step==='effects'?'[data-battle-modal="player"]':step==='info'?'[data-battle-modal="types"]':'.battle-command-panel';
+ const selector={catalog:'#battleCatalog',attack:'.battle-move:not(:disabled)',info:'[data-battle-modal="types"]',switch:'#battleSwitch',effects:'[data-battle-modal="player"]',consumable:'#battleItem',rounds:'.battle-command-panel'}[step];
  document.querySelector(selector)?.classList.add('ud-tutorial-point');
 }
 
 function udApplyOvalLayout(oval){const v=oval||{};for(const [key,css,defaultValue] of [['x','--ud-oval-x',1],['y','--ud-oval-y',8],['width','--ud-oval-width',98],['height','--ud-oval-height',41]]){const n=Number(v[key]);document.documentElement.style.setProperty(css,(Number.isFinite(n)&&n>=0&&n<=100?n:defaultValue)+'%');}}
-(async()=>{try{const d=await api('/api/catalog');udApplyOvalLayout(d.uiLayout?.fieldOval);catalog=d.catalog;chart=d.chart||{};revision=d.revision;udNeutralSceneId=d.neutralSceneImageId||'';window.udNarratorRules=d.uiLayout?.narratorRules||[];udPracticeLoadTeams();udRenderPracticeItems();for(const [id,label] of Object.entries(TYPE_NAMES))$('practiceTypeFilter').add(new Option(label,id));for(let i=1;i<=8;i++)$('enemySize').insertAdjacentHTML('beforeend',`<option value="${i}" ${i===8?'selected':''}>${i} personajes</option>`);renderPracticeRoster();await refresh();if(udGuided){const candidates=Object.values(catalog.entities||{}).sort((a,b)=>{const score=e=>['hp','attack','specialAttack','defense','specialDefense','speed'].reduce((n,k)=>n+(Number(e.definition?.[k])||0),0);return score(b)-score(a)});selected=candidates.slice(0,4).map(x=>x.id);renderPracticeRoster();$('enemySize').value='4';$('mode').value='singles';$('difficulty').value='easy';$('udPracticeTimerEnabled').checked=false;$('start').click();}}catch(e){notice('No se pudo cargar Práctica: '+e.message)}})();
+(async()=>{try{const d=await api('/api/catalog');udApplyOvalLayout(d.uiLayout?.fieldOval);catalog=d.catalog;chart=d.chart||{};revision=d.revision;udNeutralSceneId=d.neutralSceneImageId||'';window.udNarratorRules=d.uiLayout?.narratorRules||[];udPracticeLoadTeams();udRenderPracticeItems();for(const [id,label] of Object.entries(TYPE_NAMES))$('practiceTypeFilter').add(new Option(label,id));for(let i=1;i<=8;i++)$('enemySize').insertAdjacentHTML('beforeend',`<option value="${i}" ${i===8?'selected':''}>${i} personajes</option>`);renderPracticeRoster();await refresh();if(udGuided){const candidates=Object.values(catalog.entities||{}).sort((a,b)=>{const score=e=>['hp','attack','specialAttack','defense','specialDefense','speed'].reduce((n,k)=>n+(Number(e.definition?.[k])||0),0);return score(b)-score(a)});selected=candidates.slice(0,4).map(x=>x.id);udGuideItemsAvailable=Object.keys(catalog.items||{}).length>0;if(udGuideItemsAvailable)udPracticeItems=[Object.keys(catalog.items)[0]];udRenderPracticeItems();renderPracticeRoster();$('enemySize').value='4';$('mode').value='singles';$('difficulty').value='easy';$('udPracticeTimerEnabled').checked=false;$('start').click();}}catch(e){notice('No se pudo cargar Práctica: '+e.message)}})();
 
 </script><script defer src="/monitor-client.js"></script></body></html>

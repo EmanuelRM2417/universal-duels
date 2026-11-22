@@ -1,7 +1,7 @@
 /* Universal Duels: editor-published narrator templates. Only text patterns, no HTML/regex injection. */
 (function(){
   const reEscape=text=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const LIMIT=400;
+  const LIMIT=3000;
   // Some earlier narrator customizations mistakenly rewrote damage events as HP totals.
   // Keep the canonical engine semantics without removing valid custom messages.
   const normalizeLegacyDamage=text=>String(text||'')
@@ -10,7 +10,7 @@
   function apply(text,rules){
     const original=normalizeLegacyDamage(text);
     if(!Array.isArray(rules))return original;
-    for(const rule of rules.slice(0,LIMIT)){
+    for(const rule of rules.slice(0,LIMIT).sort((a,b)=>String(b?.pattern||'').replace(/\[[^\]]+\]/g,'').length-String(a?.pattern||'').replace(/\[[^\]]+\]/g,'').length)){
       const pattern=String(rule?.pattern||'').slice(0,240),replacement=String(rule?.replacement||'').slice(0,360);
       if(!pattern||!replacement)continue;
       const tokens=[];const marker=/\[([A-ZÁÉÍÓÚÑ_0-9]{2,24})\]/g;

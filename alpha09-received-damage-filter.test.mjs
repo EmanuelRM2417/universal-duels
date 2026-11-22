@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+const ent=(id,ab='none')=>({id,name:id,definition:{hp:500,attack:110,defense:100,specialAttack:110,specialDefense:100,speed:id==='a'?150:90,types:['fuego'],moveIds:['fire','water','area'],uniqueMoveId:'wait',globalAbilityId:ab,uniqueAbilityId:'none'}});
+const move=(id,type,category='physical',targeting='single')=>({id,name:id,definition:{type,category,targeting,power:60,accuracy:0,criticalChance:0,priority:0,cooldown:0,rules:[]}});
+const rule=(action,event='on_condition',duration=0)=>({event,target:'self',chance:100,duration,limit:0,condition:{type:'always'},conditions:[],action});
+const shield=(value,filter={mode:'all',types:[]},targetingFilter=[],damageClass='all')=>({type:'adjust_received_damage',value,typeFilter:filter,targetingFilter,damageClass});
+const c={entities:{a:ent('a'),b:ent('b','shield')},moves:{fire:move('fire','fuego'),water:move('water','agua','special'),area:move('area','fuego','physical','enemy_team'),wait:{id:'wait',name:'Wait',definition:{type:'agua',category:'status',targeting:'self',power:0,accuracy:0,priority:0,cooldown:0,rules:[]}}},abilities:{none:{id:'none',definition:{rules:[]}},shield:{id:'shield',definition:{rules:[rule(shield(50,{mode:'include',types:['fuego']},['single'],'physical'))]}}},items:{},statuses:{},effects:{}};
+const run=(moveId,modify)=>{const catalog=structuredClone(c);if(modify)modify(catalog);return simulate({catalog,mode:'singles',chart:{},leftTeam:['a'],rightTeam:['b'],leftOrders:[{move:moveId}],rightOrders:[{move:'wait'}],turns:1,randomSource:()=>.99});};
+const noShield=run('fire',cat=>cat.entities.b.definition.globalAbilityId='none');
+const shielded=run('fire');
+const dmg=out=>500-out.rightTeam[0].hp;
+console.log({baseline:dmg(noShield),shielded:dmg(shielded)});
+assert.ok(dmg(shielded)<dmg(noShield),'resistencia 50 % reduce el daño directo');
+assert.ok(Math.abs(dmg(shielded)-dmg(noShield)*0.5)<=1,'reducción proporcional');
+const special=run('water');const specialOriginal=run('water',cat=>cat.entities.b.definition.globalAbilityId='none');
+assert.equal(dmg(special),dmg(specialOriginal),'clase y tipo distintos no reciben ajuste');
+const area=run('area');const areaOriginal=run('area',cat=>cat.entities.b.definition.globalAbilityId='none');
+assert.equal(dmg(area),dmg(areaOriginal),'el filtro por objetivo excluye ataques de equipo');
+const all=run('fire',cat=>cat.abilities.shield.definition.rules=[rule(shield(150))]);
+assert.ok(dmg(all)>dmg(noShield),'amplificación de daño recibido funciona');
+const negative=run('fire',cat=>cat.abilities.shield.definition.rules=[rule(shield(0))]);
+assert.equal(dmg(negative),0,'ajustar 0 % cancela el daño recibido');
+// Duración explícita: un consumible en el defensor instala un ajuste que se aplica desde el turno en que se consume.
+const iced=structuredClone(c);iced.entities.b.definition.globalAbilityId='none';iced.items.g={id:'g',name:'Escudo',definition:{timing:'start',rules:[rule(shield(50), 'manual',2)]}};
+const early=simulate({catalog:iced,mode:'singles',chart:{},leftTeam:['a'],rightTeam:['b'],rightItems:['g'],leftOrders:[{move:'fire'}],rightOrders:[{move:'wait',item:'g'}],turns:1,randomSource:()=>.99});
+assert.ok(dmg(early)<dmg(noShield),'el ajuste del consumible opera en el turno de consumo');
+console.log('Ajustar daño recibido: filtros, pasivos y consumibles correctamente probados.');

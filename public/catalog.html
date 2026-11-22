@@ -11,13 +11,14 @@
 .stat-fill{display:block;width:100%;height:var(--stat-percent);background:var(--stat-color);transition:height .35s ease,background .35s ease;border-radius:4px 4px 0 0}
 .related-links{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 18px}.related-links h3{flex:0 0 100%;margin:0}
 @media(max-width:600px){.stats{gap:3px}.stat{padding:5px 1px}.stat-track{width:15px;height:112px}.stat strong{font-size:9px}.stat .stat-value{font-size:11px}}
+.catalog-tabs{display:flex;gap:8px;margin:18px 0 12px;border-bottom:1px solid #475071;padding-bottom:10px}.catalog-tab{padding:10px 18px;font-weight:700;border-radius:10px;min-width:125px}.catalog-tab[aria-selected="true"]{background:#6259a0;border-color:#c4b6ff;box-shadow:inset 0 -3px 0 #c4b6ff}.catalog-item-card img{width:100px;height:100px;object-fit:contain;image-rendering:pixelated}.catalog-item-detail-img{width:150px;height:150px;display:block;margin:12px auto;object-fit:contain;image-rendering:pixelated}.catalog-empty{grid-column:1/-1;color:#b3b5c9;padding:20px;text-align:center}
 </style><link rel="stylesheet" href="/battle-visuals.css"></head><body><div class="wrap"><div class="row brand-row"><div class="brand"><img class="brand-logo" src="/assets/universal-duels-logo.png" alt="Universal Duels"><div class="brand-text"><h1>Catálogo de Universal Duels</h1></div></div><button type="button" class="ud-menu-return" onclick="if(window.parent!==window){window.parent.postMessage({type:'ud-close-embedded'},location.origin)}else{location.assign('/')}">Volver al menú principal</button></div>
-<p class="muted">Personajes, estadísticas, movimientos, habilidades y sus relaciones. El catálogo corresponde al parche publicado.</p>
-<section id="browse" class="panel"><label for="search">Buscar personajes</label><div><input id="search" placeholder="Nombre o #etiqueta" autocomplete="off"></div><p id="count" class="muted"></p><div id="cards" class="cards"></div></section>
+<nav class="catalog-tabs" aria-label="Secciones del catálogo" role="tablist"><button type="button" class="catalog-tab" data-category="entities" role="tab" aria-selected="true">Personajes</button><button type="button" class="catalog-tab" data-category="items" role="tab" aria-selected="false">Objetos</button></nav>
+<section id="browse" class="panel"><label for="search" id="searchLabel">Buscar personajes</label><div><input id="search" placeholder="Nombre o #etiqueta" autocomplete="off"></div><p id="count" class="muted"></p><div id="cards" class="cards"></div></section>
 <section id="details" class="panel details" hidden><div class="row"><button id="back">← Volver</button><span id="revision" class="muted"></span></div><div id="detail"></div></section>
 <p id="notice" class="muted" role="status">Cargando catálogo…</p></div>
 <script src="/sprite-renderer.js"></script><script src="/type-icon-cleanup.js"></script><script type="module">
-const $=id=>document.getElementById(id);let data,history=[];
+const $=id=>document.getElementById(id);let data,history=[],currentCategory='entities';
 const text=(tag,value,className)=>{const e=document.createElement(tag);e.textContent=String(value??'');if(className)e.className=className;return e;};
 const append=(to,...items)=>items.forEach(item=>to.appendChild(item));
 const name=(cat,id)=>data?.catalog?.[cat]?.[id]?.name||id;
@@ -89,6 +90,9 @@ function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice'
     const tags=[...new Set([...(d.tags||[]),...Object.values(data.catalog.tags||{}).filter(t=>t.definition?.entityIds?.includes(id)).map(t=>t.name)])];
     if(tags.length){const section=document.createElement('div');section.className='related-links';section.appendChild(text('h3','Etiquetas'));for(const tag of tags){const b=text('button','#'+tag,'ref');b.onclick=()=>{$('search').value='#'+tag;history=[];showList();render();};section.appendChild(b);}panel.appendChild(section);}
     refs(panel,'abilities','Habilidad exclusiva',[d.uniqueAbilityId]);
+  }else if(cat==='items'){
+    const spriteId=d.spriteId;if(spriteId){const img=document.createElement('img');img.className='catalog-item-detail-img';img.alt='Sprite de '+item.name;img.src='/api/item-sprites/'+encodeURIComponent(spriteId)+'?revision='+encodeURIComponent(data.revision);panel.append(img);}
+    showAssociated(panel,d);
   }else{
     // The player's catalog exposes descriptions and browsable references only.
     // Never reveal conditions, internal event codes, probabilities or rule JSON.
@@ -97,16 +101,28 @@ function open(cat,id){const item=data?.catalog?.[cat]?.[id];if(!item){$('notice'
   window.UDTypeIcons?.mount(panel);window.UDSprites?.mount(panel);panel.scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('back').onclick=()=>{history.pop();if(history.length){const [cat,id]=history.pop();open(cat,id);}else showList();};
-function render(){const q=$('search').value.trim().toLocaleLowerCase('es'),entries=Object.values(data.catalog.entities||{}).filter(e=>{
-  const d=e.definition||{};const tags=[...(d.tags||[]),...Object.values(data.catalog.tags||{}).filter(t=>t.definition?.entityIds?.includes(e.id)).map(t=>t.name)];return q.startsWith('#')?tags.some(t=>String(t).toLocaleLowerCase('es').includes(q.slice(1))):e.name.toLocaleLowerCase('es').includes(q);
-}).sort((a,b)=>a.name.localeCompare(b.name,'es'));$('cards').replaceChildren();$('count').textContent=entries.length+' personajes';
-for(const e of entries){const card=document.createElement('button');card.className='card';
-  const d=e.definition||{};card.append(text('strong',e.name));if(d.spriteId){const url='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.append(spritePreview(url));}
-  addTypes(card,d.types||[]);card.onclick=()=>open('entities',e.id);$('cards').appendChild(card);}
-window.UDTypeIcons?.mount($('cards'));window.UDSprites?.mount($('cards'));
+function setCategory(cat){if(!['entities','items'].includes(cat))return;currentCategory=cat;if(window.parent!==window)window.parent.postMessage({type:'ud-catalog-tab-viewed',category:cat},location.origin);history=[];$('browse').hidden=false;$('details').hidden=true;$('search').value='';$('searchLabel').textContent=cat==='items'?'Buscar objetos':'Buscar personajes';$('search').placeholder=cat==='items'?'Nombre del objeto':'Nombre o #etiqueta';for(const b of document.querySelectorAll('.catalog-tab'))b.setAttribute('aria-selected',String(b.dataset.category===cat));render();}
+function render(){if(!data)return;const q=$('search').value.trim().toLocaleLowerCase('es'),cat=currentCategory;
+ const entries=Object.values(data.catalog[cat]||{}).filter(e=>{
+ if(cat==='items')return String(e.name||'').toLocaleLowerCase('es').includes(q);
+ const d=e.definition||{},tags=[...(d.tags||[]),...Object.values(data.catalog.tags||{}).filter(t=>t.definition?.entityIds?.includes(e.id)).map(t=>t.name)];return q.startsWith('#')?tags.some(t=>String(t).toLocaleLowerCase('es').includes(q.slice(1))):e.name.toLocaleLowerCase('es').includes(q);
+ }).sort((a,b)=>a.name.localeCompare(b.name,'es'));
+ $('cards').replaceChildren();$('count').textContent=entries.length+(cat==='items'?' objetos':' personajes');
+ for(const e of entries){const card=document.createElement('button');card.className='card'+(cat==='items'?' catalog-item-card':'');const d=e.definition||{};
+ if(cat==='items'){
+ if(d.spriteId){const img=document.createElement('img');img.alt='';img.loading='lazy';img.src='/api/item-sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.append(img);}
+ card.append(text('strong',e.name));if(e.description)card.append(text('p',e.description,'muted'));
+ }else{
+ card.append(text('strong',e.name));if(d.spriteId){const url='/api/sprites/'+encodeURIComponent(d.spriteId)+'?revision='+encodeURIComponent(data.revision);card.append(spritePreview(url));}addTypes(card,d.types||[]);
+ }
+ card.onclick=()=>open(cat,e.id);$('cards').appendChild(card);
+ }
+ if(!entries.length)$('cards').append(text('p',cat==='items'?'No hay objetos publicados.':'No hay personajes que coincidan.','catalog-empty'));
+ window.UDTypeIcons?.mount($('cards'));window.UDSprites?.mount($('cards'));
 }
+document.querySelectorAll('.catalog-tab').forEach(b=>b.addEventListener('click',()=>setCategory(b.dataset.category)));
 $('search').oninput=render;
-(async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo cargar el catálogo.');data=d;render();$('notice').textContent='Catálogo actualizado a '+d.revision;
-  const params=new URLSearchParams(location.search),id=params.get('entity');if(id&&d.catalog.entities?.[id])open('entities',id);
+(async()=>{try{const r=await fetch('/api/catalog',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo cargar el catálogo.');data=d;render();if(window.parent!==window)window.parent.postMessage({type:'ud-catalog-tab-viewed',category:currentCategory},location.origin);$('notice').textContent='Catálogo actualizado a '+d.revision;
+  const params=new URLSearchParams(location.search),itemId=params.get('item'),id=params.get('entity');if(itemId&&d.catalog.items?.[itemId]){setCategory('items');open('items',itemId);}else if(id&&d.catalog.entities?.[id])open('entities',id);
 }catch(e){$('notice').textContent='Error: '+e.message;}})();
 </script><script type="module">import {createSoundDirector} from '/audio-director.js';window.udSound=createSoundDirector();window.udSound.context('lobby');</script><script defer src="/monitor-client.js"></script><script>if(new URLSearchParams(location.search).has('battle')){const b=document.querySelector('.ud-menu-return');if(b)b.textContent='Volver al combate';}</script></body></html>

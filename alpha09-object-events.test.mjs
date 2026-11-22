@@ -27,6 +27,6 @@ for(const path of ['./public/index.html','./public/tutorial.html','./public/prac
  assert.match(content,/consumibles|Consumible/i,`${path} explica los consumibles`);
 }
 const practice=readFileSync(new URL('./public/practice.html',import.meta.url),'utf8');
-assert.match(practice,/itemUse\?String\(line\|\|''\)/,'el narrador de Entrenamiento debe respetar el mensaje fijo');
+assert.ok(!practice.includes("itemUse?String(line||'')"),'Entrenamiento permite personalizar también el mensaje de consumo mediante el narrador');
 assert.match(practice,/Object.values\(\(catalog\|\|\{\}\)\.items/,'verifica los objetos del catálogo real');
 console.log('Alpha 0.9: eventos reactivos de objetos, consumo diferido, narración fija y documentación: OK');

@@ -26,3 +26,11 @@ Proyecto público. Contiene el Worker, motor de combate, partidas Singles/Double
 `worker.js`, `battle-engine.js`, `auth.js`, `monitoring.js`, `practice-ai.js`, `practice-session.js`, `stat-math.js`, `public/`, `.github/workflows/`, `wrangler.toml`, `wrangler.test.toml`, `package.json`, `run-regression-tests.mjs` y `*.test.mjs` permanecen disponibles. Los tests no forman parte de los assets publicados por Wrangler, pero se conservan para evitar regresiones futuras.
 
 Los documentos antiguos de Alpha 0.1–0.8 se retiraron del paquete porque eran históricos y algunos describían nombres de Workers o procedimientos ya obsoletos. Consultar los ZIP anteriores para ese historial.
+
+## Alpha 0.9: Catálogo, tutorial y narrador
+
+- El Catálogo público incluye pestañas Personajes y Objetos (consumibles), con filtros propios y sprites.
+- El tutorial interactivo requiere completar las acciones indicadas; incluye revisar ambas pestañas del Catálogo y usar un consumible cuando haya alguno publicado.
+- El narrador admite reglas personalizadas para mensajes de combate y consumo, sin excepciones codificadas para el texto de consumo.
+- El efecto `adjust_received_damage` ajusta el daño directo recibido (100 % es neutral). Admite filtros por clase física/especial, tipo ofensivo y objetivo del ataque recibido. El motor de Main y Editor debe seguir sincronizado.
+- Ejecutar `npm test` antes de reemplazar los archivos desplegados.
