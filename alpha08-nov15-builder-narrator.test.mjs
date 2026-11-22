@@ -10,7 +10,7 @@ assert.match(html,/window\.udEngineNarratorTemplates/);
 assert.match(html,/hitAnyTurn/,'turnos separados en selector de rachas');
 assert.match(html,/immunityTargeting/,'inmunidad diferenciada por objetivos');
 assert.match(html,/modifierAdvanced\.hidden=!isModifier/,'valores avanzados se ocultan cuando no son necesarios');
-assert.match(html,/if\(rules\.length>400\)/,'editor y servidor comparten el mismo límite');
+assert.match(html,/if\(rules\.length>3000\)/,'editor y servidor comparten el mismo límite');
 const targetRule={event:'on_condition',condition:{type:'always'},target:'self',conditions:[],action:{type:'immunity',damageClass:'all',typeFilter:{mode:'all',types:[]},targetingFilter:['enemy_team']},chance:100,duration:2,limit:0};
 assert.doesNotThrow(()=>validateRules({rules:[targetRule]},'abilities'));
 assert.throws(()=>validateRules({rules:[{...targetRule,action:{...targetRule.action,targetingFilter:['bad-target']}}]},'abilities'));

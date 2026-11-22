@@ -5,7 +5,7 @@ const worker=fs.readFileSync(new URL('./worker.js',import.meta.url),'utf8');
 const engine=fs.readFileSync(new URL('./battle-engine.js',import.meta.url),'utf8');
 assert.ok(html.includes('additionalTemplates'),'Narrador ampliado');
 for(const m of ['ataque adicional','cooldown activo','no puede modificar','Ya estamos en','Ataque especial de'])assert.ok(html.includes(m),'Falta patrón '+m);
-assert.ok(html.includes('máximo 400')&&worker.includes('narratorRules.length>400'),'guardado no debe limitarse a 120');
+assert.ok(html.includes('máximo 3000')&&worker.includes('narratorRules.length>3000'),'guardado no debe limitarse a 120');
 assert.ok(html.includes("lastSnapshot={rounds:d.rounds"),'Lab debe conservar solo estado de IA');
 assert.ok(html.includes('checkpoint:previous')&&html.includes('historyVisual'),'Lab debe avanzar y no recomputar rondas');
 assert.ok(html.includes('s.pendingAdvance=true')&&html.includes('finally{s.pendingAdvance=false;}'),'Lab no debe ejecutar rondas duplicadas por clics');

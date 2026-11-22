@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const ui=readFileSync('public/editor/index.html','utf8');
+assert.match(ui,/id="udTopSaveChanges"[^>]*>Guardar cambios</,'el control de guardado está al principio del editor');
+assert.match(ui,/id="catalogSaveTop"[^>]*>Guardar cambios</,'el formulario de reglas permite guardar desde arriba');
+assert.ok(ui.indexOf('id="catalogSaveTop"')<ui.indexOf('id="builderRules"'),'Guardar cambios aparece antes de la lista larga de efectos');
+assert.match(ui,/catalog:'catalogSave',objects:'catalogSave',narrator:'udNarratorSave'/,'el botón superior funciona para todas las categorías y el narrador');
+assert.match(ui,/if\(view==='tutorial'\)/,'el tutorial también se guarda desde arriba');
+assert.match(ui,/button\.className='ud-tutorial-section-save'/,'el tutorial registra todas sus secciones');
+assert.match(ui,/\.addEventListener\('click',\(\)=>\{const button=document\.getElementById\('catalogSave'\)/,'el guardado superior reutiliza la validación original');
+console.log('Editor: guardado accesible al inicio y delegado a los controles existentes: OK');

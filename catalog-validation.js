@@ -2,7 +2,7 @@
 export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_miss','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
 export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles','going_to_switch','first_turn_in_field'];
 export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active','enemy_direct','enemy_inverse'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack','block_items','swap_positions','heal_over_time','move_first','move_last'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','adjust_received_damage','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack','block_items','swap_positions','heal_over_time','move_first','move_last'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const ATTACK_TYPES=[...TYPES,'neutral'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
@@ -64,6 +64,14 @@ export function validateRules(definition,category){
   if(['heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage'].includes(a.type) && !(v!==''&&within(Number(v),0,1000))) fail(at+': el porcentaje del daño infligido debe estar entre 0 y 1000.');
   if(a.type==='modify_move_power'&&['perStack','perRound'].some(k=>a[k]!==undefined&&(!Number.isFinite(Number(a[k]))||Math.abs(Number(a[k]))>5000)))fail(at+': incremento de racha por acumulación o ronda debe estar entre -5000 y 5000.');
  if(a.type==='damage_multiplier' && !(v!==''&&within(Number(v),0,500))) fail(at+': el valor de ajuste del daño final (100 = neutro) debe estar entre 0 y 500 %.');
+  if(a.type==='adjust_received_damage'){
+    if(!(v!==''&&within(Number(v),0,500)))fail(at+': ajustar daño recibido requiere porcentaje entre 0 y 500 (100 = normal).');
+    if(!['all','physical','special'].includes(a.damageClass||'all'))fail(at+': clase de ataque recibido inválida.');
+    const f=a.typeFilter||{mode:'all',types:[]};
+    if(!['all','include','exclude'].includes(f.mode)||!Array.isArray(f.types)||new Set(f.types).size!==f.types.length||f.types.some(t=>!ATTACK_TYPES.includes(t)))fail(at+': filtro de tipos de ataque recibido inválido.');
+    if(f.mode!=='all'&&!f.types.length)fail(at+': seleccioná tipos ofensivos.');
+    if(a.targetingFilter!==undefined&&(!Array.isArray(a.targetingFilter)||new Set(a.targetingFilter).size!==a.targetingFilter.length||a.targetingFilter.some(t=>![...TARGETS,'single'].includes(t))))fail(at+': tipo de objetivo del ataque recibido inválido.');
+  }
   if(a.type==='restrict_moves'){for(const [values,allowed,label] of [[a.categories,['physical','special','status'],'clases'],[a.types,TYPES,'tipos']])if(values!==undefined&&(!Array.isArray(values)||new Set(values).size!==values.length||values.some(x=>!allowed.includes(x))))fail(at+': restricción de '+label+' inválida.');}
   if(a.type==='swap_positions'&&!['ally_team','enemy_team'].includes(r.target))fail(at+': Cambiar posiciones admite equipo aliado o equipo rival.');
   if(a.type==='heal_over_time'&&!(v!==''&&within(Number(v),0,100)||false))fail(at+': regeneración: 0–100 % de PS.');

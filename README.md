@@ -28,3 +28,12 @@ Editor de catálogo, consumibles, habilidades, movimientos, condiciones, narrado
 `worker.js`, `battle-engine.js`, `catalog-validation.js`, `ai-*.js`, `release-*.js`, `public/`, `build-narrator-templates.cjs`, `run-regression-tests.mjs`, `*.test.mjs` y los manifiestos de Wrangler y GitHub. Las pruebas se mantienen para futuras iteraciones, aunque no son assets públicos de Wrangler.
 
 Se retiraron documentos redundantes de Alpha 0.8 y se unificaron aquí las indicaciones vigentes, sin modificar componentes de ejecución.
+
+## Alpha 0.9: Editor de narrador y ajustes de daño
+
+- El estudio de narrador incluye plantillas derivadas de las 76 llamadas `log.push` actuales del motor más patrones de estados, estadísticas, entornos y consumibles. Admite hasta 3000 sustituciones; el texto base no se modifica.
+- Para regenerar las plantillas después de añadir mensajes al motor: `node build-narrator-templates.cjs`. Para verificar si están actualizadas: `node build-narrator-templates.cjs --check`.
+- Los desplegables conservan su funcionamiento nativo y tienen un buscador auxiliar (botón Buscar o escribir con foco en el selector).
+- El efecto `adjust_received_damage` admite valor porcentual, clase física/especial, filtro de tipos ofensivos y clases de objetivo del ataque recibido.
+- La sección Catálogo del tutorial también puede editarse desde la guía del Editor.
+- Ejecutar `npm test` antes de cualquier despliegue manual.
