@@ -474,6 +474,9 @@ function rulesFor(entry,event,user,contextTarget,state){
       state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;const previousLogLength=state.log.length,abilityLabel=state.currentSourceName;const previousEvent=state.currentRuleEvent;state.currentRuleEvent=event;action(rule,user,contextTarget,state,0);state.currentRuleEvent=previousEvent;for(let i=previousLogLength;i<state.log.length;i++)if(!state.log[i].includes(' por '+abilityLabel+' de '))state.log[i]=state.log[i].replace(/\.$/,'')+' por '+abilityLabel+' de '+user.name+'.';state.currentSourceName='';state.currentSourceId='';
     }
   }
+  // Los objetos seleccionados para este turno pueden reaccionar a los mismos eventos
+  // que las habilidades. No se gastan ni narran hasta que alguna regla se ejecuta.
+  state.runArmedItems?.(event,user,contextTarget);
 }
 function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false,chainPhase=null){
   for(const rule of move?.definition?.rules||[]){
@@ -836,33 +839,62 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
     for(const s of[0,1])for(let slot=0;slot<active[s].length;slot++){const a=current(s,slot),o=orders[s][slot];if(a?.hp>0&&o?.switch!==undefined)switches.push({s,slot,a,index:Number(o.switch)});}
     switches.sort((x,y)=>effective(y.a,'speed')-effective(x.a,'speed')||(random()<.5?-1:1));for(const sw of switches)switchTo(sw.s,sw.slot,sw.index,false,'Cambio');refreshEnvironment();
     const actions=[],lastItems=[];
+    state.armedItems=[];
+    const eligibleItemRule=(rule,a,context)=>{
+      if(!conditionsPass(rule,a,context,state))return false;
+      if(rule.action?.type==='swap_positions'&&state.mode!=='doubles')return false;
+      if(rule.action?.type==='switch_character'){
+        const receivers=targetSet(rule.target||'self',a,context,state).filter(t=>t?.hp>0);
+        return receivers.some(t=>{const owner=actorSide(t);return state.teams[owner].some((ally,index)=>ally.hp>0&&!state.active[owner].includes(index));});
+      }
+      return true;
+    };
+    const runItemRules=(armed,event,contextTarget)=>{
+      const {s,actor:a,id,item}=armed;
+      if(!state.active[s].includes(a.teamIndex)||(a.hp<=0&&!(armed.activated&&event==='on_death'))||state.forcedSwitches.some(f=>sideIndex(f.side)===s&&f.targetTeamIndex===a.teamIndex))return;
+      if(!armed.activated&&(state.usedItems[s].includes(id)||a.effects.some(e=>e.id==='block_items'&&!ownerSuppressed(e,state,a))))return;
+      const context=contextTarget||firstOpponent(state,a);
+      for(const [index,rule] of (item.definition?.rules||[]).entries()){
+        if(rule.event!==event||!eligibleItemRule(rule,a,context))continue;
+        const times=armed.triggerCounts[index]||0;
+        if(Number(rule.limit)>0&&times>=Number(rule.limit))continue;
+        if(!chance(rule,state))continue;
+        if(!armed.activated){
+          state.usedItems[s].push(id);armed.activated=true;
+          state.log.push(`${battleLogName(a)} usó ${item.name}.`);
+          state.visualEvents.push({logIndex:state.log.length-1,type:'item_use',side:a.side,slot:state.active[s].indexOf(a.teamIndex),itemId:id,spriteId:item.definition?.spriteId||'',itemName:item.name,attackerName:battleLogName(a)});
+        }
+        armed.triggerCounts[index]=times+1;
+        const old={name:state.currentSourceName,kind:state.currentSourceKind,id:state.currentSourceId,actor:state.currentSourceActor,side:state.currentSourceOwnerSide,index:state.currentSourceOwnerIndex,persist:state.currentItemPersistOnSwitch,event:state.currentRuleEvent};
+        state.currentSourceKind='objeto';state.currentSourceId=id;state.currentSourceName=item.name;state.currentSourceActor=a.name;state.currentSourceOwnerSide=a.side;state.currentSourceOwnerIndex=a.teamIndex;
+        state.currentItemPersistOnSwitch=!!rule.persistOnSwitch;state.currentRuleEvent=event;
+        try{action(rule,a,context,state,0);}finally{
+          state.currentSourceName=old.name;state.currentSourceKind=old.kind;state.currentSourceId=old.id;state.currentSourceActor=old.actor;state.currentSourceOwnerSide=old.side;state.currentSourceOwnerIndex=old.index;state.currentItemPersistOnSwitch=old.persist;state.currentRuleEvent=old.event;
+        }
+      }
+    };
+    state.runArmedItems=(event,user,context)=>{
+      if(state._runningArmedItems)return;
+      state._runningArmedItems=true;
+      try{for(const armed of state.armedItems){if(armed.actor===user){runItemRules(armed,event,context);if(event!=='on_condition')runItemRules(armed,'on_condition',context);}}}finally{state._runningArmedItems=false;}
+    };
     const executeItem=entry=>{
       const {s,actor:a,id}=entry;
       if(!state.active[s].includes(a.teamIndex)||a.hp<=0||state.forcedSwitches.some(f=>sideIndex(f.side)===s&&f.targetTeamIndex===a.teamIndex))return;
       if(state.usedItems[s].includes(id)||a.effects.some(e=>e.id==='block_items'&&!ownerSuppressed(e,state,a)))return;
       const item=state.catalog.items?.[id];if(!item)return;
-      // No se consume si el portador perdió el campo o fue bloqueado antes de ejecutar.
-      const usableRules=(item.definition?.rules||[]).filter(rule=>{
-        if(rule.event!=='manual'||!conditionsPass(rule,a,firstOpponent(state,a),state))return false;
-        if(rule.action?.type==='swap_positions'&&state.mode!=='doubles')return false;
-        if(rule.action?.type==='switch_character'){
-          const receivers=targetSet(rule.target||'self',a,firstOpponent(state,a),state).filter(t=>t?.hp>0);
-          return receivers.some(t=>{const owner=actorSide(t);return state.teams[owner].some((ally,index)=>ally.hp>0&&!state.active[owner].includes(index));});
-        }
-        return true;
-      });
-      const activatingRules=usableRules.filter(rule=>chance(rule,state));
-      if(!activatingRules.length)return;
-      const old={name:state.currentSourceName,kind:state.currentSourceKind,id:state.currentSourceId,actor:state.currentSourceActor,side:state.currentSourceOwnerSide,index:state.currentSourceOwnerIndex,persist:state.currentItemPersistOnSwitch};
-      state.usedItems[s].push(id);
-      const narratorTemplate=String(item.definition?.narratorMessage||'[PERSONAJE] utilizó [OBJETO].');
-      state.log.push(narratorTemplate.replaceAll('[PERSONAJE]',battleLogName(a)).replaceAll('[OBJETO]',item.name));
-      state.visualEvents.push({logIndex:state.log.length-1,type:'item_use',side:a.side,slot:state.active[s].indexOf(a.teamIndex),itemId:id,spriteId:item.definition?.spriteId||'',itemName:item.name,attackerName:battleLogName(a)});
-      state.currentSourceKind='objeto';state.currentSourceId=id;state.currentSourceName=item.name;state.currentSourceActor=a.name;state.currentSourceOwnerSide=a.side;state.currentSourceOwnerIndex=a.teamIndex;
-      try{for(const rule of activatingRules){
-        state.currentItemPersistOnSwitch=!!rule.persistOnSwitch;state.currentRuleEvent='manual';
-        action(rule,a,firstOpponent(state,a),state,0);
-      }}finally{state.currentSourceName=old.name;state.currentSourceKind=old.kind;state.currentSourceId=old.id;state.currentSourceActor=old.actor;state.currentSourceOwnerSide=old.side;state.currentSourceOwnerIndex=old.index;state.currentItemPersistOnSwitch=old.persist;state.currentRuleEvent='';}
+      // La reserva del objeto no es su consumo. Se arma al ejecutar la acción
+      // y solo se gasta cuando una regla válida entra en efecto.
+      if(state.armedItems.some(x=>x.s===s&&x.id===id))return;
+      const armed={s,actor:a,id,item,activated:false,triggerCounts:{}};
+      state.armedItems.push(armed);
+      runItemRules(armed,'manual',firstOpponent(state,a));
+      if(state.mode==='doubles')runItemRules(armed,'manual_doubles',firstOpponent(state,a));
+      // Permitir efectos de condición o inicio de turno en el momento de activación.
+      runItemRules(armed,'on_condition',firstOpponent(state,a));
+      if(item.definition?.timing==='start')runItemRules(armed,'turn_start',firstOpponent(state,a));
+      if(['end','last'].includes(item.definition?.timing))runItemRules(armed,'turn_end',firstOpponent(state,a));
+      if(item.definition?.timing==='last')runItemRules(armed,'round_end',firstOpponent(state,a));
       state.resolveDeaths();
     };
     for(const s of[0,1])for(let slot=0;slot<active[s].length;slot++){
