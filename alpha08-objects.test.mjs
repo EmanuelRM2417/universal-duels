@@ -47,7 +47,8 @@ assert.deepEqual(noCondition.usedItems.left,[],'si la condición de un objeto es
 const noChance=sim({catalog:moreCatalog,leftItems:['zero'],leftOrders:[actions({move:'idle',item:'zero'},{move:'idle'})]});
 assert.deepEqual(noChance.usedItems.left,[],'si ninguna regla del objeto se activa por probabilidad no se consume');
 const customNarrator=sim({catalog:moreCatalog,leftOrders:[actions({move:'idle',item:'apple'},{move:'idle'})]});
-assert.ok(customNarrator.log.some(x=>x.includes('comió Manzana.')),'mensaje de narrador personalizado del objeto');
+assert.ok(customNarrator.log.some(x=>x.includes('usó Manzana.')),'el narrador impone el texto universal aun si hay un mensaje histórico personalizado');
+assert.ok(!customNarrator.log.some(x=>x.includes('comió Manzana.')),'el texto personalizado no se utiliza');
 const directBlocked=sim({catalog:moreCatalog,leftItems:['apple'],rightItems:[],leftOrders:[actions({move:'idle',item:'apple'},{move:'idle'})],rightOrders:[actions({move:'ban',target:{side:'left',slot:0}},{move:'idle'})]});
 // Objetos al inicio actúan antes de un bloqueo en mitad del turno. Comprobar con objeto tardío.
 assert.ok(directBlocked.usedItems.left.includes('apple'),'la activación de inicio precede a bloqueo de prioridad 5');

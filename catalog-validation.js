@@ -32,7 +32,7 @@ export function validateRules(definition,category){
  for(const [i,r] of definition.rules.entries()){
   const at=`Regla ${i+1}`;
   if(!EVENTS.includes(r.event)) fail(at+': elegí un evento admitido.');
-  if(category==='items' && r.event!=='manual')fail(at+': los objetos solo admiten efectos Al usar.');
+  // Los objetos reutilizan todos los eventos existentes. Su uso se confirma al ejecutarse su primera regla válida.
   if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_miss','on_survive','on_enemy_ko'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
   if(category==='effects' && r.event!=='manual') fail(at+': un efecto reutilizable solo admite el evento manual en este laboratorio.');
   if(['entities',...ENV_CATS].includes(category)) fail(at+': esta categoría no usa reglas propias.');
@@ -104,7 +104,7 @@ export function validateDefinition(category,d){
   if(!['start','priority','end','last'].includes(d.timing||'priority'))fail('Objeto: momento de ejecución inválido.');
   if(!Number.isInteger(d.priority??0)||(d.priority??0)<-5||(d.priority??0)>5)fail('Objeto: prioridad debe ser un entero entre −5 y +5.');
   if(d.spriteId!==undefined&&d.spriteId!==''&&!slug(d.spriteId))fail('Objeto: ID de sprite PNG inválido.');
-  if(d.narratorMessage!==undefined&&(typeof d.narratorMessage!=='string'||d.narratorMessage.length>240||/[<>\x00-\x1f]/.test(d.narratorMessage)))fail('Objeto: mensaje del narrador inválido.');
+  // El mensaje del objeto está fijado por el motor; ignorar borradores antiguos que tenían texto editable.
   if(!Array.isArray(d.rules)||!d.rules.length)fail('Objeto: agregá al menos una regla Al usar.');
  }
  if(category==='abilities'&&!['global','unique'].includes(d.kind)) fail('Habilidad: elegí global o exclusiva.');

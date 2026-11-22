@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {simulate} from './battle-engine.js';
+import {readFileSync} from 'node:fs';
+const rule=(event,action={type:'heal',value:10},target='self')=>({event,target,action,chance:100,duration:0,limit:0,condition:{type:'always',value:''},conditions:[],operator:'AND',negate:false});
+const ent=(id)=>({id,name:id,definition:{hp:500,attack:100,defense:100,specialAttack:100,specialDefense:100,speed:100,types:['agua'],moveIds:['hit','idle','idle'],uniqueMoveId:'idle',globalAbilityId:'ab',uniqueAbilityId:'ab'}});
+const move=(id,power=0)=>({id,name:id,definition:{type:'agua',category:power?'special':'status',targeting:power?'single':'self',kind:'global',power,accuracy:0,criticalChance:0,priority:0,cooldown:0,rules:[]}});
+const catalog={entities:{a:ent('a'),b:ent('b')},moves:{hit:move('hit',60),idle:move('idle')},abilities:{ab:{id:'ab',definition:{kind:'global',rules:[]}}},effects:{},statuses:{},items:{}};
+const run=(item,side='left',leftMove='hit',rightMove='idle',config={})=>{
+ const c=structuredClone(catalog);c.items.one={id:'one',name:'Manzana',definition:{timing:'start',rules:[item],spriteId:'manzana',narratorMessage:'Esto no debe verse.'}};
+ return simulate({catalog:c,mode:'singles',chart:{},leftTeam:['a'],rightTeam:['b'],leftItems:side==='left'?['one']:[],rightItems:side==='right'?['one']:[],leftOrders:[{actions:[{move:leftMove,...(side==='left'?{item:'one'}:{})}]}],rightOrders:[{actions:[{move:rightMove,...(side==='right'?{item:'one'}:{})}]}],randomSource:()=>0.5,turns:1,...config});
+};
+const hit=run(rule('on_hit'));
+assert.deepEqual(hit.usedItems.left,['one'],'Al acertar es evento ejecutable para objeto');
+assert.equal(hit.visualEvents.filter(e=>e.type==='item_use').length,1,'exactamente una animación');
+assert.ok(hit.log.some(s=>s.includes(' usó Manzana.')),'narración estricta incluso con plantilla antigua');
+assert.ok(!hit.log.some(s=>s.includes('Esto no debe verse.')));
+const damaged=run(rule('on_damage_taken'),'right','hit','idle');
+assert.deepEqual(damaged.usedItems.right,['one'],'Al recibir daño dispara objeto reactivo');
+const noDamage=run(rule('on_damage_taken'),'right','idle','idle');
+assert.deepEqual(noDamage.usedItems.right,[],'Sin daño no consume objeto');
+const end=run(rule('turn_end'),'left','idle','idle');
+assert.deepEqual(end.usedItems.left,['one'],'Final del turno dispara el objeto después de armado');
+const round=run(rule('round_end'),'left','idle','idle');
+assert.deepEqual(round.usedItems.left,['one'],'Final de ronda dispara el objeto después de armado');
+console.log('Alpha 0.9: eventos reactivos de objetos, consumo diferido y narración fija: OK');

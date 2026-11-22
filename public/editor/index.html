@@ -397,7 +397,7 @@ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot .battle-m
   <p class="nav-caption">CONTENIDO</p>
   <button class="studio-nav" data-view="explore">▤ &nbsp; Catálogo visual</button>
   <button class="studio-nav" data-view="catalog">▦ &nbsp; Editor de catálogo</button>
-  <button class="studio-nav" data-view="catalog" data-category="items">Objetos</button>
+  <button class="studio-nav" data-view="objects">Objetos</button>
   <button class="studio-nav" data-view="ai">✦ &nbsp; Crear personaje con IA</button>
   <button class="studio-nav" data-view="labels">▤ &nbsp; Etiquetas</button>
   <button class="studio-nav" data-view="tutorial">☷ &nbsp; Tutorial</button>
@@ -608,16 +608,16 @@ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot .battle-m
     <div id="udExploreCount" class="help"></div>
     <div id="udExploreCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:16px"></div>
   </section>
-<section class="panel catalog-panel" data-studio-view="catalog" aria-labelledby="catalogHeading">
+<div data-studio-view="catalog" id="udCatalogHost"><section class="panel catalog-panel" id="udCatalogSharedPanel" aria-labelledby="catalogHeading">
     <h2 id="catalogHeading">Catálogo de contenido</h2>
-    <p class="help">Creá y guardá definiciones privadas. Los elementos se guardan en KV. El simulador privado interpreta un subconjunto de acciones y condiciones; otras quedan guardadas para el motor completo.</p>
+    <p class="help" id="udCatalogIntro">Creá y guardá definiciones privadas. Los elementos se guardan en KV. El simulador privado interpreta un subconjunto de acciones y condiciones; otras quedan guardadas para el motor completo.</p>
     <datalist id="moveReferences"></datalist>
     <div id="catalogTabs" class="catalog-tabs"></div>
     <div class="catalog-layout">
       <div>
         <label for="catalogCategory">Categoría</label>
         <select id="catalogCategory">
-          <option value="entities">Personajes</option><option value="abilities">Habilidades</option><option value="moves">Movimientos</option><option value="items">Objetos</option><option value="statuses">Alteraciones de estado</option>
+          <option value="entities">Personajes</option><option value="abilities">Habilidades</option><option value="moves">Movimientos</option><option value="items" hidden>Objetos</option><option value="statuses">Alteraciones de estado</option>
           <option value="weathers">Climas</option><option value="fields">Campos</option>
           <option value="scenarios">Escenarios</option>
         </select>
@@ -656,7 +656,8 @@ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot .battle-m
         <p id="catalogDirty" class="draft-indicator" role="status" hidden>● Tenés cambios sin guardar. Guardalos o descartalos antes de salir de este elemento.</p>
       </div>
     </div>
-  </section>
+  </section></div>
+  <div data-studio-view="objects" id="udObjectsHost" hidden></div>
 
   <section class="panel" data-studio-view="sim" aria-labelledby="simHeading">
     <h2 id="simHeading">Laboratorio de batalla · Vista visual</h2>
@@ -890,7 +891,7 @@ body:has(#battleView:not(.hidden)) .battle-command-panel .ud-move-slot .battle-m
  ['Cambios','Reemplazo: [PERSONAJE] entra al campo.'],
  ['Cambios','Cambio aleatorio: [PERSONAJE] entra al campo.'],
  ['Cambios','Cambio por efecto: [PERSONAJE] entra al campo.'],
- ['Combate','Protección contra bucles: se detuvo una cadena excesiva de eventos Al morir.'],['Objetos','[PERSONAJE] utilizó [OBJETO].'],['Cambios','Las posiciones del equipo [OBJETIVO] se intercambiaron.'],
+ ['Combate','Protección contra bucles: se detuvo una cadena excesiva de eventos Al morir.'],['Cambios','Las posiciones del equipo [OBJETIVO] se intercambiaron.'],
  ];
  // Los mensajes de modificación de las ocho estadísticas y sus posibles fuentes
  // se enumeran individualmente, incluidos movimientos, estados, escenarios y habilidades.
@@ -1531,7 +1532,7 @@ const response = await fetch(
     const targetOptions = [["","Elegir objetivo…"],["self","Usuario"],["target","Objetivo del movimiento / contexto"],["attacker","Atacante (al recibir daño/ataque)"],["ally","Compañero"],["ally_team","Equipo aliado activo"],["enemy_team","Equipo contrario activo"],["all","Todos menos el usuario"],["all_active","Todos los activos"],["enemy_direct","Rival directo (posición)"],["enemy_inverse","Objetivo inverso (posición)"]];
     const actionOptions = [["","Elegir acción…"],["damage","Causar daño (% PS máximos)"],["heal","Recuperar PS (% PS máximos)"],["resurrect","Resucitar personaje KO (% PS máximos)"],["heal_from_damage","Recuperar PS según daño infligido (%)"],["damage_from_damage","Recibir daño según daño infligido (%)"],["heal_from_received_damage","Recuperar PS según daño recibido (%)"],["damage_from_received_damage","Recibir daño según daño recibido (%)"],["stat_change","Modificar niveles de estadística"],["clear_stat_changes","Limpiar cambios de estadística (no pasivos)"],["block_stat_changes","Impedir cambios de estadística (todos los orígenes)"],["apply_status","Aplicar alteración de estado"],["remove_status","Eliminar estado"],["block_status","Bloquear estados alterados (pasiva)"],["effect_immunity","Inmunidad a efectos (impedir aplicar)"],["block_items","Impedir usar objetos"],["heal_over_time","Recuperar PS al final del turno (duración)"],["set_weather","Activar clima"],["set_field","Activar campo"],["set_scenario","Activar escenario"],["environment_immunity","Inmunidad a entorno (weathers / fields / scenarios / all)"],["prevent_environment","Impedir activar entorno (weathers / fields / scenarios / all)"],["suppress_abilities","Anular habilidades"],["restrict_moves","Restringir movimientos"],["modify_active_cooldowns","Modificar cooldowns activos del objetivo"],["cooldown_on_use","Modificar cooldown al usar movimientos"],["immunity","Inmunidad a daño"],["damage_multiplier","Ajustar daño infligido (%) — compatibilidad"],["modify_move_power","Cambiar potencia de este ataque"],["modify_move_accuracy","Cambiar precisión de este ataque"],["modify_move_critical","Cambiar crítico de este ataque"],["final_damage","Modificar daño final"],["survive","Sobrevivir (siempre deja 1 PS)"],["switch_character","Cambiar personaje"],["swap_positions","Cambiar posiciones (solo Doubles)"],["attack","Atacar (impacto secundario configurable)"],["force_miss","Fallar (ignora precisión infalible)"],["do_nothing","No hacer nada (impedir acción)"]];
     const categoryBasics = {
-      items: [["spriteId","Sprite cuadrado PNG (ID)","text"],["narratorMessage","Mensaje del narrador (usar [PERSONAJE] y [OBJETO])","text"],["timing","Momento de activación","itemTiming"],["priority","Prioridad (−5 a +5)","number"]],
+      items: [["spriteId","Sprite cuadrado PNG (ID)","text"],["timing","Orden de ejecución","itemTiming"],["priority","Prioridad (−5 a +5)","number"]],
       entities: [["tags","Etiquetas","tags"],["spriteId","Sprite","text"],["types","Tipos (1–3)","types"],["hp","PS base","number"],["attack","Ataque base","number"],["defense","Defensa base","number"],["specialAttack","Ataque especial base","number"],["specialDefense","Defensa especial base","number"],["speed","Velocidad base","number"],["globalAbilityId","Habilidad global","ref:abilities:global"],["uniqueAbilityId","Habilidad exclusiva","ref:abilities:unique"],["uniqueMoveId","Movimiento exclusivo","ref:moves:unique"],["move2Id","Movimiento 2","ref:moves:global"],["move3Id","Movimiento 3","ref:moves:global"],["move4Id","Movimiento 4","ref:moves:global"]],
       moves: [["tags","Etiquetas","tags"],["kind","Clase del movimiento","abilityKind"],["type","Tipo del movimiento","type"],["category","Categoría","category"],["targeting","Objetivo del movimiento","moveTarget"],["power","Potencia","number"],["accuracy","Precisión (%)","number"],["criticalChance","Probabilidad crítico (%)","number"],["priority","Prioridad","number"],["cooldown","Cooldown base (turnos)","number"],["multihitMode","Tipo de golpes","multihitMode"],["multihitMin","Golpes mínimos de cadena","number"],["multihitMax","Golpes máximos de cadena","number"]],
       abilities: [["tags","Etiquetas","tags"],["kind","Clase de habilidad","abilityKind"]],
@@ -1618,12 +1619,14 @@ const response = await fetch(
       if(catalogCategory.value==='items'){
         const box=document.createElement('div');box.className='visual-upload-box';box.innerHTML='<strong>Sprite del objeto</strong><p class="help">PNG cuadrado, una sola imagen, hasta 2 MB. Se publica únicamente con el parche manual.</p><input type="file" accept="image/png" data-item-png><button type="button" data-item-upload>Subir PNG</button><img data-item-preview alt="Vista previa de objeto" hidden><p data-item-status class="help"></p>';
         const image=box.querySelector('[data-item-preview]'),idField=grid.querySelector('[data-basic-key="spriteId"]'),status=box.querySelector('[data-item-status]');
-        const show=id=>{if(!id){image.hidden=true;return;}image.src='/editor-api/item-sprites/'+encodeURIComponent(id)+'?v='+Date.now();image.hidden=false;image.onerror=()=>image.hidden=true;};show(idField?.value);
+        const knownSprites=new Set();let localPreviewUrl=null;
+        const show=id=>{if(localPreviewUrl){URL.revokeObjectURL(localPreviewUrl);localPreviewUrl=null;}if(!id||!knownSprites.has(id)){image.hidden=true;image.removeAttribute('src');return;}image.src='/editor-api/item-sprites/'+encodeURIComponent(id)+'?v='+Date.now();image.hidden=false;image.onerror=()=>{image.hidden=true;status.textContent='No se pudo cargar la vista previa. Revisá el acceso privado al sprite.';};};
         const spritePicker=document.createElement('select');const option=document.createElement('option');option.value='';option.textContent='Elegir sprite guardado…';spritePicker.append(option);
         box.insertBefore(spritePicker,box.querySelector('[data-item-png]'));
-        fetch('/editor-api/item-sprites',{cache:'no-store'}).then(r=>r.json()).then(j=>{if(!j.ok)return;for(const id of j.ids||[]){const opt=document.createElement('option');opt.value=id;opt.textContent=id;spritePicker.append(opt);}spritePicker.value=idField?.value||'';}).catch(()=>{});
+        fetch('/editor-api/item-sprites',{cache:'no-store'}).then(r=>r.json()).then(j=>{if(!j.ok)return;for(const id of j.ids||[]){knownSprites.add(id);const opt=document.createElement('option');opt.value=id;opt.textContent=id;spritePicker.append(opt);}spritePicker.value=idField?.value||'';show(idField?.value);}).catch(()=>{});
         spritePicker.addEventListener('change',()=>{if(idField){idField.value=spritePicker.value;show(idField.value);setCatalogDirty(true);}});
-        box.querySelector('[data-item-upload]').onclick=async()=>{const file=box.querySelector('[data-item-png]').files[0],id=(idField?.value||catalogId.value).trim();if(!file||!id){status.textContent='Elegí un PNG y un ID.';return;}try{const bitmap=await createImageBitmap(file);if(bitmap.width!==bitmap.height)throw Error('El sprite debe ser cuadrado.');bitmap.close();const res=await fetch('/editor-api/item-sprites/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'image/png'},body:file});const data=await res.json();if(!res.ok)throw Error(data.error);idField.value=id;status.textContent='PNG guardado como borrador.';show(id);setCatalogDirty(true);}catch(e){status.textContent=String(e.message||e);}};grid.append(box);
+        box.querySelector('[data-item-png]').addEventListener('change',e=>{const file=e.target.files?.[0];if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl);localPreviewUrl=file?URL.createObjectURL(file):null;if(localPreviewUrl){image.src=localPreviewUrl;image.hidden=false;}else image.hidden=true;});
+        box.querySelector('[data-item-upload]').onclick=async()=>{const file=box.querySelector('[data-item-png]').files[0],id=(idField?.value||catalogId.value).trim();if(!file||!id){status.textContent='Elegí un PNG y un ID.';return;}try{const bitmap=await createImageBitmap(file);if(bitmap.width!==bitmap.height)throw Error('El sprite debe ser cuadrado.');bitmap.close();const res=await fetch('/editor-api/item-sprites?id='+encodeURIComponent(id),{method:'POST',headers:{'Content-Type':'image/png'},body:file});const data=await res.json();if(!res.ok||!data.ok)throw Error(data.error||'No se pudo subir el PNG.');knownSprites.add(id);idField.value=id;status.textContent='PNG subido al almacenamiento privado.';show(id);setCatalogDirty(true);}catch(e){status.textContent=String(e.message||e);}};grid.append(box);
       }
       if(catalogCategory.value==='statuses'){const mode=grid.querySelector('[data-basic-key="statusFilterMode"]'),types=grid.querySelector('[data-basic-key="statusFilterTypes"]');if(mode&&types){const adapt=()=>{types.parentElement.hidden=mode.value==='all';};mode.addEventListener('change',adapt);adapt();}}
       if(catalogCategory.value==='abilities'){
@@ -1662,7 +1665,8 @@ const response = await fetch(
       const row=document.createElement('div');row.className='builder-row';const grid=document.createElement('div');grid.className='builder-grid';
       const isStatus=catalogCategory.value==='statuses',isMove=catalogCategory.value==='moves',isItem=catalogCategory.value==='items';
       const statusEventOptions=eventOptions.filter(([id])=>!['manual','on_survive'].includes(id));
-      const event=labeledControl(grid,'Evento',optionSelect(nested?moveEventOptions.filter(([id])=>['manual','on_attack','on_hit','on_miss'].includes(id)):isMove?moveEventOptions:isItem?[['manual','Al usar objeto']]:isStatus?statusEventOptions:eventOptions,rule.event||(nested?'on_hit':isStatus?'on_status':isItem?'manual':'on_enter')),'event');
+      const itemEventOptions=eventOptions.map(([id,label])=>[id,id==='manual'?'Al usar el objeto':label]);itemEventOptions.push(['manual_doubles','Al usar el objeto en Doubles']);
+      const event=labeledControl(grid,isItem?'Momento de activación':'Evento',optionSelect(nested?moveEventOptions.filter(([id])=>['manual','on_attack','on_hit','on_miss'].includes(id)):isMove?moveEventOptions:isItem?itemEventOptions:isStatus?statusEventOptions:eventOptions,rule.event||(nested?'on_hit':isStatus?'on_status':isItem?'manual':'on_enter')),'event');
       const conditionType=labeledControl(grid,'Condición',optionSelect(conditionOptions,rule.condition?.type||'always'),'conditionType');
       const conditionSubject=labeledControl(grid,'Evaluar condición sobre',optionSelect([['self','Usuario'],['target','Objetivo']],rule.condition?.subject||'self'),'conditionSubject');
       const conditionValue=labeledControl(grid,'Valor de condición',fieldControl('text',rule.condition?.value),'conditionValue');
@@ -1933,6 +1937,7 @@ const response = await fetch(
         delete result.multihitMode;delete result.multihitMin;delete result.multihitMax;delete result.multihitEffects;
       }
       if(catalogCategory.value==='abilities'){delete result.consecutiveAttack;delete result.survive;}
+      if(catalogCategory.value==='items')delete result.narratorMessage;
       if(catalogCategory.value==='statuses'){result.typeFilter={mode:result.statusFilterMode||'all',types:result.statusFilterTypes||[]};delete result.statusFilterMode;delete result.statusFilterTypes;}
       if(environmentCategories.includes(catalogCategory.value)){result.duration=5;result.rules=[];result.fieldEffects=readEnvironmentEffects();return result;}
       result.rules = [...builderRules.children].map(readRuleRow);
@@ -2024,7 +2029,7 @@ const response = await fetch(
       catalogSave.disabled = true; catalogStatus.textContent = "Guardando...";
       try {
         const response = await fetch(catalogUrl(id), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: catalogName.value, description: catalogDescription.value, definition }) });
-        const data = await response.json();
+        const data = await response.json().catch(()=>({error:`Error HTTP ${response.status}. Revisá la ruta de guardado privada y los bindings.`}));
         if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo guardar.");
         await loadCatalog();
         await refreshReferences();
@@ -2277,7 +2282,7 @@ function manualControlsHTML(data){if(!simSession||battleAnimating||data.winner)r
     document.getElementById('tagCreate').onclick=async()=>{const name=document.getElementById('tagName').value.trim(),id=name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);if(!id||tagEntries.some(t=>t.id===id)){document.getElementById('tagStatus').textContent='Etiqueta vacía o ya existente.';return;}try{const r=await fetch('/editor-api/catalog/tags/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:'Grupo de personajes',definition:{entityIds:[]}})});if(!r.ok)throw Error((await r.json()).error);document.getElementById('tagName').value='';await loadTags();selectedTag=tagEntries.find(t=>t.id===id);renderTags();document.getElementById('tagStatus').textContent='Etiqueta creada en borradores.';}catch(e){document.getElementById('tagStatus').textContent=e.message;}};
     document.getElementById('tagSave').onclick=async()=>{if(!selectedTag)return;try{const r=await fetch('/editor-api/catalog/tags/'+selectedTag.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:selectedTag.name,description:selectedTag.description||'Grupo de personajes',definition:selectedTag.definition})});if(!r.ok)throw Error((await r.json()).error);document.getElementById('tagStatus').textContent='Personajes de la etiqueta guardados en borradores.';await loadTags();}catch(e){document.getElementById('tagStatus').textContent=e.message;}};
     document.getElementById('tagDelete').onclick=async()=>{if(!selectedTag||!confirm('¿Eliminar la etiqueta '+selectedTag.name+' de borradores?'))return;try{const r=await fetch('/editor-api/catalog/tags/'+selectedTag.id,{method:'DELETE'});if(!r.ok)throw Error((await r.json()).error);selectedTag=null;await loadTags();document.getElementById('tagStatus').textContent='Etiqueta eliminada del borrador.';}catch(e){document.getElementById('tagStatus').textContent=e.message;}};
-    const tutorialSections=[['objetivo','Objetivo del juego'],['pantalla','Interfaz de combate'],['turnos','Funcionamiento de los turnos'],['ataques','Movimientos'],['tipos','Afinidades de tipos'],['stats','Estadísticas'],['entornos','Campos, climas y escenarios'],['habilidades','Habilidades y exclusivos'],['estados','Estados alterados'],['cooldowns','Cooldowns'],['prioridad','Prioridad y Velocidad'],['extras','Consejos para empezar']];
+    const tutorialSections=[['objetivo','Objetivo del juego'],['pantalla','Interfaz de combate'],['turnos','Funcionamiento de los turnos'],['ataques','Movimientos'],['tipos','Afinidades de tipos'],['stats','Estadísticas'],['entornos','Campos, climas y escenarios'],['habilidades','Habilidades y exclusivos'],['objetos','Objetos'],['estados','Estados alterados'],['cooldowns','Cooldowns'],['prioridad','Prioridad y Velocidad'],['extras','Consejos para empezar']];
     async function loadTutorialEditor(){const wrap=document.getElementById('tutorialEditorSections'),message=document.getElementById('tutorialEditorStatus');wrap.replaceChildren();message.textContent='Cargando textos guardados…';
       for(const [id,name] of tutorialSections){const section=document.createElement('div');section.style.cssText='border:1px solid #51546b;border-radius:12px;padding:14px;margin:12px 0';const title=document.createElement('h3');title.textContent=name;const label=document.createElement('label');label.textContent='Texto de la sección';const area=document.createElement('textarea');area.rows=6;area.maxLength=12000;area.style.width='100%';const button=document.createElement('button');button.type='button';button.textContent='Guardar borrador de '+name;const status=document.createElement('small');
         const imageLabel=document.createElement('label');imageLabel.textContent='Imagen de apoyo para la guía (PNG, máximo 2 MB)';
@@ -2324,28 +2329,33 @@ function manualControlsHTML(data){if(!simSession||battleAnimating||data.winner)r
     document.getElementById('udOvalReset').addEventListener('click',()=>{udOvalValues={...udOvalDefaults};for(const input of udOvalInputs.querySelectorAll('input')){input.value=udOvalValues[input.dataset.ovalKey];input.nextElementSibling.textContent=input.value+' %';}udDrawOval();});
     document.getElementById('udOvalSave').addEventListener('click',async()=>{const status=document.getElementById('udOvalStatus');try{status.textContent='Guardando ajuste privado…';const r=await fetch('/editor-api/ui-layout',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Error de lectura');const put=await fetch('/editor-api/ui-layout',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...d.layout,fieldOval:udOvalValues})}),result=await put.json();if(!put.ok)throw Error(result.error||'No se pudo guardar');status.textContent='Óvalo guardado en borrador. Presioná Cargar parche para publicarlo.';}catch(e){status.textContent=e.message;}});
     document.getElementById('udOvalNeutralImage').addEventListener('error',e=>{e.target.hidden=true;});
-    const viewTitles = {ai:['CONTENIDO','Crear personaje con IA','Investigación y propuesta editable, sin publicación automática.'],narrator:['NARRADOR','Mensajes del combate','Personalizá cualquier frase del narrador y publicala manualmente.'],home:['INICIO','Tu espacio de creación','Sprites de entidades y notas privadas.'],oval:['RECURSOS','Óvalo del campo','Posición y tamaño visual con vista previa del escenario neutral.'],tutorial:['TUTORIAL','Textos del tutorial','Editá los textos que aprenderán los jugadores principiantes.'],labels:['ETIQUETAS','Etiquetas del catálogo','Creá y administrá grupos de personajes sin publicar automáticamente.'],types:['TIPOS','Tabla de efectividades','Definí cada relación ofensiva y defensiva.'],'type-icons':['RECURSOS','Sprites de tipos','Cargá y reemplazá los iconos pixel art de los 20 tipos.'],'item-sprites':['RECURSOS','Sprites de objetos','Subí un PNG cuadrado por objeto, de una sola vista.'],catalog:['CATÁLOGO','Editor de contenido','Elegí cada parámetro y guardá en el servidor privado.'],sim:['PRUEBAS','Laboratorio de batalla','Probá entidades y reglas compatibles con el motor actual.'],monitor:['ADMINISTRACIÓN','Monitoreo en vivo','Visitantes, partidas y perfiles actualizados automáticamente.'],explore:['CATÁLOGO','Catálogo visual','Abrí y editá cualquier personaje, movimiento o mecánica desde sus tarjetas.']};
-    const categoryTitles={entities:'Personajes',moves:'Movimientos',abilities:'Habilidades',items:'Objetos',items:'Objetos',statuses:'Estados alterados',weathers:'Climas',fields:'Campos',scenarios:'Escenarios'};
+    const viewTitles = {ai:['CONTENIDO','Crear personaje con IA','Investigación y propuesta editable, sin publicación automática.'],narrator:['NARRADOR','Mensajes del combate','Personalizá cualquier frase del narrador y publicala manualmente.'],home:['INICIO','Tu espacio de creación','Sprites de entidades y notas privadas.'],oval:['RECURSOS','Óvalo del campo','Posición y tamaño visual con vista previa del escenario neutral.'],tutorial:['TUTORIAL','Textos del tutorial','Editá los textos que aprenderán los jugadores principiantes.'],labels:['ETIQUETAS','Etiquetas del catálogo','Creá y administrá grupos de personajes sin publicar automáticamente.'],types:['TIPOS','Tabla de efectividades','Definí cada relación ofensiva y defensiva.'],'type-icons':['RECURSOS','Sprites de tipos','Cargá y reemplazá los iconos pixel art de los 20 tipos.'],'item-sprites':['RECURSOS','Sprites de objetos','Subí un PNG cuadrado por objeto, de una sola vista.'],catalog:['CATÁLOGO','Editor de contenido','Elegí cada parámetro y guardá en el servidor privado.'],objects:['OBJETOS','Configuración de objetos','Objetos activos independientes del catálogo de personajes.'],sim:['PRUEBAS','Laboratorio de batalla','Probá entidades y reglas compatibles con el motor actual.'],monitor:['ADMINISTRACIÓN','Monitoreo en vivo','Visitantes, partidas y perfiles actualizados automáticamente.'],explore:['CATÁLOGO','Catálogo visual','Abrí y editá cualquier personaje, movimiento o mecánica desde sus tarjetas.']};
+    const categoryTitles={entities:'Personajes',moves:'Movimientos',abilities:'Habilidades',items:'Objetos',statuses:'Estados alterados',weathers:'Climas',fields:'Campos',scenarios:'Escenarios'};
     function showStudioView(view,category){
+      if(view==='catalog'&&category==='items')view='objects';
+      if(view==='objects')category='items';
+      if(view==='catalog'&&catalogCategory.value==='items'&&!category)category='entities';
       if(view!=='catalog' && catalogDirty && !confirmDiscard())return;
       if(view==='labels')loadTags();if(view==='tutorial')loadTutorialEditor();
-      if(view==='catalog'&&category&&catalogCategory.value!==category){
+      if((view==='catalog'||view==='objects')&&category&&catalogCategory.value!==category){
         if(!confirmDiscard())return;
         catalogCategory.value=category;previousCatalogCategory=category;loadCatalog();
       }
+      if(view==='objects'){document.getElementById('udObjectsHost').append(document.getElementById('udCatalogSharedPanel'));document.getElementById('catalogHeading').textContent='Configuración de objetos';document.getElementById('udCatalogIntro').textContent='Objetos independientes del catálogo de personajes. Elegí un PNG cuadrado, los momentos de activación y los efectos. El narrador siempre dirá «[PERSONAJE] usó [OBJETO]». Publicación manual.';}
+      else if(view==='catalog'){document.getElementById('udCatalogHost').append(document.getElementById('udCatalogSharedPanel'));document.getElementById('catalogHeading').textContent='Catálogo de contenido';document.getElementById('udCatalogIntro').textContent='Creá y guardá definiciones privadas. Se publican exclusivamente mediante el parche manual.';}
       document.querySelectorAll('[data-studio-view]').forEach(p=>p.hidden=p.dataset.studioView!==view);
       document.querySelectorAll('.studio-nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view&&(view!=='catalog'||!b.dataset.category||b.dataset.category===catalogCategory.value)));
-      const info=viewTitles[view];document.getElementById('viewEyebrow').textContent='ESTUDIO / '+info[0];document.getElementById('viewTitle').textContent=view==='catalog'?categoryTitles[catalogCategory.value]:info[1];document.getElementById('viewDescription').textContent=info[2];
+      const info=viewTitles[view]||['CONTENIDO','Configuración de objetos','Objetos activos y efectos configurables independientes.'];document.getElementById('viewEyebrow').textContent='ESTUDIO / '+info[0];document.getElementById('viewTitle').textContent=view==='catalog'?categoryTitles[catalogCategory.value]:view==='objects'?'Objetos':info[1];document.getElementById('viewDescription').textContent=info[2];
       if(view==='oval'){udLoadOval();}if(view==='monitor'){const frame=document.getElementById('udMonitorInline');if(!frame.src||frame.src==='about:blank')frame.src=frame.dataset.src;}
       if(view==='explore')udLoadExplore();
       if(view==='type-icons')loadTypeIcons();
       if(view==='item-sprites')udLoadItemSprites();
-      if(view==='catalog')updateEntityPreview();
+      if(view==='catalog'||view==='objects')updateEntityPreview();
       history.replaceState(null,'',location.pathname+'#'+(view==='catalog'?'catalog-'+catalogCategory.value:view));
       window.scrollTo({top:0,behavior:'instant'});
     }
     document.querySelectorAll('.studio-nav[data-view]').forEach(b=>b.addEventListener('click',()=>showStudioView(b.dataset.view,b.dataset.category)));
-    catalogCategory.addEventListener('change',()=>{if(!document.querySelector('[data-studio-view="catalog"]').hidden)showStudioView('catalog',catalogCategory.value);});
+    
     const udItemSpriteId=document.getElementById('udItemSpriteId'),udItemSpriteFile=document.getElementById('udItemSpriteFile'),udItemSpritePreview=document.getElementById('udItemSpritePreview'),udItemSpriteStatus=document.getElementById('udItemSpriteStatus'),udItemSpriteGrid=document.getElementById('udItemSpriteGrid');
     let udItemSpriteObjectUrl=null;
     udItemSpriteFile.addEventListener('change',()=>{if(udItemSpriteObjectUrl)URL.revokeObjectURL(udItemSpriteObjectUrl);const file=udItemSpriteFile.files[0];udItemSpritePreview.hidden=!file;document.getElementById('udItemSpritePlaceholder').hidden=!!file;if(file){udItemSpriteObjectUrl=URL.createObjectURL(file);udItemSpritePreview.src=udItemSpriteObjectUrl;}});
@@ -2362,7 +2372,7 @@ function manualControlsHTML(data){if(!simSession||battleAnimating||data.winner)r
       if(!file||file.type!=='image/png'||file.size>2*1024*1024||file.size===0){udItemSpriteStatus.textContent='Seleccioná un PNG de hasta 2 MB.';return;}
       const button=document.getElementById('udItemSpriteSave');button.disabled=true;
       try{const bitmap=await createImageBitmap(file);const width=bitmap.width,height=bitmap.height;bitmap.close();if(width!==height||width>2048)throw Error('El PNG debe ser cuadrado de hasta 2048 × 2048.');
-        const r=await fetch('/editor-api/item-sprites/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'image/png'},body:file}),j=await r.json();if(!r.ok)throw Error(j.error||'No se pudo guardar');await udLoadItemSprites();udItemSpriteStatus.textContent='Sprite '+id+' guardado en privado.';
+        const r=await fetch('/editor-api/item-sprites?id='+encodeURIComponent(id),{method:'POST',headers:{'Content-Type':'image/png'},body:file}),j=await r.json();if(!r.ok)throw Error(j.error||'No se pudo guardar');await udLoadItemSprites();udItemSpriteStatus.textContent='Sprite '+id+' guardado en privado.';
       }catch(e){udItemSpriteStatus.textContent='Error: '+String(e.message||e);}finally{button.disabled=false;}
     });
     const iconType=document.getElementById('iconType'),iconFile=document.getElementById('iconFile'),iconPreview=document.getElementById('iconPreview'),iconPreviewEmpty=document.getElementById('iconPreviewEmpty'),iconStatus=document.getElementById('iconStatus'),iconGrid=document.getElementById('typeIconGrid');
@@ -2457,7 +2467,7 @@ function manualControlsHTML(data){if(!simSession||battleAnimating||data.winner)r
     }});
     listObserver.observe(catalogList,{childList:true});
     const catalogTabs=document.getElementById('catalogTabs');
-    for(const [id,label] of Object.entries(categoryTitles)){const b=document.createElement('button');b.type='button';b.className='catalog-tab';b.dataset.cat=id;b.textContent=label;b.addEventListener('click',()=>{if(catalogCategory.value===id)return;if(!confirmDiscard())return;catalogCategory.value=id;previousCatalogCategory=id;loadCatalog();showStudioView('catalog',id);});catalogTabs.append(b);}
+    for(const [id,label] of Object.entries(categoryTitles)){if(id==='items')continue;const b=document.createElement('button');b.type='button';b.className='catalog-tab';b.dataset.cat=id;b.textContent=label;b.addEventListener('click',()=>{if(catalogCategory.value===id)return;if(!confirmDiscard())return;catalogCategory.value=id;previousCatalogCategory=id;loadCatalog();showStudioView(id==='items'?'objects':'catalog',id);});catalogTabs.append(b);}
     const updateCatalogTabs=()=>catalogTabs.querySelectorAll('.catalog-tab').forEach(b=>b.classList.toggle('active',b.dataset.cat===catalogCategory.value));catalogCategory.addEventListener('change',updateCatalogTabs);new MutationObserver(updateCatalogTabs).observe(catalogList,{childList:true});updateCatalogTabs();
     const requested=location.hash.slice(1);const cat=requested.startsWith('catalog-')?requested.slice(8):null;
     showStudioView(cat&&categoryTitles[cat]?'catalog':viewTitles[requested]?requested:'home',cat&&categoryTitles[cat]?cat:undefined);

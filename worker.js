@@ -83,7 +83,7 @@ const privateJson = (data, status = 200) =>
     }
   });
 
-const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial'];
+const RELEASE_CATEGORIES=['effects','moves','abilities','entities','weathers','fields','scenarios','statuses','tags','tutorial','items'];
 async function candidateFromDrafts(env){
   const catalog={};
   for(const category of RELEASE_CATEGORIES){
@@ -314,6 +314,50 @@ export default {
         return privateJson({error:"Método no permitido."},405);
       }
 
+      // PNG cuadrado de objetos: un único sprite independiente de las entidades.
+      // Upload as a collection resource; don't route the POST through the private GET path.
+      if(url.pathname==='/editor-api/item-sprites'&&request.method==='POST'){
+        if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 privado EDITOR_SPRITES no conectado.'},503);
+        const id=url.searchParams.get('id')||'';
+        if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)||id.length>60)return privateJson({error:'Identificador de sprite inválido.'},400);
+        if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('image/png'))return privateJson({error:'Solo PNG.'},415);
+        const bytes=new Uint8Array(await request.arrayBuffer());
+        if(bytes.length<24||bytes.length>2*1024*1024)return privateJson({error:'PNG entre 24 bytes y 2 MB.'},413);
+        if(![137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v)||String.fromCharCode(...bytes.slice(12,16))!=='IHDR')return privateJson({error:'Cabecera PNG inválida.'},415);
+        const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),w=dv.getUint32(16),h=dv.getUint32(20);
+        if(!w||w!==h||w>2048)return privateJson({error:'El sprite debe ser un PNG cuadrado de hasta 2048×2048.'},400);
+        await env.EDITOR_SPRITES.put(`item-sprites/${id}.png`,bytes,{httpMetadata:{contentType:'image/png'}});
+        return privateJson({ok:true,id,width:w,height:h});
+      }
+      if(url.pathname==='/editor-api/item-sprites'&&request.method==='GET'){
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 de sprites no conectado.'},503);
+        const files=await env.EDITOR_SPRITES.list({prefix:'item-sprites/',limit:1000});
+        const ids=files.objects.map(x=>x.key.slice('item-sprites/'.length).replace(/\.png$/,'')).filter(x=>/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(x));
+        return privateJson({ok:true,ids,truncated:!!files.truncated});
+      }
+      const objectSpriteMatch=url.pathname.match(/^\/editor-api\/item-sprites\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+      if(objectSpriteMatch){
+        if(!env.EDITOR_SPRITES)return privateJson({error:'R2 de sprites no conectado.'},503);
+        const id=objectSpriteMatch[1];if(id.length>60)return privateJson({error:'ID demasiado largo.'},400);
+        const key=`item-sprites/${id}.png`;
+        if(request.method==='GET'){
+          const asset=await env.EDITOR_SPRITES.get(key);if(!asset)return privateJson({error:'Sprite de objeto inexistente.'},404);
+          return new Response(asset.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+        }
+        if(request.method==='PUT'){
+          if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
+          if(!(request.headers.get('Content-Type')||'').toLowerCase().startsWith('image/png'))return privateJson({error:'Solo PNG.'},415);
+          const bytes=new Uint8Array(await request.arrayBuffer());if(bytes.length<24||bytes.length>2*1024*1024)return privateJson({error:'PNG entre 24 bytes y 2 MB.'},413);
+          if(![137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))return privateJson({error:'PNG inválido.'},415);
+          const dv=new DataView(bytes.buffer),w=dv.getUint32(16),h=dv.getUint32(20);
+          if(!w||w!==h||w>2048)return privateJson({error:'El sprite del objeto debe ser PNG cuadrado de hasta 2048×2048.'},400);
+          await env.EDITOR_SPRITES.put(key,bytes,{httpMetadata:{contentType:'image/png'}});
+          return privateJson({ok:true,id,width:w,height:h});
+        }
+        return privateJson({error:'Método no permitido.'},405);
+      }
+
       // Subir imagen original de una entidad.
 if (
   url.pathname === "/editor-api/sprites" &&
@@ -497,7 +541,7 @@ if (
         const allIds=[...(Array.isArray(input.leftTeam)?input.leftTeam:[input.left]),...(Array.isArray(input.rightTeam)?input.rightTeam:[input.right])];
         if(allIds.length>16||allIds.some(id=>!idPattern.test(id||"")))return privateJson({error:"Equipo inválido."},400);
         const ids={entities:[...new Set(allIds)],moves:[],abilities:[],effects:[]};
-        const catalog={entities:{},moves:{},abilities:{},effects:{},statuses:{},weathers:{},fields:{},scenarios:{}};
+        const catalog={entities:{},moves:{},abilities:{},effects:{},statuses:{},weathers:{},fields:{},scenarios:{},items:{}};
         async function get(category,id) {
           if (!idPattern.test(id||"")) throw Error("Referencia inválida: "+id);
           if (catalog[category][id]) return catalog[category][id];
@@ -511,8 +555,9 @@ if (
             for(const mid of [...(d.moveIds||[]),d.uniqueMoveId]) await get("moves",mid);
             for(const aid of [d.globalAbilityId,d.uniqueAbilityId]) await get("abilities",aid);
           }
+          for(const id of [...new Set([...(input.leftItems||[]),...(input.rightItems||[])])])await get('items',id);
           // Efectos reutilizados: profundidad de referencia acotada.
-          let pending=[...Object.values(catalog.moves),...Object.values(catalog.abilities)];
+          let pending=[...Object.values(catalog.moves),...Object.values(catalog.abilities),...Object.values(catalog.items)];
           for(let depth=0;depth<5;depth++) {
             const next=[];
             for(const entry of pending) for(const rule of entry.definition.rules||[]) if(rule.action?.type==="apply_effect") {
@@ -524,7 +569,7 @@ if (
           // Cargar los entornos referenciados por habilidades/ataques/efectos.
           const seen=new Set();
           for(const [category,id] of [['weathers',input.weather],['fields',input.field],['scenarios',input.scenario]])if(id)await get(category,id);
-          for(const category of ['moves','abilities','effects'])for(const entry of Object.values(catalog[category]))for(const rule of entry.definition.rules||[]){
+          for(const category of ['moves','abilities','effects','items'])for(const entry of Object.values(catalog[category]))for(const rule of entry.definition.rules||[]){
             const envCategory={set_weather:'weathers',set_field:'fields',set_scenario:'scenarios'}[rule.action?.type];
             if(envCategory&&rule.action.value){const key=envCategory+':'+rule.action.value;if(!seen.has(key)){seen.add(key);await get(envCategory,rule.action.value);}}
             if(rule.action?.type==='apply_status'&&rule.action.value){const key='statuses:'+rule.action.value;if(!seen.has(key)){seen.add(key);await get('statuses',rule.action.value);}}
@@ -545,7 +590,7 @@ if (
             }
           }
           const isReplacement=!!resume&&turns===resume.round;
-          const result=simulate({left:input.left,right:input.right,catalog,chart:typeChart,turns,randomTape:resume?[]:input.randomTape||[],weather:input.weather||"",field:input.field||"",scenario:input.scenario||"",leftMove:input.leftMove||"",rightMove:input.rightMove||"",leftTeam:input.leftTeam,rightTeam:input.rightTeam,leftOrders,rightOrders,leftReplacements:input.leftReplacements||[],rightReplacements:input.rightReplacements||[],mode:input.mode==='doubles'?'doubles':'singles',resume,replacementsOnly:isReplacement,includeCheckpoint:url.pathname.endsWith('simulate-step'),autoResolveSwitchSides:[...(input.modeLeft==='auto'?['left']:[]),...(input.modeRight==='auto'?['right']:[])]});
+          const result=simulate({left:input.left,right:input.right,catalog,chart:typeChart,turns,randomTape:resume?[]:input.randomTape||[],weather:input.weather||"",field:input.field||"",scenario:input.scenario||"",leftMove:input.leftMove||"",rightMove:input.rightMove||"",leftTeam:input.leftTeam,rightTeam:input.rightTeam,leftItems:input.leftItems||[],rightItems:input.rightItems||[],leftOrders,rightOrders,leftReplacements:input.leftReplacements||[],rightReplacements:input.rightReplacements||[],mode:input.mode==='doubles'?'doubles':'singles',resume,replacementsOnly:isReplacement,includeCheckpoint:url.pathname.endsWith('simulate-step'),autoResolveSwitchSides:[...(input.modeLeft==='auto'?['left']:[]),...(input.modeRight==='auto'?['right']:[])]});
           return privateJson({...result,usedOrders:{left:leftOrders[turns-1]||null,right:rightOrders[turns-1]||null}});
         } catch(e) { return privateJson({error:String(e.message||e)},400); }
       }
@@ -609,7 +654,7 @@ if (
       }
 
       // Catálogo privado de contenido. No ejecuta mecánicas en combate.
-      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags", "tutorial"];
+      const CATALOG_CATEGORIES = ["effects", "moves", "abilities", "entities", "weathers", "fields", "scenarios", "statuses", "tags", "tutorial", "items"];
       const catalogMatch = url.pathname.match(/^\/editor-api\/catalog\/([a-z]+)(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?$/);
       if (catalogMatch) {
         const category = catalogMatch[1];
@@ -638,7 +683,7 @@ if (
           const d=body.definition;
           try { validateDefinition(category,d); } catch (error) { return privateJson({error:error.message},400); }
           const slug=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-          const allTypes=["fuego","planta","roca","hielo","rayo","metal","guerra","mente","encanto","espectro","divinidad","luz","oscuridad","viento","dragon","agua","veneno","tecnologia","agilidad","valor"];
+          const allTypes=["neutral","fuego","planta","roca","hielo","rayo","metal","guerra","mente","encanto","espectro","divinidad","luz","oscuridad","viento","dragon","agua","veneno","tecnologia","agilidad","valor"];
           if (category === "moves") {
             if (!allTypes.includes(d.type)||!["physical","special","status"].includes(d.category)||!Number.isFinite(d.power)||d.power<0||d.power>500||!Number.isFinite(d.accuracy)||d.accuracy<0||d.accuracy>100||!Number.isFinite(d.criticalChance)||d.criticalChance<0||d.criticalChance>50||!Number.isInteger(d.priority)||d.priority< -5||d.priority>5) return privateJson({error:"Tipo, categoría, potencia, precisión, crítico o prioridad inválidos."},400);
           }
