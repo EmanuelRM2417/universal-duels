@@ -10,8 +10,8 @@ const ui=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf
 assert.match(ui,/data-view="objects"/);
 assert.match(ui,/data-studio-view="objects"/);
 assert.match(ui,/udCatalogSharedPanel/);
-assert.match(ui,/isItem\?'Momento de activación':'Evento'/);
-assert.match(ui,/'Al usar el objeto'/);
+assert.match(ui,/isItem\?'Momento del efecto':'Evento'/);
+assert.match(ui,/'Al usar el consumible'/);
 assert.match(ui,/narratorMessage/);
 assert.match(ui,/method:'POST',headers:\{'Content-Type':'image\/png'\}/);
 assert.match(ui,/URL\.createObjectURL\(file\)/);

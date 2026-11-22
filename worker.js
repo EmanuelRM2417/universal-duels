@@ -314,7 +314,7 @@ export default {
         return privateJson({error:"Método no permitido."},405);
       }
 
-      // PNG cuadrado de objetos: un único sprite independiente de las entidades.
+      // PNG cuadrado de consumibles: un único sprite independiente de las entidades.
       // Upload as a collection resource; don't route the POST through the private GET path.
       if(url.pathname==='/editor-api/item-sprites'&&request.method==='POST'){
         if(request.headers.get('Origin')!==url.origin)return privateJson({error:'Origen no autorizado.'},403);
@@ -342,7 +342,7 @@ export default {
         const id=objectSpriteMatch[1];if(id.length>60)return privateJson({error:'ID demasiado largo.'},400);
         const key=`item-sprites/${id}.png`;
         if(request.method==='GET'){
-          const asset=await env.EDITOR_SPRITES.get(key);if(!asset)return privateJson({error:'Sprite de objeto inexistente.'},404);
+          const asset=await env.EDITOR_SPRITES.get(key);if(!asset)return privateJson({error:'Sprite de consumible inexistente.'},404);
           return new Response(asset.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
         }
         if(request.method==='PUT'){
@@ -351,7 +351,7 @@ export default {
           const bytes=new Uint8Array(await request.arrayBuffer());if(bytes.length<24||bytes.length>2*1024*1024)return privateJson({error:'PNG entre 24 bytes y 2 MB.'},413);
           if(![137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))return privateJson({error:'PNG inválido.'},415);
           const dv=new DataView(bytes.buffer),w=dv.getUint32(16),h=dv.getUint32(20);
-          if(!w||w!==h||w>2048)return privateJson({error:'El sprite del objeto debe ser PNG cuadrado de hasta 2048×2048.'},400);
+          if(!w||w!==h||w>2048)return privateJson({error:'El sprite del consumible debe ser PNG cuadrado de hasta 2048×2048.'},400);
           await env.EDITOR_SPRITES.put(key,bytes,{httpMetadata:{contentType:'image/png'}});
           return privateJson({ok:true,id,width:w,height:h});
         }

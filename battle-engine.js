@@ -65,7 +65,7 @@ export function validateEntity(entry){
 }
 function actor(entry,moves,abilities,side,teamIndex){
   validateEntity(entry);const d=entry.definition,stats=base(d);
-  return {id:entry.id,name:entry.name,side:sideName(side),teamIndex,types:d.types.map(t=>t==='espiritu'?'valor':t),stats,hp:stats.hp,maxHp:stats.hp,stages:{},environmentStages:{},statusStages:{},passiveStages:{},environmentCrit:0,environmentImmune:[],environmentDamageImmunity:[],statusBlocked:false,status:null,effects:[],statSources:[],moves,abilities,used:{},consecutiveCounters:{},moveStreaks:{},cooldowns:{},cooldownSetRound:{},environmentCooldownOnUse:[],lastHitType:null,_mirror:false};
+  return {id:entry.id,name:entry.name,side:sideName(side),teamIndex,types:d.types.map(t=>t==='espiritu'?'valor':t),stats,hp:stats.hp,maxHp:stats.hp,stages:{},environmentStages:{},statusStages:{},passiveStages:{},environmentCrit:0,environmentImmune:[],environmentDamageImmunity:[],statusBlocked:false,status:null,effects:[],statSources:[],moves,abilities,used:{},consecutiveCounters:{},moveStreaks:{},cooldowns:{},cooldownSetRound:{},environmentCooldownOnUse:[],lastHitType:null,_mirror:false,firstFullRound:1};
 }
 function ensureActorRuntime(a){
   if(!a||typeof a!=='object')throw Error('Combatiente inválido durante la resolución.');
@@ -89,7 +89,10 @@ function meets(cond,user,target,state){
       const count=streakCounter(checked,mode,checked===user?moveId:null);
       return count>=Math.max(0,Number(min)||0)&&(max===''||count<=Number(max));
     }
-    case'in_doubles':return state.mode==='doubles';default:return false;
+    case'in_doubles':return state.mode==='doubles';
+    case'going_to_switch':return !!checked&&state.plannedSwitches?.has(checked);
+    case'first_turn_in_field':return !!checked&&checked.hp>0&&state.active[actorSide(checked)]?.includes(checked.teamIndex)&&state.round===(checked.firstFullRound??1);
+    default:return false;
   }
 }
 function conditionsPass(rule,user,target,state,moveId=null){
@@ -391,7 +394,14 @@ function action(rule,user,contextTarget,state,depth){
       const meta=sourceMeta(state),duration=Math.max(1,integer(rule.duration||1));
       const old=t.effects.find(e=>e.id==='block_items'&&e.sourceId===meta.sourceId&&e.sourceKind===meta.sourceKind);
       if(old)old.turns=duration;else t.effects.push({id:'block_items',turns:duration,...meta});
-      state.log.push(`${battleLogName(t)} no puede utilizar objetos.`);state.pushVisualUnit?.(t);
+      state.log.push(`${battleLogName(t)} no puede utilizar consumibles.`);state.pushVisualUnit?.(t);
+    }
+    else if(act.type==='move_first'||act.type==='move_last'){
+      const meta=sourceMeta(state),duration=Math.max(1,integer(rule.duration||1));
+      t.effects=t.effects.filter(e=>!((e.id==='move_first'||e.id==='move_last')&&e.sourceId===meta.sourceId&&e.sourceKind===meta.sourceKind));
+      t.effects.push({id:act.type,turns:duration,...meta});
+      state.log.push(`${battleLogName(t)} ${act.type==='move_first'?'se moverá primero':'se moverá último'}.`);
+      state.pushVisualUnit?.(t);
     }
     else if(act.type==='heal_over_time'){
       const meta=sourceMeta(state),duration=Math.max(1,integer(rule.duration||1));
@@ -474,8 +484,8 @@ function rulesFor(entry,event,user,contextTarget,state){
       state.currentSourceName=ability.name||entry?.name||'Habilidad';state.currentSourceKind='habilidad';state.currentSourceId=ability.id;state.currentSourceActor=user.name;state.currentSourceOwnerSide=user.side;state.currentSourceOwnerIndex=user.teamIndex;const previousLogLength=state.log.length,abilityLabel=state.currentSourceName;const previousEvent=state.currentRuleEvent;state.currentRuleEvent=event;action(rule,user,contextTarget,state,0);state.currentRuleEvent=previousEvent;for(let i=previousLogLength;i<state.log.length;i++)if(!state.log[i].includes(' por '+abilityLabel+' de '))state.log[i]=state.log[i].replace(/\.$/,'')+' por '+abilityLabel+' de '+user.name+'.';state.currentSourceName='';state.currentSourceId='';
     }
   }
-  // Los objetos seleccionados para este turno pueden reaccionar a los mismos eventos
-  // que las habilidades. No se gastan ni narran hasta que alguna regla se ejecuta.
+  // Los consumibles ya consumidos reaccionan a los eventos de combate desde el momento del consumo.
+  // Sus efectos pueden ejecutarse posteriormente sin volver a consumirse.
   state.runArmedItems?.(event,user,contextTarget);
 }
 function runMoveRules(move,event,user,contextTarget,state,onlySwitch=false,chainPhase=null){
@@ -648,14 +658,14 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
   const load=(id,side,teamIndex)=>{const e=catalog.entities[id];if(!e)throw Error('Entidad no encontrada: '+id);const d=e.definition,moves=[...(d.moveIds||[]),d.uniqueMoveId].map(mid=>{const m=catalog.moves[mid];if(!m)throw Error('Ataque inexistente: '+mid);return m;}),abilities=[d.globalAbilityId,d.uniqueAbilityId].map(aid=>{const a=catalog.abilities[aid];if(!a)throw Error('Habilidad inexistente: '+aid);return a;});return actor(e,moves,abilities,side,teamIndex);};
   const parseTeam=(value,single,side)=>{const ids=value===undefined?[single]:value;if(!Array.isArray(ids)||ids.length<1||ids.length>8||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length)throw Error('El equipo '+side+' debe tener entre 1 y 8 entidades diferentes.');if(mode==='doubles'&&ids.length<2)throw Error('Doubles requiere al menos dos entidades por equipo.');return ids;};
   const ids=[parseTeam(leftTeam,left,'izquierdo'),parseTeam(rightTeam,right,'derecho')];
-  const validateItemIds=(value,label)=>{if(!Array.isArray(value)||value.length>3||new Set(value).size!==value.length||value.some(id=>typeof id!=='string'||!catalog.items?.[id]))throw Error('Objetos inválidos del equipo '+label+'.');return [...value];};
+  const validateItemIds=(value,label)=>{if(!Array.isArray(value)||value.length>3||new Set(value).size!==value.length||value.some(id=>typeof id!=='string'||!catalog.items?.[id]))throw Error('Consumibles inválidos del equipo '+label+'.');return [...value];};
   const itemLists=resume?.itemLists?structuredClone(resume.itemLists):[validateItemIds(leftItems,'izquierdo'),validateItemIds(rightItems,'derecho')];
   const usedItems=resume?.usedItems?structuredClone(resume.usedItems):[[],[]];
   if(resume&&(!Number.isInteger(resume.round)||resume.round<0||resume.round>turns||resume.mode!==mode))throw Error('Checkpoint del combate incompatible.');
   const teams=resume?structuredClone(resume.teams):ids.map((arr,s)=>arr.map((id,i)=>load(id,s,i)));
   if(teams.length!==2||teams.some((t,i)=>t.length!==ids[i].length||t.some((a,j)=>a.id!==ids[i][j])))throw Error('Equipo incompatible con checkpoint.');
   const active=resume?structuredClone(resume.active):(mode==='doubles'?[[0,1],[0,1]]:[[0],[0]]);
-  const state={mode,chart,catalog,teams,active,itemLists,usedItems,weather:resume?.weather||'',field:resume?.field||'',scenario:resume?.scenario||'',
+  const state={mode,chart,catalog,teams,active,itemLists,usedItems,activeConsumableRules:structuredClone(resume?.activeConsumableRules||[]),weather:resume?.weather||'',field:resume?.field||'',scenario:resume?.scenario||'',
     weatherTurns:resume?.weatherTurns||0,fieldTurns:resume?.fieldTurns||0,scenarioTurns:resume?.scenarioTurns||0,
     round:resume?.round||0,lastDamage:resume?.lastDamage||null,damageBonus:0,random,log:[],timeline:[],visualEvents:[],
     // La selección automática de la IA es exclusiva del simulador de práctica;
@@ -717,7 +727,7 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
     for(const key of Object.keys(a.used||{}))if(key.startsWith('survive-entry:'))delete a.used[key];
     resetEntryAbilityUsage(a);rulesFor(null,'on_enter',a,firstOpponent(state,a),state);
   };
-  const switchTo=(s,slot,index,forced=false,label='Cambio')=>{if(!Number.isInteger(index)||index<0||index>=teams[s].length||active[s].includes(index)||teams[s][index].hp<=0)throw Error('Cambio inválido en equipo '+(s===0?'izquierdo':'derecho')+'.');const leaving=current(s,slot);if(leaving){resetSwitchStages(leaving);leaving.effects=leaving.effects.filter(e=>e.sourceKind!=='objeto'||e.persistOnSwitch);if(leaving.status?.sourceKind==='objeto'&&!leaving.status.persistOnSwitch)leaving.status=null;}active[s][slot]=index;state.forcedSwitches=state.forcedSwitches.filter(f=>!(sideIndex(f.side)===s&&Number(f.slot)===slot));syncMirrorTags();state.log.push(`${forced?label+': ':label+': '}${battleLogName(current(s,slot))} entra al campo.`);state.pushVisualUnit(current(s,slot),'switch');enter(s,slot);state.refreshEnvironment?.();state.pushVisualUnit(current(s,slot));};state.switchTo=switchTo;
+  const switchTo=(s,slot,index,forced=false,label='Cambio')=>{if(!Number.isInteger(index)||index<0||index>=teams[s].length||active[s].includes(index)||teams[s][index].hp<=0)throw Error('Cambio inválido en equipo '+(s===0?'izquierdo':'derecho')+'.');const leaving=current(s,slot);if(leaving){resetSwitchStages(leaving);for(const armed of state.armedItems||[])if(armed.actor===leaving){armed.disabledRules=armed.disabledRules||[];for(const [index,rule] of (armed.item?.definition?.rules||[]).entries())if(!rule.persistOnSwitch&&!armed.disabledRules.includes(index))armed.disabledRules.push(index);}leaving.effects=leaving.effects.filter(e=>e.sourceKind!=='objeto'||e.persistOnSwitch);if(leaving.status?.sourceKind==='objeto'&&!leaving.status.persistOnSwitch)leaving.status=null;}active[s][slot]=index;const entrant=current(s,slot);if(entrant)entrant.firstFullRound=Math.max(1,(state.round||0)+1);state.forcedSwitches=state.forcedSwitches.filter(f=>!(sideIndex(f.side)===s&&Number(f.slot)===slot));syncMirrorTags();state.log.push(`${forced?label+': ':label+': '}${battleLogName(current(s,slot))} entra al campo.`);state.pushVisualUnit(current(s,slot),'switch');enter(s,slot);state.refreshEnvironment?.();state.pushVisualUnit(current(s,slot));};state.switchTo=switchTo;
   const parseAction=o=>{if(o===undefined||o===null||o==='')return null;if(typeof o==='string')return{move:o};if(typeof o!=='object'||Array.isArray(o))throw Error('Acción inválida.');if(o.switch!==undefined)return{switch:Number(o.switch)};if(o.move!==undefined)return{move:o.move,target:o.target||null,item:o.item||null,switchChoice:o.switchChoice||null};return null;};
   const parseSideOrder=(orders,round,defaultMove)=>{const raw=orders[round-1];if(mode==='singles'){const action=raw&&Array.isArray(raw.actions)?raw.actions.find(a=>Number(a.slot??0)===0):raw;const one=parseAction(action);return[one||{move:defaultMove||''}];}if(raw&&Array.isArray(raw.actions)){return[0,1].map(slot=>parseAction(raw.actions.find(a=>Number(a.slot)===slot))||null);}if(Array.isArray(raw))return[0,1].map(i=>parseAction(raw[i]));return[null,null];};
   const chooseMove=(a,opponent,requested)=>{if(requested){const m=a.moves.find(m=>m.id===requested);if(!m)throw Error('El ataque '+requested+' no pertenece a '+a.name+'.');return m;}const available=a.moves.filter(m=>(a.cooldowns[m.id]||0)<=0);if(!available.length)throw Error(a.name+' no tiene movimientos disponibles por cooldown.');const useful=available.filter(m=>m.definition.category==='status'||Number(m.definition.power)<=0||!opponent?.types?.some(t=>state.chart?.[m.definition.type]?.[t]==='inmune'));const pool=useful.length?useful:available;return pool[Math.floor(random()*pool.length)];};
@@ -834,36 +844,49 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
     syncMirrorTags();refreshEnvironment();snapshotRound(played);
   }
   for(let round=played+1;!replacementsOnly&&round<=turns&&remaining(0)&&remaining(1);round++){
-    played=round;state.round=round;state.extraAttacksThisRound=0;syncMirrorTags();state.log.push('— Ronda '+round+' —');refreshEnvironment();environmentTimed('turn_start');for(const a of state.allActive())if(a.hp>0)rulesFor(null,'turn_start',a,firstOpponent(state,a),state);
-    const orders=[parseSideOrder(leftOrders,round,leftMove),parseSideOrder(rightOrders,round,rightMove)],switches=[];
-    for(const s of[0,1])for(let slot=0;slot<active[s].length;slot++){const a=current(s,slot),o=orders[s][slot];if(a?.hp>0&&o?.switch!==undefined)switches.push({s,slot,a,index:Number(o.switch)});}
-    switches.sort((x,y)=>effective(y.a,'speed')-effective(x.a,'speed')||(random()<.5?-1:1));for(const sw of switches)switchTo(sw.s,sw.slot,sw.index,false,'Cambio');refreshEnvironment();
-    const actions=[],lastItems=[];
-    state.armedItems=[];
-    const eligibleItemRule=(rule,a,context)=>{
-      if(!conditionsPass(rule,a,context,state))return false;
-      if(rule.action?.type==='swap_positions'&&state.mode!=='doubles')return false;
-      if(rule.action?.type==='switch_character'){
-        const receivers=targetSet(rule.target||'self',a,context,state).filter(t=>t?.hp>0);
-        return receivers.some(t=>{const owner=actorSide(t);return state.teams[owner].some((ally,index)=>ally.hp>0&&!state.active[owner].includes(index));});
-      }
-      return true;
-    };
+    played=round;state.round=round;state.extraAttacksThisRound=0;syncMirrorTags();state.log.push('— Ronda '+round+' —');
+    const orders=[parseSideOrder(leftOrders,round,leftMove),parseSideOrder(rightOrders,round,rightMove)];
+    // Las condiciones «va a cambiar» únicamente inspeccionan cambios voluntarios ya elegidos.
+    state.plannedSwitches=new Set();
+    for(const side of [0,1])for(let slot=0;slot<active[side].length;slot++){
+      const a=current(side,slot);if(a?.hp>0&&orders[side][slot]?.switch!==undefined)state.plannedSwitches.add(a);
+    }
+    // Restaurar disparadores de consumibles consumidos en rondas previas (checkpoint y continuación online).
+    state.armedItems=(state.activeConsumableRules||[]).map(record=>({
+      ...record,actor:teams[record.s]?.[record.teamIndex],item:catalog.items?.[record.id],activated:true
+    })).filter(record=>record.actor&&record.item);
+    const eligibleConsumable=(a,entry)=>a&&a.hp>0&&state.active[entry.s]?.includes(a.teamIndex)
+      &&!state.forcedSwitches.some(f=>sideIndex(f.side)===entry.s&&f.targetTeamIndex===a.teamIndex)
+      &&!a.effects.some(e=>e.id==='block_items'&&!ownerSuppressed(e,state,a))
+      &&!state.usedItems[entry.s].includes(entry.id);
     const runItemRules=(armed,event,contextTarget)=>{
       const {s,actor:a,id,item}=armed;
-      if(!state.active[s].includes(a.teamIndex)||(a.hp<=0&&!(armed.activated&&event==='on_death'))||state.forcedSwitches.some(f=>sideIndex(f.side)===s&&f.targetTeamIndex===a.teamIndex))return;
-      if(!armed.activated&&(state.usedItems[s].includes(id)||a.effects.some(e=>e.id==='block_items'&&!ownerSuppressed(e,state,a))))return;
+      // Un consumible consumido no reactiva reglas después de que el personaje abandone el campo,
+      // salvo persistencia explícita de esa regla.
+      if(a.hp<=0&&event!=='on_death')return;
+      const inField=state.active[s].includes(a.teamIndex);
+      if(!inField&&!armed.activated)return;
       const context=contextTarget||firstOpponent(state,a);
       for(const [index,rule] of (item.definition?.rules||[]).entries()){
-        if(rule.event!==event||!eligibleItemRule(rule,a,context))continue;
-        const times=armed.triggerCounts[index]||0;
-        if(Number(rule.limit)>0&&times>=Number(rule.limit))continue;
-        if(!chance(rule,state))continue;
-        if(!armed.activated){
-          state.usedItems[s].push(id);armed.activated=true;
-          state.log.push(`${battleLogName(a)} usó ${item.name}.`);
-          state.visualEvents.push({logIndex:state.log.length-1,type:'item_use',side:a.side,slot:state.active[s].indexOf(a.teamIndex),itemId:id,spriteId:item.definition?.spriteId||'',itemName:item.name,attackerName:battleLogName(a)});
+        if(rule.event!==event||armed.disabledRules?.includes(index))continue;
+        if(!inField&&!rule.persistOnSwitch)continue;
+        if(!armed.activated)continue;
+        if(!receivedAttackFilterPasses(rule,state)||!conditionsPass(rule,a,context,state))continue;
+        if(rule.action?.type==='swap_positions'&&state.mode!=='doubles')continue;
+        if(rule.action?.type==='switch_character'){
+          const receivers=targetSet(rule.target||'self',a,context,state).filter(t=>t?.hp>0);
+          if(!receivers.some(t=>{const owner=actorSide(t);return state.teams[owner].some((ally,i)=>ally.hp>0&&!state.active[owner].includes(i));}))continue;
         }
+        const times=armed.triggerCounts[index]||0;
+        // Los momentos reactivos están ligados al consumo, no son nuevos consumos.
+        // Una regla de final de turno con duración 3 se activa tres veces, comenzando
+        // en el mismo turno de consumo (si ese momento todavía no pasó).
+        const timed=['turn_end','round_end','turn_start','on_status'].includes(event);
+        if(!timed&&!['manual','manual_doubles'].includes(event)&&Number(rule.duration)>0&&round>=armed.activatedRound+Number(rule.duration))continue;
+        const maxTriggers=rule.action?.type==='heal_over_time'?1:timed?Math.max(1,Number(rule.duration)||1):Math.max(1,Number(rule.limit)||1);
+        if(times>=maxTriggers||(Number(rule.limit)>0&&times>=Number(rule.limit)))continue;
+        if(armed.preApproved&&['manual','manual_doubles'].includes(event)){if(!armed.preApproved.has(index))continue;}
+        else if(!chance(rule,state))continue;
         armed.triggerCounts[index]=times+1;
         const old={name:state.currentSourceName,kind:state.currentSourceKind,id:state.currentSourceId,actor:state.currentSourceActor,side:state.currentSourceOwnerSide,index:state.currentSourceOwnerIndex,persist:state.currentItemPersistOnSwitch,event:state.currentRuleEvent};
         state.currentSourceKind='objeto';state.currentSourceId=id;state.currentSourceName=item.name;state.currentSourceActor=a.name;state.currentSourceOwnerSide=a.side;state.currentSourceOwnerIndex=a.teamIndex;
@@ -876,42 +899,87 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
     state.runArmedItems=(event,user,context)=>{
       if(state._runningArmedItems)return;
       state._runningArmedItems=true;
-      try{for(const armed of state.armedItems){if(armed.actor===user){runItemRules(armed,event,context);if(event!=='on_condition')runItemRules(armed,'on_condition',context);}}}finally{state._runningArmedItems=false;}
+      try{for(const armed of state.armedItems)if(armed.actor===user){runItemRules(armed,event,context);if(event!=='on_condition')runItemRules(armed,'on_condition',context);}}finally{state._runningArmedItems=false;}
     };
     const executeItem=entry=>{
       const {s,actor:a,id}=entry;
-      if(!state.active[s].includes(a.teamIndex)||a.hp<=0||state.forcedSwitches.some(f=>sideIndex(f.side)===s&&f.targetTeamIndex===a.teamIndex))return;
-      if(state.usedItems[s].includes(id)||a.effects.some(e=>e.id==='block_items'&&!ownerSuppressed(e,state,a)))return;
-      const item=state.catalog.items?.[id];if(!item)return;
-      // La reserva del objeto no es su consumo. Se arma al ejecutar la acción
-      // y solo se gasta cuando una regla válida entra en efecto.
+      if(!eligibleConsumable(a,entry))return;
+      const item=catalog.items?.[id];if(!item)return;
       if(state.armedItems.some(x=>x.s===s&&x.id===id))return;
-      const armed={s,actor:a,id,item,activated:false,triggerCounts:{}};
+      const context=firstOpponent(state,a),approved=new Set();
+      let hasLaterRules=false;
+      for(const [index,rule] of (item.definition?.rules||[]).entries()){
+        if(!['manual','manual_doubles'].includes(rule.event)){
+          hasLaterRules=true;continue;
+        }
+        if(rule.event==='manual_doubles'&&mode!=='doubles')continue;
+        if(!conditionsPass(rule,a,context,state))continue;
+        if(rule.action?.type==='swap_positions'){
+          if(mode!=='doubles')continue;
+          const side=rule.target==='enemy_team'?1-s: s;
+          if(state.active[side]?.length!==2||state.active[side].some(i=>state.teams[side][i]?.hp<=0))continue;
+        }
+        if(rule.action?.type==='switch_character'){
+          const receivers=targetSet(rule.target||'self',a,context,state).filter(x=>x?.hp>0);
+          if(!receivers.some(t=>state.teams[actorSide(t)].some((ally,i)=>ally.hp>0&&!state.active[actorSide(t)].includes(i))))continue;
+        }
+        if(chance(rule,state))approved.add(index);
+      }
+      // Si no existe ninguna activación posible, el consumible queda disponible.
+      // Las reglas reactivas sí permiten consumirlo aunque su evento suceda después.
+      if(!approved.size&&!hasLaterRules)return;
+      // El momento de consumo es independiente del momento de los efectos. El objeto
+      // se gasta, se narra y se anima AQUÍ; después empiezan a existir sus reglas.
+      state.usedItems[s].push(id);
+      state.log.push(`${battleLogName(a)} consumió ${item.name}.`);
+      state.visualEvents.push({logIndex:state.log.length-1,type:'item_use',side:a.side,slot:state.active[s].indexOf(a.teamIndex),itemId:id,spriteId:item.definition?.spriteId||'',itemName:item.name,attackerName:battleLogName(a)});
+      const armed={s,teamIndex:a.teamIndex,actor:a,id,item,activated:true,activatedRound:round,triggerCounts:{},preApproved:approved};
       state.armedItems.push(armed);
-      runItemRules(armed,'manual',firstOpponent(state,a));
-      if(state.mode==='doubles')runItemRules(armed,'manual_doubles',firstOpponent(state,a));
-      // Permitir efectos de condición o inicio de turno en el momento de activación.
-      runItemRules(armed,'on_condition',firstOpponent(state,a));
       if(item.definition?.timing==='start')runItemRules(armed,'turn_start',firstOpponent(state,a));
-      if(['end','last'].includes(item.definition?.timing))runItemRules(armed,'turn_end',firstOpponent(state,a));
-      if(item.definition?.timing==='last')runItemRules(armed,'round_end',firstOpponent(state,a));
-      state.resolveDeaths();
+      runItemRules(armed,'manual',firstOpponent(state,a));
+      if(mode==='doubles')runItemRules(armed,'manual_doubles',firstOpponent(state,a));
+      // «Al usar»/«Inicio» son momentos posteriores al consumo que pueden ser inmediatos.
+      runItemRules(armed,'on_condition',firstOpponent(state,a));
+      delete armed.preApproved;state.resolveDeaths();
     };
-    for(const s of[0,1])for(let slot=0;slot<active[s].length;slot++){
-      const a=current(s,slot),o=orders[s][slot];if(!a||a.hp<=0||o?.switch!==undefined)continue;
+    refreshEnvironment();environmentTimed('turn_start');
+    for(const a of state.allActive())if(a.hp>0){rulesFor(null,'turn_start',a,firstOpponent(state,a),state);}
+    const actions=[],lastItems=[],endItems=[],startItems=[];
+    for(const side of [0,1])for(let slot=0;slot<active[side].length;slot++){
+      const a=current(side,slot),o=orders[side][slot];if(!a||a.hp<=0)continue;
+      if(o?.switch!==undefined){actions.push({kind:'switch',s:side,slot,actor:a,index:Number(o.switch)});continue;}
       const opp=firstOpponent(state,a),move=chooseMove(a,opp,o?.move);
-      actions.push({kind:'move',s,slot,actor:a,move,target:o?.target||null,switchChoice:o?.switchChoice||null,priority:Number(move.definition.priority)||0});
-      if(o?.item&&itemLists[s].includes(o.item)&&!usedItems[s].includes(o.item)){
-        const def=catalog.items[o.item]?.definition||{},entry={kind:'item',s,slot,actor:a,id:o.item,priority:def.timing==='start'?99:def.timing==='end'?-99:def.timing==='last'?-999:(Number(def.priority)||0)};
-        (def.timing==='last'?lastItems:actions).push(entry);
+      actions.push({kind:'move',s:side,slot,actor:a,move,target:o?.target||null,switchChoice:o?.switchChoice||null,priority:Number(move.definition.priority)||0});
+      if(o?.item&&itemLists[side].includes(o.item)&&!usedItems[side].includes(o.item)){
+        const def=catalog.items[o.item]?.definition||{},entry={kind:'item',s:side,slot,actor:a,id:o.item,priority:Number(def.priority)||0};
+        if(def.timing==='last')lastItems.push(entry);
+        else if(def.timing==='end')endItems.push(entry);
+        else if(def.timing==='start'||(def.rules||[]).some(r=>['move_first','move_last'].includes(r.action?.type)&&['manual','manual_doubles','on_condition'].includes(r.event)))startItems.push(entry);
+        else actions.push(entry);
       }
     }
-    actions.sort((x,y)=>{if(x.priority!==y.priority)return y.priority-x.priority;const sx=effective(x.actor,'speed'),sy=effective(y.actor,'speed');return sx!==sy?sy-sx:(random()<.5?-1:1);});
-    for(const turn of actions){state.resolveDeaths();if(!remaining(0)||!remaining(1))break;
-      if(!state.active[turn.s].includes(turn.actor.teamIndex)||turn.actor.hp<=0||state.forcedSwitches.some(f=>sideIndex(f.side)===turn.s&&f.targetTeamIndex===turn.actor.teamIndex))continue;
-      if(turn.kind==='item')executeItem(turn);else executeMove(turn.actor,turn.move,turn.target,state,turn.switchChoice);
+    // Los consumos al inicio se ordenan por prioridad y Velocidad entre sí.
+    startItems.sort((x,y)=>(y.priority||0)-(x.priority||0)||effective(y.actor,'speed')-effective(x.actor,'speed')||(random()<.5?-1:1));
+    for(const entry of startItems)executeItem(entry);
+    // Orden total: Moverse primero, cambios manuales, consumibles, movimientos
+    // ordinarios, moverse último. En un mismo grupo se desempata con prioridad
+    // y Velocidad (incluidas dos entidades que utilizan Moverse primero).
+    const orderTier=entry=>{
+      if(entry.kind==='switch')return 1;
+      if(entry.kind==='item')return 3;
+      const effects=entry.actor.effects||[];
+      if(effects.some(e=>e.id==='move_last'))return 4;
+      return effects.some(e=>e.id==='move_first')?0:3;
+    };
+    actions.sort((x,y)=>{const tx=orderTier(x),ty=orderTier(y);if(tx!==ty)return tx-ty;const px=x.priority||0,py=y.priority||0;if(px!==py)return py-px;if(x.actor===y.actor&&x.kind!==y.kind)return x.kind==='item'?-1:y.kind==='item'?1:0;const sx=effective(x.actor,'speed'),sy=effective(y.actor,'speed');return sx!==sy?sy-sx:(random()<.5?-1:1);});
+    for(const entry of actions){state.resolveDeaths();if(!remaining(0)||!remaining(1))break;
+      if(!state.active[entry.s].includes(entry.actor.teamIndex)||entry.actor.hp<=0||state.forcedSwitches.some(f=>sideIndex(f.side)===entry.s&&f.targetTeamIndex===entry.actor.teamIndex))continue;
+      if(entry.kind==='item')executeItem(entry);
+      else if(entry.kind==='switch')switchTo(entry.s,entry.slot,entry.index,false,'Cambio');
+      else executeMove(entry.actor,entry.move,entry.target,state,entry.switchChoice);
     }
-    state.resolveDeaths();for(const a of state.allActive())if(a.hp>0){rulesFor(null,'on_status',a,firstOpponent(state,a),state);rulesFor(null,'turn_end',a,firstOpponent(state,a),state);}environmentTimed('turn_end');for(const a of state.allActive())if(a.hp>0)for(const e of a.effects.filter(e=>e.id==='heal_over_time')){const before=a.hp;a.hp=Math.min(a.maxHp,a.hp+integer(a.maxHp*percent(e.value)/100));if(a.hp>before){state.log.push(`${battleLogName(a)} recupera ${a.hp-before} PS por ${e.sourceName||'objeto'}.`);state.pushVisualUnit?.(a);}}for(const a of state.allActive())if(a.hp>0)rulesFor(null,'round_end',a,firstOpponent(state,a),state);environmentTimed('round_end');state.resolveDeaths();
+    for(const entry of endItems)executeItem(entry);
+    state.resolveDeaths();for(const a of state.allActive())if(a.hp>0){rulesFor(null,'on_status',a,firstOpponent(state,a),state);rulesFor(null,'turn_end',a,firstOpponent(state,a),state);}environmentTimed('turn_end');for(const a of state.allActive())if(a.hp>0)for(const e of a.effects.filter(e=>e.id==='heal_over_time')){const before=a.hp;a.hp=Math.min(a.maxHp,a.hp+integer(a.maxHp*percent(e.value)/100));if(a.hp>before){state.log.push(`${battleLogName(a)} recupera ${a.hp-before} PS por ${e.sourceName||'consumible'}.`);state.pushVisualUnit?.(a);}}for(const a of state.allActive())if(a.hp>0)rulesFor(null,'round_end',a,firstOpponent(state,a),state);environmentTimed('round_end');state.resolveDeaths();
     // Los contadores de ataque consecutivo se reinician si no hubo impacto ofensivo este turno.
     for(const a of state.allActive()){
       if(a.consecutiveCounters.lastAttackRound!==round){a.consecutiveCounters.attack=0;a.consecutiveCounters.hit=0;a.consecutiveCounters.use=0;a.consecutiveCounters.streakHits=0;}
@@ -926,6 +994,9 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
     // Los objetos «último del turno» actúan después de todos los efectos, caducidades y daños residuales.
     lastItems.sort((a,b)=>effective(b.actor,'speed')-effective(a.actor,'speed'));
     for(const entry of lastItems)executeItem(entry);
+    // Estado serializable: en un avance por checkpoint se mantienen los consumibles
+    // activos y sus contadores de disparos para las rondas siguientes.
+    state.activeConsumableRules=state.armedItems.map(x=>({s:x.s,teamIndex:x.actor.teamIndex,id:x.id,activatedRound:x.activatedRound,triggerCounts:structuredClone(x.triggerCounts),disabledRules:structuredClone(x.disabledRules||[])}));
     // Los reemplazos por KO son siempre manuales: solo se aplican si el caller ya guardó la elección.
     state.resolveDeaths();applyReplacementForRound(0,round);applyReplacementForRound(1,round);syncMirrorTags();refreshEnvironment();snapshotRound(round);
   }
@@ -934,5 +1005,5 @@ export function simulate({left,right,leftTeam,rightTeam,leftItems=[],rightItems=
   return{...(includeCheckpoint?{checkpoint:{mode,round:played,teams:structuredClone(teams),active:structuredClone(active),
       weather:state.weather,field:state.field,scenario:state.scenario,weatherTurns:state.weatherTurns,
       fieldTurns:state.fieldTurns,scenarioTurns:state.scenarioTurns,lastDamage:state.lastDamage,
-      deathEvents:structuredClone(state.deathEvents),forcedSwitches:structuredClone(state.forcedSwitches),itemLists:structuredClone(state.itemLists),usedItems:structuredClone(state.usedItems),matchStats:structuredClone(state.matchStats),randomCursor:cursor}}:{}),ok:true,mode,rounds:played,winner,winnerId:winner==='left'?leftActive[0]?.id:winner==='right'?rightActive[0]?.id:null,left:leftActive[0]||summary(teams[0][0]),right:rightActive[0]||summary(teams[1][0]),leftActive,rightActive,leftActiveIndexes:[...active[0]],rightActiveIndexes:[...active[1]],items:{left:[...itemLists[0]],right:[...itemLists[1]]},usedItems:{left:[...usedItems[0]],right:[...usedItems[1]]},leftTeam:teams[0].map(summary),rightTeam:teams[1].map(summary),needsReplacement,deathEvents:state.deathEvents,forcedSwitches:state.forcedSwitches,matchStats:state.matchStats,weather:state.weather,field:state.field,scenario:state.scenario,weatherTurns:state.weatherTurns,fieldTurns:state.fieldTurns,scenarioTurns:state.scenarioTurns,log:state.log.slice(0,2000),timeline:state.timeline,visualEvents:state.visualEvents.filter(e=>e.logIndex<2000),randomTape:tape.slice(0,cursor)};
+      deathEvents:structuredClone(state.deathEvents),forcedSwitches:structuredClone(state.forcedSwitches),itemLists:structuredClone(state.itemLists),usedItems:structuredClone(state.usedItems),activeConsumableRules:structuredClone(state.activeConsumableRules),matchStats:structuredClone(state.matchStats),randomCursor:cursor}}:{}),ok:true,mode,rounds:played,winner,winnerId:winner==='left'?leftActive[0]?.id:winner==='right'?rightActive[0]?.id:null,left:leftActive[0]||summary(teams[0][0]),right:rightActive[0]||summary(teams[1][0]),leftActive,rightActive,leftActiveIndexes:[...active[0]],rightActiveIndexes:[...active[1]],items:{left:[...itemLists[0]],right:[...itemLists[1]]},usedItems:{left:[...usedItems[0]],right:[...usedItems[1]]},leftTeam:teams[0].map(summary),rightTeam:teams[1].map(summary),needsReplacement,deathEvents:state.deathEvents,forcedSwitches:state.forcedSwitches,matchStats:state.matchStats,weather:state.weather,field:state.field,scenario:state.scenario,weatherTurns:state.weatherTurns,fieldTurns:state.fieldTurns,scenarioTurns:state.scenarioTurns,log:state.log.slice(0,2000),timeline:state.timeline,visualEvents:state.visualEvents.filter(e=>e.logIndex<2000),randomTape:tape.slice(0,cursor)};
 }

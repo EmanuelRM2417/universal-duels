@@ -1,13 +1,13 @@
 # Universal Duels — Editor privado (Alpha 0.9)
 
-Editor de catálogo, objetos, habilidades, movimientos, condiciones, narrador, sprites, laboratorio, monitoreo, recursos y publicación manual de parches. El Editor es independiente del Main. **Guardar un borrador no modifica el juego público**.
+Editor de catálogo, consumibles, habilidades, movimientos, condiciones, narrador, sprites, laboratorio, monitoreo, recursos y publicación manual de parches. El Editor es independiente del Main. **Guardar un borrador no modifica el juego público**.
 
 ## Desarrollo y validación
 
 - Ejecutar `npm install` y `npm test`.
 - Verificar sintaxis: `node --check worker.js` y `node --check battle-engine.js`.
 - Verificar el bundle sin desplegar: `npx wrangler deploy --dry-run --outdir ./dist-check` (con Wrangler disponible); eliminar `dist-check` antes de comprimir.
-- Comprobar en un entorno privado el acceso, guardado de objetos y de su sprite PNG cuadrado, selección de momentos, reglas de efectos, publicación/rollback y laboratorio Singles/Doubles.
+- Comprobar en un entorno privado el acceso, guardado de consumibles y de su sprite PNG cuadrado, selección de momentos, reglas de efectos, publicación/rollback y laboratorio Singles/Doubles.
 
 ## Seguridad e infraestructura
 

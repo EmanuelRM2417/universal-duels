@@ -12,12 +12,12 @@ const run=(item,side='left',leftMove='hit',rightMove='idle',config={})=>{
 const hit=run(rule('on_hit'));
 assert.deepEqual(hit.usedItems.left,['one'],'Al acertar es evento ejecutable para objeto');
 assert.equal(hit.visualEvents.filter(e=>e.type==='item_use').length,1,'exactamente una animación');
-assert.ok(hit.log.some(s=>s.includes(' usó Manzana.')),'narración estricta incluso con plantilla antigua');
+assert.ok(hit.log.some(s=>s.includes(' consumió Manzana.')),'narración estricta incluso con plantilla antigua');
 assert.ok(!hit.log.some(s=>s.includes('Esto no debe verse.')));
 const damaged=run(rule('on_damage_taken'),'right','hit','idle');
 assert.deepEqual(damaged.usedItems.right,['one'],'Al recibir daño dispara objeto reactivo');
 const noDamage=run(rule('on_damage_taken'),'right','idle','idle');
-assert.deepEqual(noDamage.usedItems.right,[],'Sin daño no consume objeto');
+assert.deepEqual(noDamage.usedItems.right,['one'],'el consumo se registra aunque el evento reactivo no llegue a ocurrir');
 const end=run(rule('turn_end'),'left','idle','idle');
 assert.deepEqual(end.usedItems.left,['one'],'Final del turno dispara el objeto después de armado');
 const round=run(rule('round_end'),'left','idle','idle');

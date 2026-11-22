@@ -1,8 +1,8 @@
 // Validación de configuración, no balance automático. No muta el contenido.
 export const EVENTS = ['on_enter','on_death','on_enemy_ko','on_survive','turn_start','turn_end','round_end','on_attack','on_hit','on_miss','on_damage_taken','on_receive_attack','on_dodge','on_ally_ko','manual','manual_doubles','on_status','on_condition','on_status_applied'];
-export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles'];
+export const CONDITIONS = ['always','hp_below','hp_above','hp_full','weather_is','field_is','scenario_is','has_status','enemy_defeated','has_type','was_hit_by_type','received_move_type','received_move_category','stat_below','streak_count','in_doubles','going_to_switch','first_turn_in_field'];
 export const TARGETS = ['self','target','attacker','ally','ally_team','enemy_team','all','all_active','enemy_direct','enemy_inverse'];
-export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack','block_items','swap_positions','heal_over_time'];
+export const ACTIONS = ['damage','heal','resurrect','stat_change','clear_stat_changes','block_stat_changes','apply_status','remove_status','apply_effect','remove_effect','set_weather','set_field','set_scenario','environment_immunity','prevent_environment','suppress_abilities','restrict_moves','modify_active_cooldowns','cooldown_on_use','heal_from_damage','damage_from_damage','heal_from_received_damage','damage_from_received_damage','immunity','damage_multiplier','switch_character','survive','modify_move_power','modify_move_accuracy','modify_move_critical','final_damage','block_status','effect_immunity','force_miss','do_nothing','attack','block_items','swap_positions','heal_over_time','move_first','move_last'];
 const TYPES = ['fuego','planta','roca','hielo','rayo','metal','guerra','mente','encanto','espectro','divinidad','luz','oscuridad','viento','dragon','agua','veneno','tecnologia','agilidad','valor'];
 const ATTACK_TYPES=[...TYPES,'neutral'];
 const STATS = ['attack','defense','specialAttack','specialDefense','speed','accuracy','evasion','criticalChance'];
@@ -32,7 +32,7 @@ export function validateRules(definition,category){
  for(const [i,r] of definition.rules.entries()){
   const at=`Regla ${i+1}`;
   if(!EVENTS.includes(r.event)) fail(at+': elegí un evento admitido.');
-  // Los objetos reutilizan todos los eventos existentes. Su uso se confirma al ejecutarse su primera regla válida.
+  // Los consumibles utilizan eventos posteriores al consumo, incluidos eventos diferidos.
   if(category==='moves' && !['manual','manual_doubles','on_attack','on_hit','on_miss','on_survive','on_enemy_ko'].includes(r.event)) fail(at+': un movimiento admite «Al usar», «Al usar en Doubles», «Al atacar» o «Al acertar».');
   if(category==='effects' && r.event!=='manual') fail(at+': un efecto reutilizable solo admite el evento manual en este laboratorio.');
   if(['entities',...ENV_CATS].includes(category)) fail(at+': esta categoría no usa reglas propias.');
@@ -101,11 +101,11 @@ export function validateDefinition(category,d){
   if(!within(d.power,0,500)||!within(d.accuracy,0,100)||!within(d.criticalChance,0,50)||!Number.isInteger(d.priority)||d.priority< -5||d.priority>5||!Number.isInteger(d.cooldown??0)||(d.cooldown??0)<0||(d.cooldown??0)>50) fail('Ataque: potencia 0–500, precisión 0–100, crítico 0–50, prioridad −5 a +5 y cooldown 0–50.');
  }
  if(category==='items'){
-  if(!['start','priority','end','last'].includes(d.timing||'priority'))fail('Objeto: momento de ejecución inválido.');
-  if(!Number.isInteger(d.priority??0)||(d.priority??0)<-5||(d.priority??0)>5)fail('Objeto: prioridad debe ser un entero entre −5 y +5.');
-  if(d.spriteId!==undefined&&d.spriteId!==''&&!slug(d.spriteId))fail('Objeto: ID de sprite PNG inválido.');
+  if(!['start','priority','end','last'].includes(d.timing||'priority'))fail('Consumible: momento de ejecución inválido.');
+  if(!Number.isInteger(d.priority??0)||(d.priority??0)<-5||(d.priority??0)>5)fail('Consumible: prioridad debe ser un entero entre −5 y +5.');
+  if(d.spriteId!==undefined&&d.spriteId!==''&&!slug(d.spriteId))fail('Consumible: ID de sprite PNG inválido.');
   // El mensaje del objeto está fijado por el motor; ignorar borradores antiguos que tenían texto editable.
-  if(!Array.isArray(d.rules)||!d.rules.length)fail('Objeto: agregá al menos una regla Al usar.');
+  if(!Array.isArray(d.rules)||!d.rules.length)fail('Consumible: agregá al menos una regla Al usar.');
  }
  if(category==='abilities'&&!['global','unique'].includes(d.kind)) fail('Habilidad: elegí global o exclusiva.');
  if(category==='moves'&&d.multihit){const x=d.multihit;

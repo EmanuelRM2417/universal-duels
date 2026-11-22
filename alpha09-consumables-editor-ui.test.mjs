@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validateDefinition} from './catalog-validation.js';
+const html=readFileSync(new URL('./public/editor/index.html',import.meta.url),'utf8');
+for(const text of ['Moverse primero','Moverse último','Va a cambiar','Primer turno completo en campo','Consumibles','Sprite']) assert.ok(html.includes(text),text);
+assert.match(html,/data-view="objects"/);
+assert.match(html,/data-studio-view="objects"/);
+assert.match(html,/data-view="item-sprites"/);
+assert.match(html,/data-lab-item-open[^}]*grid-column:1!important;grid-row:1!important/);
+assert.match(html,/function udLabAnimateItem\(e\)[\s\S]*?innerHTML=`<img src="\$\{url\}" alt="">`/);
+assert.match(html,/if\(conditionType\.value==='going_to_switch'\)conditionSubject\.value='target'/,'condición evalúa objetivo de forma predeterminada');
+assert.match(html,/if\(type\.value==='going_to_switch'\)subject\.value='target'/,'condición adicional evalúa objetivo de forma predeterminada');
+assert.doesNotMatch(html,/conditionSubject\.hidden=\[[^\]]*going_to_switch/,'selector del destinatario de la condición visible');
+assert.doesNotMatch(html,/\(oculto[s]? para el rival\)/i);
+const basic={spriteId:'manzana',timing:'start',priority:0,rules:[{event:'manual',target:'self',action:{type:'move_first'},condition:{type:'going_to_switch',subject:'target'},conditions:[{type:'first_turn_in_field',subject:'self',operator:'AND',negate:false}],chance:100,duration:1,limit:0}]};
+assert.doesNotThrow(()=>validateDefinition('items',basic));
+assert.doesNotThrow(()=>validateDefinition('items',{...basic,rules:[{...basic.rules[0],action:{type:'move_last'}}]}));
+console.log('Alpha 0.9: Editor de consumibles, orden de ejecución, condiciones con sujeto y sprites: OK');
